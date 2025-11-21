@@ -1,0 +1,17 @@
+{
+  "watch": [
+    "server.js",
+    "config",
+    "models",
+    "routes",
+    "middlewares"
+  ],
+  "ext": "js,json",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ],
+  "env": {
+    "NODE_ENV": "development"
+  }
+}
