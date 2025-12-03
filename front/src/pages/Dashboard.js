@@ -1,29 +1,143 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
-import { dummyDevices, dummyPatients } from '../data/dummyData'
+import petService from '../api/petService'
+import deviceService from '../api/deviceService'
+import { useSocket } from '../hooks/useSocket'
 import './Dashboard.css'
 
 function Dashboard() {
   const navigate = useNavigate()
+  const { isConnected, on, off } = useSocket()
   const [selectedPatient, setSelectedPatient] = useState(null)
-  
-  // 연결된 디바이스만 필터링
-  const connectedDevices = dummyDevices.filter(device => 
-    device.status === 'connected' && device.connectedPatient
-  )
+  const [connectedDevices, setConnectedDevices] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  // 데이터 로드
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  // Socket.IO로 실시간 데이터 업데이트
+  useEffect(() => {
+    if (!isConnected) return
+
+    const handleTelemetry = (data) => {
+      if (data.type === 'sensor_data' && data.deviceId) {
+        // 디바이스의 현재 데이터 업데이트
+        setConnectedDevices(prev => prev.map(device => {
+          if (device.address === data.deviceId) {
+            const latest = data.data?.dataArr?.[data.data.dataArr.length - 1] || data.data
+            return {
+              ...device,
+              currentData: {
+                heartRate: latest.hr || device.currentData?.heartRate || 0,
+                spo2: latest.spo2 || device.currentData?.spo2 || 0,
+                temperature: latest.temp || device.currentData?.temperature || 0,
+                battery: latest.battery || device.currentData?.battery || 0
+              }
+            }
+          }
+          return device
+        }))
+      }
+    }
+
+    on('TELEMETRY', handleTelemetry)
+
+    return () => {
+      off('TELEMETRY', handleTelemetry)
+    }
+  }, [isConnected, on, off])
+
+  const loadData = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+
+      // 디바이스 목록 조회
+      const devices = await deviceService.getDevices()
+      
+      // 환자 목록 조회
+      const pets = await petService.getPets()
+
+      // 디바이스와 환자 연결
+      const devicesWithPatients = devices
+        .filter(device => device.status === 'connected' && device.connectedPatient)
+        .map(device => {
+          const patient = pets.find(p => p.id === device.connectedPatient?.id)
+          return {
+            id: device.id,
+            address: device.address,
+            name: device.name,
+            hub_address: device.hub_address,
+            hubName: device.hubName,
+            status: device.status,
+            connectedPatient: patient ? {
+              id: patient.id,
+              name: patient.name,
+              species: patient.species,
+              breed: patient.breed,
+              weight: patient.weight,
+              gender: patient.gender,
+              doctor: patient.veterinarian,
+              diagnosis: patient.diagnosis
+            } : null,
+            currentData: {
+              heartRate: 0,
+              spo2: 0,
+              temperature: 0,
+              battery: 0
+            }
+          }
+        })
+
+      setConnectedDevices(devicesWithPatients)
+    } catch (err) {
+      console.error('Failed to load data:', err)
+      setError(err.message || '데이터를 불러오는데 실패했습니다.')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const handleMonitor = (patientId) => {
     navigate(`/monitoring/${patientId}`)
   }
 
   const handleShowMore = (patientId) => {
-    const patient = dummyPatients.find(p => p.id === patientId)
-    setSelectedPatient(patient)
+    const device = connectedDevices.find(d => d.connectedPatient?.id === patientId)
+    if (device && device.connectedPatient) {
+      setSelectedPatient(device.connectedPatient)
+    }
   }
 
   const handleCloseModal = () => {
     setSelectedPatient(null)
+  }
+
+  if (loading) {
+    return (
+      <div className="dashboard-page">
+        <Header />
+        <div className="dashboard-container">
+          <div className="loading">데이터를 불러오는 중...</div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="dashboard-page">
+        <Header />
+        <div className="dashboard-container">
+          <div className="error-message">{error}</div>
+          <button onClick={loadData} className="btn-primary">다시 시도</button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -36,57 +150,57 @@ function Dashboard() {
           {connectedDevices.length > 0 ? (
             <div className="monitoring-grid">
               {connectedDevices.map(device => {
-                const patient = dummyPatients.find(p => p.id === device.connectedPatient.id)
+                const patient = device.connectedPatient
                 return (
-                <div key={device.id} className="monitoring-card">
-                  <div className="monitoring-header">
-                    <div className="patient-info-left">
-                      <div className="patient-name-row">
-                        <h3>환자명 : {device.connectedPatient.name}</h3>
-                        {patient && (
-                          <div className="patient-basic-info">
-                            <span className="info-text">{patient.weight}kg / {patient.gender}</span>
-                            <span className="info-text">주치의: {patient.doctor}</span>
-                            <span className="info-text">진단명: {patient.diagnosis}</span>
-                            <button 
-                              className="more-btn"
-                              onClick={() => handleShowMore(device.connectedPatient.id)}
-                            >
-                              더보기
-                            </button>
-                          </div>
-                        )}
+                  <div key={device.id} className="monitoring-card">
+                    <div className="monitoring-header">
+                      <div className="patient-info-left">
+                        <div className="patient-name-row">
+                          <h3>환자명 : {patient?.name || '알 수 없음'}</h3>
+                          {patient && (
+                            <div className="patient-basic-info">
+                              <span className="info-text">{patient.weight}kg / {patient.gender}</span>
+                              <span className="info-text">주치의: {patient.doctor}</span>
+                              <span className="info-text">진단명: {patient.diagnosis}</span>
+                              <button 
+                                className="more-btn"
+                                onClick={() => handleShowMore(patient.id)}
+                              >
+                                더보기
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="header-right">
+                        <span className="device-name">{device.name}</span>
+                        <button 
+                          className="monitor-btn"
+                          onClick={() => handleMonitor(patient?.id)}
+                        >
+                          모니터링하기
+                        </button>
                       </div>
                     </div>
-                    <div className="header-right">
-                      <span className="device-name">{device.name}</span>
-                      <button 
-                        className="monitor-btn"
-                        onClick={() => handleMonitor(device.connectedPatient.id)}
-                      >
-                        모니터링하기
-                      </button>
+                    <div className="monitoring-data">
+                      <div className="data-item">
+                        <span className="data-label">심박수</span>
+                        <span className="data-value">{device.currentData.heartRate} bpm</span>
+                      </div>
+                      <div className="data-item">
+                        <span className="data-label">산포도</span>
+                        <span className="data-value">{device.currentData.spo2}%</span>
+                      </div>
+                      <div className="data-item">
+                        <span className="data-label">온도</span>
+                        <span className="data-value">{device.currentData.temperature}°C</span>
+                      </div>
+                      <div className="data-item">
+                        <span className="data-label">배터리</span>
+                        <span className="data-value">{device.currentData.battery}%</span>
+                      </div>
                     </div>
                   </div>
-                  <div className="monitoring-data">
-                    <div className="data-item">
-                      <span className="data-label">심박수</span>
-                      <span className="data-value">{device.currentData.heartRate} bpm</span>
-                    </div>
-                    <div className="data-item">
-                      <span className="data-label">산포도</span>
-                      <span className="data-value">{device.currentData.spo2}%</span>
-                    </div>
-                    <div className="data-item">
-                      <span className="data-label">온도</span>
-                      <span className="data-value">{device.currentData.temperature}°C</span>
-                    </div>
-                    <div className="data-item">
-                      <span className="data-label">배터리</span>
-                      <span className="data-value">{device.currentData.battery}%</span>
-                    </div>
-                  </div>
-                </div>
                 )
               })}
             </div>
@@ -115,10 +229,6 @@ function Dashboard() {
                   <span className="detail-value">{selectedPatient.species} ({selectedPatient.breed})</span>
                 </div>
                 <div className="detail-item">
-                  <span className="detail-label">생년월일:</span>
-                  <span className="detail-value">{selectedPatient.birthDate}</span>
-                </div>
-                <div className="detail-item">
                   <span className="detail-label">체중:</span>
                   <span className="detail-value">{selectedPatient.weight} kg</span>
                 </div>
@@ -127,38 +237,12 @@ function Dashboard() {
                   <span className="detail-value">{selectedPatient.gender}</span>
                 </div>
                 <div className="detail-item">
-                  <span className="detail-label">중성화 여부:</span>
-                  <span className="detail-value">{selectedPatient.neutered ? '예' : '아니오'}</span>
-                </div>
-                <div className="detail-item">
-                  <span className="detail-label">보호자:</span>
-                  <span className="detail-value">{selectedPatient.ownerName} ({selectedPatient.ownerPhone})</span>
-                </div>
-                <div className="detail-item">
                   <span className="detail-label">담당주치의:</span>
                   <span className="detail-value">{selectedPatient.doctor}</span>
                 </div>
                 <div className="detail-item">
                   <span className="detail-label">진단명:</span>
                   <span className="detail-value">{selectedPatient.diagnosis}</span>
-                </div>
-                <div className="detail-item">
-                  <span className="detail-label">입원일:</span>
-                  <span className="detail-value">{selectedPatient.admissionDate}</span>
-                </div>
-                {selectedPatient.dischargeDate && (
-                  <div className="detail-item">
-                    <span className="detail-label">퇴원일:</span>
-                    <span className="detail-value">{selectedPatient.dischargeDate}</span>
-                  </div>
-                )}
-                <div className="detail-item">
-                  <span className="detail-label">연결된 디바이스:</span>
-                  <span className="detail-value">{selectedPatient.connectedDevice ? selectedPatient.connectedDevice.name : '없음'}</span>
-                </div>
-                <div className="detail-item full-width">
-                  <span className="detail-label">과거병력:</span>
-                  <span className="detail-value">{selectedPatient.medicalHistory || '없음'}</span>
                 </div>
               </div>
             </div>
@@ -173,4 +257,3 @@ function Dashboard() {
 }
 
 export default Dashboard
-

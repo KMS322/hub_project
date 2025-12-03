@@ -1,16 +1,45 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Header from '../components/Header'
-import { dummyRecords, dummyPatients, dummyDevices } from '../data/dummyData'
+import recordsService from '../api/recordsService'
+import petService from '../api/petService'
+import deviceService from '../api/deviceService'
 import './Records.css'
 
 function Records() {
-  const [records] = useState(dummyRecords)
+  const [records, setRecords] = useState([])
+  const [patients, setPatients] = useState([])
+  const [devices, setDevices] = useState([])
   const [sortBy, setSortBy] = useState('date') // date, patient, device
   const [selectedRecords, setSelectedRecords] = useState([])
   const [selectedDate, setSelectedDate] = useState('')
   const [selectedPatient, setSelectedPatient] = useState('')
   const [patientSearch, setPatientSearch] = useState('')
   const [selectedDevice, setSelectedDevice] = useState('')
+  const [loading, setLoading] = useState(true)
+
+  // 데이터 로드
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  const loadData = async () => {
+    try {
+      setLoading(true)
+      const [recordsData, patientsData, devicesData] = await Promise.all([
+        recordsService.getRecords(),
+        petService.getPets(),
+        deviceService.getDevices()
+      ])
+      
+      setRecords(recordsData)
+      setPatients(patientsData)
+      setDevices(devicesData)
+    } catch (error) {
+      console.error('Failed to load data:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   // 필터링 및 정렬된 레코드
   let filteredRecords = [...records]
@@ -18,45 +47,48 @@ function Records() {
   // 날짜 필터
   if (sortBy === 'date' && selectedDate) {
     filteredRecords = filteredRecords.filter(record => {
-      const recordDate = record.createdAt.split(' ')[0]
-      return recordDate === selectedDate
+      return record.date === selectedDate
     })
   }
 
   // 환자 필터
   if (sortBy === 'patient') {
     if (selectedPatient) {
-      const patient = dummyPatients.find(p => p.id === selectedPatient)
+      const patient = patients.find(p => p.id === parseInt(selectedPatient))
       if (patient) {
         filteredRecords = filteredRecords.filter(record => 
-          record.patientName === patient.name
+          record.deviceAddress === patient.device_address
         )
       }
     }
     if (patientSearch) {
+      const matchingPatients = patients.filter(p =>
+        p.name.toLowerCase().includes(patientSearch.toLowerCase())
+      )
+      const matchingDeviceAddresses = matchingPatients
+        .filter(p => p.device_address)
+        .map(p => p.device_address)
+      
       filteredRecords = filteredRecords.filter(record =>
-        record.patientName.toLowerCase().includes(patientSearch.toLowerCase())
+        matchingDeviceAddresses.includes(record.deviceAddress)
       )
     }
   }
 
   // 디바이스 필터
   if (sortBy === 'device' && selectedDevice) {
-    const device = dummyDevices.find(d => d.id === selectedDevice)
-    if (device) {
-      filteredRecords = filteredRecords.filter(record => 
-        record.deviceName === device.name
-      )
-    }
+    filteredRecords = filteredRecords.filter(record => 
+      record.deviceAddress === selectedDevice
+    )
   }
 
   // 정렬 (최신순으로 고정)
   const sortedRecords = filteredRecords.sort((a, b) => {
     let comparison = 0
     if (sortBy === 'date') {
-      comparison = new Date(a.createdAt) - new Date(b.createdAt)
+      comparison = new Date(a.date) - new Date(b.date)
     } else if (sortBy === 'patient') {
-      comparison = a.patientName.localeCompare(b.patientName)
+      comparison = a.deviceName.localeCompare(b.deviceName)
     } else if (sortBy === 'device') {
       comparison = a.deviceName.localeCompare(b.deviceName)
     }
@@ -79,19 +111,48 @@ function Records() {
     }
   }
 
-  const handleDownload = (recordId) => {
-    // 더미: 다운로드 처리
-    console.log('Download:', recordId)
+  const handleDownload = async (fileName) => {
+    try {
+      await recordsService.downloadFile(fileName)
+    } catch (error) {
+      alert('다운로드 실패: ' + (error.message || '알 수 없는 오류'))
+    }
   }
 
-  const handleDownloadSelected = () => {
-    // 더미: 선택된 파일 다운로드
-    console.log('Download selected:', selectedRecords)
+  const handleDownloadSelected = async () => {
+    try {
+      for (const recordId of selectedRecords) {
+        const record = sortedRecords.find(r => r.id === recordId)
+        if (record) {
+          await recordsService.downloadFile(record.fileName)
+        }
+      }
+      setSelectedRecords([])
+    } catch (error) {
+      alert('다운로드 실패: ' + (error.message || '알 수 없는 오류'))
+    }
   }
 
-  const handleDelete = (recordId) => {
-    // 더미: 삭제 처리
-    console.log('Delete:', recordId)
+  const handleDelete = async (fileName) => {
+    if (!confirm('이 파일을 삭제하시겠습니까?')) return
+
+    try {
+      await recordsService.deleteFile(fileName)
+      loadData()
+    } catch (error) {
+      alert('삭제 실패: ' + (error.message || '알 수 없는 오류'))
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="records-page">
+        <Header />
+        <div className="records-container">
+          <div className="loading">데이터를 불러오는 중...</div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -111,7 +172,6 @@ function Records() {
             <label>정렬 기준:</label>
             <select value={sortBy} onChange={(e) => {
               setSortBy(e.target.value)
-              // 정렬 기준 변경 시 필터 초기화
               setSelectedDate('')
               setSelectedPatient('')
               setPatientSearch('')
@@ -146,7 +206,7 @@ function Records() {
                     className="patient-select"
                   >
                     <option value="">전체</option>
-                    {dummyPatients.map(patient => (
+                    {patients.filter(p => p.device_address).map(patient => (
                       <option key={patient.id} value={patient.id}>
                         {patient.name}
                       </option>
@@ -176,8 +236,8 @@ function Records() {
                   className="device-select"
                 >
                   <option value="">전체</option>
-                  {dummyDevices.map(device => (
-                    <option key={device.id} value={device.id}>
+                  {devices.map(device => (
+                    <option key={device.address} value={device.address}>
                       {device.name}
                     </option>
                   ))}
@@ -204,6 +264,7 @@ function Records() {
                 <th>시작 시간</th>
                 <th>종료 시간</th>
                 <th>파일 크기</th>
+                <th>레코드 수</th>
                 <th>작업</th>
               </tr>
             </thead>
@@ -218,22 +279,25 @@ function Records() {
                     />
                   </td>
                   <td>{record.fileName}</td>
-                  <td>{record.patientName}</td>
+                  <td>
+                    {patients.find(p => p.device_address === record.deviceAddress)?.name || '-'}
+                  </td>
                   <td>{record.deviceName}</td>
-                  <td>{record.startDate}</td>
-                  <td>{record.endDate}</td>
+                  <td>{record.startTime ? new Date(record.startTime).toLocaleString('ko-KR') : '-'}</td>
+                  <td>{record.endTime ? new Date(record.endTime).toLocaleString('ko-KR') : '-'}</td>
                   <td>{record.fileSize}</td>
+                  <td>{record.recordCount}</td>
                   <td>
                     <div className="action-buttons">
                       <button 
                         className="btn-download"
-                        onClick={() => handleDownload(record.id)}
+                        onClick={() => handleDownload(record.fileName)}
                       >
                         다운로드
                       </button>
                       <button 
                         className="btn-delete"
-                        onClick={() => handleDelete(record.id)}
+                        onClick={() => handleDelete(record.fileName)}
                       >
                         삭제
                       </button>
@@ -254,4 +318,3 @@ function Records() {
 }
 
 export default Records
-

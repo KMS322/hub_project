@@ -127,12 +127,20 @@ const initializeDatabase = async () => {
     ];
 
     for (const petData of pets) {
+      // device_address가 빈 문자열이면 NULL로 변환 (외래 키 제약 조건 위반 방지)
+      const petDataToCreate = {
+        ...petData,
+        device_address: petData.device_address && petData.device_address.trim() !== '' 
+          ? petData.device_address 
+          : null
+      };
+      
       await db.Pet.findOrCreate({
         where: {
           name: petData.name,
           user_email: petData.user_email,
         },
-        defaults: petData,
+        defaults: petDataToCreate,
       });
     }
 

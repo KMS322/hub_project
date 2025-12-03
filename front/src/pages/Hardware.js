@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import Header from '../components/Header'
-import { dummyHubs, dummyDevices, dummyDashboardStats } from '../data/dummyData'
+import hubService from '../api/hubService'
+import deviceService from '../api/deviceService'
 import AlertModal from '../components/AlertModal'
 import ConfirmModal from '../components/ConfirmModal'
 import './Hardware.css'
@@ -10,14 +11,14 @@ function Hardware() {
   const [searchParams] = useSearchParams()
   const tabParam = searchParams.get('tab')
   const [activeTab, setActiveTab] = useState(tabParam || 'device')
-
-  useEffect(() => {
-    if (tabParam) {
-      setActiveTab(tabParam)
-    }
-  }, [tabParam])
-  const [hubs] = useState(dummyHubs)
-  const [devices] = useState(dummyDevices)
+  const [hubs, setHubs] = useState([])
+  const [devices, setDevices] = useState([])
+  const [stats, setStats] = useState({
+    totalHubs: 0,
+    totalDevices: 0,
+    connectedDevices: 0,
+    availableDevices: 0
+  })
   const [alertModal, setAlertModal] = useState({ isOpen: false, title: '', message: '' })
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null })
   const [hubRegisterModal, setHubRegisterModal] = useState({ isOpen: false })
@@ -26,33 +27,101 @@ function Hardware() {
   const [selectedDevice, setSelectedDevice] = useState(null)
   const [wifiId, setWifiId] = useState('')
   const [wifiPassword, setWifiPassword] = useState('')
+  const [loading, setLoading] = useState(true)
   
   // 디바이스 등록 모달 상태
   const [deviceRegisterModal, setDeviceRegisterModal] = useState({ isOpen: false })
   const [hubModeSwitched, setHubModeSwitched] = useState(false)
   const [scannedDevices, setScannedDevices] = useState([])
   const [isScanning, setIsScanning] = useState(false)
-  const [devicesToRegister, setDevicesToRegister] = useState({}) // { deviceId: { name: '', isRegistering: false } }
+  const [devicesToRegister, setDevicesToRegister] = useState({})
+
+  useEffect(() => {
+    if (tabParam) {
+      setActiveTab(tabParam)
+    }
+  }, [tabParam])
+
+  // 데이터 로드
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  const loadData = async () => {
+    try {
+      setLoading(true)
+      const [hubsData, devicesData] = await Promise.all([
+        hubService.getHubs(),
+        deviceService.getDevices()
+      ])
+      
+      setHubs(hubsData)
+      setDevices(devicesData)
+      
+      // 통계 계산
+      setStats({
+        totalHubs: hubsData.length,
+        totalDevices: devicesData.length,
+        connectedDevices: devicesData.filter(d => d.status === 'connected').length,
+        availableDevices: devicesData.filter(d => d.status === 'connected' && !d.connectedPatient).length
+      })
+    } catch (error) {
+      console.error('Failed to load data:', error)
+      setAlertModal({
+        isOpen: true,
+        title: '오류',
+        message: '데이터를 불러오는데 실패했습니다.'
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
 
   // 허브 관리
-  const handleHubDelete = (hubId) => {
+  const handleHubDelete = async (hubAddress) => {
     setConfirmModal({
       isOpen: true,
       title: '허브 삭제',
       message: '정말 이 허브를 삭제하시겠습니까?',
-      onConfirm: () => {
-        setAlertModal({ isOpen: true, title: '삭제 완료', message: '허브가 삭제되었습니다.' })
+      onConfirm: async () => {
+        try {
+          await hubService.deleteHub(hubAddress)
+          setAlertModal({ isOpen: true, title: '삭제 완료', message: '허브가 삭제되었습니다.' })
+          loadData()
+        } catch (error) {
+          setAlertModal({ isOpen: true, title: '오류', message: error.message || '허브 삭제에 실패했습니다.' })
+        }
       }
     })
   }
 
-  const handleHubWifiConfig = (hubId) => {
+  const handleHubWifiConfig = (hubAddress) => {
     setAlertModal({ isOpen: true, title: 'WiFi 설정', message: 'USB 연결을 통해 WiFi 설정을 진행하세요.' })
+  }
+
+  const handleHubNameChange = async (hubAddress, newName) => {
+    try {
+      await hubService.updateHub(hubAddress, { name: newName })
+      setAlertModal({ isOpen: true, title: '수정 완료', message: '허브 이름이 변경되었습니다.' })
+      loadData()
+    } catch (error) {
+      setAlertModal({ isOpen: true, title: '오류', message: error.message || '이름 변경에 실패했습니다.' })
+    }
   }
 
   // 디바이스 관리
   const handleDevicePatientChange = (deviceId) => {
-    setAlertModal({ isOpen: true, title: '환자 연결', message: '환자 연결 기능은 추후 구현됩니다.' })
+    setAlertModal({ isOpen: true, title: '환자 연결', message: '환자 연결은 환자 관리 페이지에서 진행하세요.' })
+  }
+
+  const handleDeviceNameChange = async (deviceAddress, newName) => {
+    try {
+      await deviceService.updateDevice(deviceAddress, { name: newName })
+      setAlertModal({ isOpen: true, title: '수정 완료', message: '디바이스 이름이 변경되었습니다.' })
+      loadData()
+    } catch (error) {
+      setAlertModal({ isOpen: true, title: '오류', message: error.message || '이름 변경에 실패했습니다.' })
+    }
   }
 
   // 허브 등록 모달
@@ -76,7 +145,8 @@ function Hardware() {
 
   const handleSearchDevices = () => {
     setIsSearching(true)
-    // 더미 연결 가능한 디바이스 목록 (실제로는 USB로 연결된 디바이스를 검색)
+    // 실제로는 USB로 연결된 디바이스를 검색해야 함
+    // 여기서는 더미 데이터 사용
     setTimeout(() => {
       const dummyAvailableDevices = [
         { id: 'available1', name: '새 허브 1', macAddress: 'AA:BB:CC:DD:EE:FF' },
@@ -89,30 +159,37 @@ function Hardware() {
 
   const handleSelectDevice = (device) => {
     setSelectedDevice(device)
-    // 연결 시도
-    setAlertModal({ 
-      isOpen: true, 
-      title: '연결 시도', 
-      message: `${device.name} 연결을 시도하고 있습니다...` 
-    })
   }
 
-  const handleRegisterHub = () => {
-    if (!selectedDevice || !wifiId || !wifiPassword) {
+  const handleRegisterHub = async () => {
+    if (!selectedDevice) {
       setAlertModal({ 
         isOpen: true, 
         title: '입력 오류', 
-        message: '모든 필드를 입력해주세요.' 
+        message: '허브를 선택해주세요.' 
       })
       return
     }
-    // 허브 등록 로직
-    setAlertModal({ 
-      isOpen: true, 
-      title: '등록 완료', 
-      message: '허브가 성공적으로 등록되었습니다.' 
-    })
-    handleCloseHubRegister()
+    
+    try {
+      await hubService.createHub({
+        address: selectedDevice.macAddress,
+        name: selectedDevice.name
+      })
+      setAlertModal({ 
+        isOpen: true, 
+        title: '등록 완료', 
+        message: '허브가 성공적으로 등록되었습니다.' 
+      })
+      handleCloseHubRegister()
+      loadData()
+    } catch (error) {
+      setAlertModal({ 
+        isOpen: true, 
+        title: '오류', 
+        message: error.message || '허브 등록에 실패했습니다.' 
+      })
+    }
   }
 
   // 디바이스 등록 모달
@@ -143,7 +220,8 @@ function Hardware() {
 
   const handleScanDevices = () => {
     setIsScanning(true)
-    // 더미 스캔된 디바이스 목록 (실제로는 허브가 스캔한 결과)
+    // 실제로는 허브가 스캔한 결과를 받아와야 함
+    // 여기서는 더미 데이터 사용
     setTimeout(() => {
       const dummyScannedDevices = [
         { id: 'scan1', macAddress: 'AA:BB:CC:DD:EE:01', name: '' },
@@ -155,7 +233,8 @@ function Hardware() {
     }, 1500)
   }
 
-  const handleBlinkLED = (deviceId) => {
+  const handleBlinkLED = async (deviceId) => {
+    // MQTT로 LED 깜빡임 명령 전송
     setAlertModal({ 
       isOpen: true, 
       title: 'LED 깜빡임', 
@@ -170,7 +249,7 @@ function Hardware() {
     }))
   }
 
-  const handleDeviceNameChange = (deviceId, name) => {
+  const handleDeviceRegisterNameChange = (deviceId, name) => {
     setDevicesToRegister(prev => ({
       ...prev,
       [deviceId]: { ...prev[deviceId], name }
@@ -185,7 +264,7 @@ function Hardware() {
     })
   }
 
-  const handleFinalRegister = () => {
+  const handleFinalRegister = async () => {
     const devicesWithNames = Object.entries(devicesToRegister)
       .filter(([_, data]) => data.name.trim() !== '')
     
@@ -198,13 +277,55 @@ function Hardware() {
       return
     }
 
-    // 최종 등록 로직
-    setAlertModal({ 
-      isOpen: true, 
-      title: '등록 완료', 
-      message: `${devicesWithNames.length}개의 디바이스가 성공적으로 등록되었습니다.` 
-    })
-    handleCloseDeviceRegister()
+    try {
+      // 허브 선택 (첫 번째 허브 사용)
+      const hub = hubs[0]
+      if (!hub) {
+        setAlertModal({ 
+          isOpen: true, 
+          title: '오류', 
+          message: '등록된 허브가 없습니다. 먼저 허브를 등록해주세요.' 
+        })
+        return
+      }
+
+      // 모든 디바이스 등록
+      await Promise.all(
+        devicesWithNames.map(([deviceId, data]) => {
+          const scannedDevice = scannedDevices.find(d => d.id === deviceId)
+          return deviceService.createDevice({
+            address: scannedDevice.macAddress,
+            name: data.name,
+            hubAddress: hub.address
+          })
+        })
+      )
+
+      setAlertModal({ 
+        isOpen: true, 
+        title: '등록 완료', 
+        message: `${devicesWithNames.length}개의 디바이스가 성공적으로 등록되었습니다.` 
+      })
+      handleCloseDeviceRegister()
+      loadData()
+    } catch (error) {
+      setAlertModal({ 
+        isOpen: true, 
+        title: '오류', 
+        message: error.message || '디바이스 등록에 실패했습니다.' 
+      })
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="hardware-page">
+        <Header />
+        <div className="hardware-container">
+          <div className="loading">데이터를 불러오는 중...</div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -217,19 +338,19 @@ function Hardware() {
           <div className="stats-grid">
             <div className="stat-card">
               <div className="stat-label">등록된 허브 수</div>
-              <div className="stat-value">{dummyDashboardStats.totalHubs}</div>
+              <div className="stat-value">{stats.totalHubs}</div>
             </div>
             <div className="stat-card">
               <div className="stat-label">등록된 디바이스 수</div>
-              <div className="stat-value">{dummyDashboardStats.totalDevices}</div>
+              <div className="stat-value">{stats.totalDevices}</div>
             </div>
             <div className="stat-card">
               <div className="stat-label">연결된 디바이스 수</div>
-              <div className="stat-value">{dummyDashboardStats.connectedDevices}</div>
+              <div className="stat-value">{stats.connectedDevices}</div>
             </div>
             <div className="stat-card">
               <div className="stat-label">가용중인 디바이스 수</div>
-              <div className="stat-value">{dummyDashboardStats.availableDevices}</div>
+              <div className="stat-value">{stats.availableDevices}</div>
             </div>
           </div>
         </section>
@@ -263,8 +384,8 @@ function Hardware() {
                     <h3>{hub.name}</h3>
                     <div className="hub-details">
                       <div className="detail-item">
-                        <span className="label">WiFi ID:</span>
-                        <span>{hub.wifiId}</span>
+                        <span className="label">MAC 주소:</span>
+                        <span>{hub.address}</span>
                       </div>
                       <div className="detail-item">
                         <span className="label">연결된 디바이스:</span>
@@ -272,29 +393,40 @@ function Hardware() {
                       </div>
                       <div className="detail-item">
                         <span className="label">상태:</span>
-                        <span className={hub.status === 'connected' ? 'status-connected' : 'status-disconnected'}>
-                          {hub.status === 'connected' ? '연결됨' : '연결 안됨'}
-                        </span>
+                        <span className="status-connected">연결됨</span>
                       </div>
                     </div>
                   </div>
                   <div className="hub-actions">
                     <button 
                       className="btn-secondary"
-                      onClick={() => handleHubWifiConfig(hub.id)}
+                      onClick={() => handleHubWifiConfig(hub.address)}
                     >
                       WiFi 설정
                     </button>
-                    <button className="btn-secondary">이름 변경</button>
+                    <button 
+                      className="btn-secondary"
+                      onClick={() => {
+                        const newName = prompt('새 이름을 입력하세요:', hub.name)
+                        if (newName && newName !== hub.name) {
+                          handleHubNameChange(hub.address, newName)
+                        }
+                      }}
+                    >
+                      이름 변경
+                    </button>
                     <button 
                       className="btn-danger"
-                      onClick={() => handleHubDelete(hub.id)}
+                      onClick={() => handleHubDelete(hub.address)}
                     >
                       삭제
                     </button>
                   </div>
                 </div>
               ))}
+              {hubs.length === 0 && (
+                <div className="no-data">등록된 허브가 없습니다.</div>
+              )}
             </div>
           </div>
         )}
@@ -319,15 +451,11 @@ function Hardware() {
                     <div className="device-details">
                       <div className="detail-item">
                         <span className="label">MAC 주소:</span>
-                        <span>{device.macAddress}</span>
+                        <span>{device.address}</span>
                       </div>
                       <div className="detail-item">
                         <span className="label">허브:</span>
                         <span>{device.hubName}</span>
-                      </div>
-                      <div className="detail-item">
-                        <span className="label">배터리:</span>
-                        <span>{device.battery}%</span>
                       </div>
                       <div className="detail-item">
                         <span className="label">상태:</span>
@@ -342,7 +470,17 @@ function Hardware() {
                     </div>
                   </div>
                   <div className="device-actions">
-                    <button className="btn-secondary">이름 변경</button>
+                    <button 
+                      className="btn-secondary"
+                      onClick={() => {
+                        const newName = prompt('새 이름을 입력하세요:', device.name)
+                        if (newName && newName !== device.name) {
+                          handleDeviceNameChange(device.address, newName)
+                        }
+                      }}
+                    >
+                      이름 변경
+                    </button>
                     <button 
                       className="btn-primary"
                       onClick={() => handleDevicePatientChange(device.id)}
@@ -352,6 +490,9 @@ function Hardware() {
                   </div>
                 </div>
               ))}
+              {devices.length === 0 && (
+                <div className="no-data">등록된 디바이스가 없습니다.</div>
+              )}
             </div>
           </div>
         )}
@@ -425,29 +566,30 @@ function Hardware() {
 
                 {selectedDevice && (
                   <div className="wifi-form-section">
-                    <h4>WiFi 설정</h4>
+                    <h4>허브 정보</h4>
                     <div className="form-group">
-                      <label htmlFor="wifi-id">WiFi ID</label>
+                      <label htmlFor="hub-name">허브 이름</label>
                       <input
-                        id="wifi-id"
+                        id="hub-name"
                         type="text"
-                        value={wifiId}
-                        onChange={(e) => setWifiId(e.target.value)}
-                        placeholder="WiFi ID를 입력하세요"
+                        value={selectedDevice.name}
+                        readOnly
                         className="form-input"
                       />
                     </div>
                     <div className="form-group">
-                      <label htmlFor="wifi-password">WiFi 비밀번호</label>
+                      <label htmlFor="hub-mac">MAC 주소</label>
                       <input
-                        id="wifi-password"
-                        type="password"
-                        value={wifiPassword}
-                        onChange={(e) => setWifiPassword(e.target.value)}
-                        placeholder="WiFi 비밀번호를 입력하세요"
+                        id="hub-mac"
+                        type="text"
+                        value={selectedDevice.macAddress}
+                        readOnly
                         className="form-input"
                       />
                     </div>
+                    <p style={{ color: '#aaa', fontSize: '12px', marginTop: '10px' }}>
+                      WiFi 설정은 USB 연결 후 허브에서 직접 설정하세요.
+                    </p>
                   </div>
                 )}
               </div>
@@ -457,7 +599,7 @@ function Hardware() {
               <button 
                 onClick={handleRegisterHub} 
                 className="btn-primary"
-                disabled={!selectedDevice || !wifiId || !wifiPassword}
+                disabled={!selectedDevice}
               >
                 등록
               </button>
@@ -541,7 +683,7 @@ function Hardware() {
                                     <input
                                       type="text"
                                       value={deviceName}
-                                      onChange={(e) => handleDeviceNameChange(device.id, e.target.value)}
+                                      onChange={(e) => handleDeviceRegisterNameChange(device.id, e.target.value)}
                                       placeholder="디바이스명을 입력하세요"
                                       className="form-input device-name-input"
                                     />
@@ -585,4 +727,3 @@ function Hardware() {
 }
 
 export default Hardware
-

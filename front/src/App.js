@@ -9,6 +9,7 @@ import Records from './pages/Records'
 import Profile from './pages/Profile'
 import Monitoring from './pages/Monitoring'
 import Guide from './pages/Guide'
+import TelemetryTest from './pages/TelemetryTest'
 import './App.css'
 
 function App() {
@@ -47,6 +48,10 @@ function App() {
           <Route 
             path="/guide" 
             element={<Guide />} 
+          />
+          <Route
+            path="/telemetry-test"
+            element={isAuthenticated ? <TelemetryTest /> : <Navigate to="/login" />}
           />
           <Route path="/" element={<Navigate to="/dashboard" />} />
         </Routes>

@@ -1,80 +1,205 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
-import { dummyPatients, dummyDevices } from '../data/dummyData'
+import { useSocket } from '../hooks/useSocket'
+import { API_URL } from '../constants'
 import './Monitoring.css'
 
 function Monitoring() {
   const { patientId } = useParams()
   const navigate = useNavigate()
+  const { isConnected, on, emit, off } = useSocket()
   const [activeTab, setActiveTab] = useState('ir') // ir, heartRate, spo2, temperature
   const [chartData, setChartData] = useState([])
   const [selectedPatient, setSelectedPatient] = useState(null)
+  const [currentValues, setCurrentValues] = useState({
+    heartRate: 0,
+    spo2: 0,
+    temperature: 0,
+    battery: 0
+  })
+  const [deviceInfo, setDeviceInfo] = useState(null)
+  const chartDataRef = useRef([])
 
-  // 환자 정보 찾기
-  const patient = dummyPatients.find(p => p.id === patientId)
-  const device = dummyDevices.find(d => d.connectedPatient?.id === patientId)
-
-  // 더미 시계열 데이터 생성
+  // Socket.IO 이벤트 리스너 설정
   useEffect(() => {
-    if (!device) return
-
-    const generateDummyData = () => {
-      const data = []
-      const now = Date.now()
-      const interval = 1000 // 1초 간격
-      const count = 60 // 최근 60개 데이터
-
-      for (let i = count - 1; i >= 0; i--) {
-        const timestamp = now - (i * interval)
-        const baseValue = {
-          ir: 50000 + Math.random() * 10000,
-          heartRate: device.currentData.heartRate + (Math.random() - 0.5) * 20,
-          spo2: device.currentData.spo2 + (Math.random() - 0.5) * 2,
-          temperature: device.currentData.temperature + (Math.random() - 0.5) * 0.5
-        }
-
-        data.push({
-          timestamp,
-          time: new Date(timestamp).toLocaleTimeString('ko-KR'),
-          ...baseValue
-        })
-      }
-      setChartData(data)
+    if (!isConnected) {
+      console.log('[Monitoring] Socket not connected yet');
+      return;
     }
 
-    generateDummyData()
-    // 실시간 업데이트 시뮬레이션 (1초마다)
-    const interval = setInterval(() => {
-      generateDummyData()
-    }, 1000)
+    console.log('[Monitoring] Setting up Socket.IO listeners');
 
-    return () => clearInterval(interval)
-  }, [device])
+    // TELEMETRY 데이터 수신
+    const handleTelemetry = (data) => {
+      console.log('[Monitoring] Received TELEMETRY:', data);
+      
+      if (data.type === 'sensor_data' && data.deviceId) {
+        // dataArr가 있는 경우 (배치 데이터)
+        if (data.data?.dataArr && Array.isArray(data.data.dataArr)) {
+          const newData = data.data.dataArr.map(sample => ({
+            timestamp: data.data.timestamp || Date.now(),
+            time: new Date(data.data.timestamp || Date.now()).toLocaleTimeString('ko-KR'),
+            ir: sample.ir || 0,
+            heartRate: sample.hr || 0,
+            spo2: sample.spo2 || 0,
+            temperature: sample.temp || 0,
+            battery: sample.battery || 0
+          }));
 
-  if (!patient || !device) {
-    return (
-      <div className="monitoring-page">
-        <Header />
-        <div className="monitoring-container">
-          <div className="error-message">환자 정보를 찾을 수 없습니다.</div>
-          <button onClick={() => navigate('/dashboard')} className="btn-primary">
-            대시보드로 돌아가기
-          </button>
-        </div>
-      </div>
-    )
-  }
+          // 최신 데이터로 현재 값 업데이트
+          if (newData.length > 0) {
+            const latest = newData[newData.length - 1];
+            setCurrentValues({
+              heartRate: latest.heartRate,
+              spo2: latest.spo2,
+              temperature: latest.temperature,
+              battery: latest.battery
+            });
+          }
+
+          // 차트 데이터에 추가 (최근 60개만 유지)
+          setChartData(prev => {
+            const updated = [...prev, ...newData];
+            return updated.slice(-60); // 최근 60개만 유지
+          });
+        } else {
+          // 단일 샘플인 경우
+          const sample = {
+            timestamp: data.data?.timestamp || Date.now(),
+            time: new Date(data.data?.timestamp || Date.now()).toLocaleTimeString('ko-KR'),
+            ir: data.data?.ir || 0,
+            heartRate: data.data?.hr || 0,
+            spo2: data.data?.spo2 || 0,
+            temperature: data.data?.temp || 0,
+            battery: data.data?.battery || 0
+          };
+
+          setCurrentValues({
+            heartRate: sample.heartRate,
+            spo2: sample.spo2,
+            temperature: sample.temperature,
+            battery: sample.battery
+          });
+
+          setChartData(prev => {
+            const updated = [...prev, sample];
+            return updated.slice(-60);
+          });
+        }
+      }
+    };
+
+    // DEVICE_STATUS 수신
+    const handleDeviceStatus = (data) => {
+      console.log('[Monitoring] Received DEVICE_STATUS:', data);
+      setDeviceInfo(data);
+    };
+
+    // CONTROL_RESULT 수신 (명령 실행 결과)
+    const handleControlResult = (data) => {
+      console.log('[Monitoring] Received CONTROL_RESULT:', data);
+      if (data.success) {
+        alert('명령이 성공적으로 실행되었습니다.');
+      } else {
+        alert(`명령 실행 실패: ${data.error || '알 수 없는 오류'}`);
+      }
+    };
+
+    // 이벤트 리스너 등록
+    on('TELEMETRY', handleTelemetry);
+    on('DEVICE_STATUS', handleDeviceStatus);
+    on('CONTROL_RESULT', handleControlResult);
+
+    // 디바이스 상태 조회 요청
+    if (patientId) {
+      // TODO: patientId로 deviceId를 찾아야 함
+      // 임시로 더미 deviceId 사용
+      emit('GET_DEVICE_STATUS', { deviceId: patientId });
+    }
+
+    // 정리 함수
+    return () => {
+      off('TELEMETRY', handleTelemetry);
+      off('DEVICE_STATUS', handleDeviceStatus);
+      off('CONTROL_RESULT', handleControlResult);
+    };
+  }, [isConnected, patientId, on, emit, off]);
+
+  // 초기 더미 데이터 생성 (Socket 연결 전까지)
+  useEffect(() => {
+    if (chartData.length === 0 && !isConnected) {
+      const generateInitialData = () => {
+        const data = []
+        const now = Date.now()
+        const interval = 1000
+        const count = 60
+
+        for (let i = count - 1; i >= 0; i--) {
+          const timestamp = now - (i * interval)
+          data.push({
+            timestamp,
+            time: new Date(timestamp).toLocaleTimeString('ko-KR'),
+            ir: 50000 + Math.random() * 10000,
+            heartRate: 80 + (Math.random() - 0.5) * 20,
+            spo2: 98 + (Math.random() - 0.5) * 2,
+            temperature: 38.0 + (Math.random() - 0.5) * 0.5,
+            battery: 85
+          })
+        }
+        setChartData(data)
+        if (data.length > 0) {
+          const latest = data[data.length - 1]
+          setCurrentValues({
+            heartRate: latest.heartRate,
+            spo2: latest.spo2,
+            temperature: latest.temperature,
+            battery: latest.battery
+          })
+        }
+      }
+
+      generateInitialData()
+    }
+  }, [isConnected, chartData.length])
+
+  // 디바이스 제어 함수
+  const sendControlCommand = (command) => {
+    if (!isConnected) {
+      alert('Socket이 연결되지 않았습니다.');
+      return;
+    }
+
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // TODO: 실제 hubId와 deviceId를 가져와야 함
+    emit('CONTROL_REQUEST', {
+      hubId: 'AA:BB:CC:DD:EE:01', // 임시 값
+      deviceId: patientId || 'AA:BB:CC:DD:EE:FF', // 임시 값
+      command,
+      requestId
+    });
+  };
 
   const getChartData = () => {
     return chartData.map(d => ({
       time: d.time,
-      value: d[activeTab]
+      value: d[activeTab] || 0
     }))
   }
 
   const handleShowMore = () => {
-    setSelectedPatient(patient)
+    // TODO: 실제 환자 데이터 가져오기
+    setSelectedPatient({
+      name: '환자명',
+      species: '강아지',
+      breed: '포메라니안',
+      weight: '3.5kg',
+      gender: '수컷',
+      neutered: true,
+      doctor: '김수의사',
+      diagnosis: '건강함'
+    })
   }
 
   const handleCloseModal = () => {
@@ -85,16 +210,24 @@ function Monitoring() {
     <div className="monitoring-page">
       <Header />
       <div className="monitoring-container">
+        {/* 연결 상태 표시 */}
+        <div className="connection-status" style={{ 
+          padding: '10px', 
+          marginBottom: '10px',
+          backgroundColor: isConnected ? '#d4edda' : '#f8d7da',
+          color: isConnected ? '#155724' : '#721c24',
+          borderRadius: '4px',
+          textAlign: 'center'
+        }}>
+          {isConnected ? '🟢 실시간 연결됨' : '🔴 연결 안 됨'}
+        </div>
+
         {/* 환자 정보 */}
         <section className="patient-info-section">
           <div className="patient-info-row">
             <div className="patient-info-left">
-              <h3 className="patient-name">환자명: {patient.name}</h3>
+              <h3 className="patient-name">환자 ID: {patientId}</h3>
               <div className="patient-info-items">
-                <span className="info-text">{patient.species} ({patient.breed})</span>
-                <span className="info-text">{patient.weight}kg / {patient.gender}</span>
-                <span className="info-text">주치의: {patient.doctor}</span>
-                <span className="info-text">진단명: {patient.diagnosis}</span>
                 <button 
                   className="more-btn"
                   onClick={handleShowMore}
@@ -104,7 +237,7 @@ function Monitoring() {
               </div>
             </div>
             <div className="device-name-right">
-              {device.name}
+              {deviceInfo?.name || '디바이스 연결 중...'}
             </div>
           </div>
           <div className="current-values-row">
@@ -112,29 +245,54 @@ function Monitoring() {
               <span className="current-value-item-inline">
                 <span className="current-value-label-inline">심박수:</span>
                 <span className="current-value-value-inline">
-                  {chartData.length > 0 ? Math.round(chartData[chartData.length - 1].heartRate) : 0} bpm
+                  {Math.round(currentValues.heartRate)} bpm
                 </span>
               </span>
               <span className="current-value-item-inline">
                 <span className="current-value-label-inline">산포도:</span>
                 <span className="current-value-value-inline">
-                  {chartData.length > 0 ? Math.round(chartData[chartData.length - 1].spo2) : 0}%
+                  {Math.round(currentValues.spo2)}%
                 </span>
               </span>
               <span className="current-value-item-inline">
                 <span className="current-value-label-inline">온도:</span>
                 <span className="current-value-value-inline">
-                  {chartData.length > 0 ? chartData[chartData.length - 1].temperature.toFixed(1) : 0}°C
+                  {currentValues.temperature.toFixed(1)}°C
                 </span>
               </span>
             </div>
             <div className="battery-right">
               <span className="current-value-label-inline">배터리:</span>
               <span className="current-value-value-inline">
-                {device.currentData.battery}%
+                {currentValues.battery}%
               </span>
             </div>
           </div>
+        </section>
+
+        {/* 제어 버튼 */}
+        <section style={{ marginBottom: '20px', display: 'flex', gap: '10px' }}>
+          <button 
+            className="btn-primary"
+            onClick={() => sendControlCommand({ action: 'start_measurement' })}
+            disabled={!isConnected}
+          >
+            측정 시작
+          </button>
+          <button 
+            className="btn-secondary"
+            onClick={() => sendControlCommand({ action: 'stop_measurement' })}
+            disabled={!isConnected}
+          >
+            측정 정지
+          </button>
+          <button 
+            className="btn-secondary"
+            onClick={() => sendControlCommand({ action: 'led_blink' })}
+            disabled={!isConnected}
+          >
+            LED 깜빡임
+          </button>
         </section>
 
         {/* 차트 섹션 */}
@@ -176,9 +334,8 @@ function Monitoring() {
               </h3>
             </div>
             <div className="chart-area">
-              {/* 간단한 차트 시각화 (나중에 차트 라이브러리로 교체 가능) */}
               <svg className="chart-svg" viewBox="0 0 800 300" preserveAspectRatio="none">
-                {getChartData().length > 1 && (
+                {getChartData().length > 1 && ((
                   <polyline
                     fill="none"
                     stroke="#3498db"
@@ -192,7 +349,7 @@ function Monitoring() {
                       return `${x},${y}`
                     }).join(' ')}
                   />
-                )}
+                ))}
               </svg>
               <div className="chart-labels">
                 {getChartData().filter((_, i) => i % 10 === 0).map((d, i) => (
@@ -220,60 +377,12 @@ function Monitoring() {
             </div>
             <div className="modal-body">
               <div className="patient-detail-grid">
-                <div className="detail-item">
-                  <span className="detail-label">이름:</span>
-                  <span className="detail-value">{selectedPatient.name}</span>
-                </div>
-                <div className="detail-item">
-                  <span className="detail-label">종류:</span>
-                  <span className="detail-value">{selectedPatient.species} ({selectedPatient.breed})</span>
-                </div>
-                <div className="detail-item">
-                  <span className="detail-label">생년월일:</span>
-                  <span className="detail-value">{selectedPatient.birthDate}</span>
-                </div>
-                <div className="detail-item">
-                  <span className="detail-label">체중:</span>
-                  <span className="detail-value">{selectedPatient.weight} kg</span>
-                </div>
-                <div className="detail-item">
-                  <span className="detail-label">성별:</span>
-                  <span className="detail-value">{selectedPatient.gender}</span>
-                </div>
-                <div className="detail-item">
-                  <span className="detail-label">중성화 여부:</span>
-                  <span className="detail-value">{selectedPatient.neutered ? '예' : '아니오'}</span>
-                </div>
-                <div className="detail-item">
-                  <span className="detail-label">보호자:</span>
-                  <span className="detail-value">{selectedPatient.ownerName} ({selectedPatient.ownerPhone})</span>
-                </div>
-                <div className="detail-item">
-                  <span className="detail-label">담당주치의:</span>
-                  <span className="detail-value">{selectedPatient.doctor}</span>
-                </div>
-                <div className="detail-item">
-                  <span className="detail-label">진단명:</span>
-                  <span className="detail-value">{selectedPatient.diagnosis}</span>
-                </div>
-                <div className="detail-item">
-                  <span className="detail-label">입원일:</span>
-                  <span className="detail-value">{selectedPatient.admissionDate}</span>
-                </div>
-                {selectedPatient.dischargeDate && (
-                  <div className="detail-item">
-                    <span className="detail-label">퇴원일:</span>
-                    <span className="detail-value">{selectedPatient.dischargeDate}</span>
+                {Object.entries(selectedPatient).map(([key, value]) => (
+                  <div key={key} className="detail-item">
+                    <span className="detail-label">{key}:</span>
+                    <span className="detail-value">{String(value)}</span>
                   </div>
-                )}
-                <div className="detail-item">
-                  <span className="detail-label">연결된 디바이스:</span>
-                  <span className="detail-value">{selectedPatient.connectedDevice ? selectedPatient.connectedDevice.name : '없음'}</span>
-                </div>
-                <div className="detail-item full-width">
-                  <span className="detail-label">과거병력:</span>
-                  <span className="detail-value">{selectedPatient.medicalHistory || '없음'}</span>
-                </div>
+                ))}
               </div>
             </div>
             <div className="modal-footer">
@@ -287,4 +396,3 @@ function Monitoring() {
 }
 
 export default Monitoring
-
