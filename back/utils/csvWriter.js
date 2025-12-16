@@ -9,7 +9,9 @@ class CSVWriter {
   constructor(baseDir = 'data/csv') {
     this.baseDir = baseDir;
     this.fileHandles = new Map(); // 디바이스별 파일 핸들
-    this.csvHeaders = 'device_mac_address,timestamp,starttime,ir,red,green,spo2,hr,temp,battery\n';
+    // CSV 헤더: time,ir,red,green,hr,spo2,temp 순서 (요구사항에 맞춤)
+    // 주의: hr, spo2는 장치에서 전달된 원본 값 (신호처리 결과 아님)
+    this.csvHeaders = 'time,ir,red,green,hr,spo2,temp\n';
     
     // CSV 디렉토리 생성
     this.ensureDirectoryExists();
@@ -56,16 +58,13 @@ class CSVWriter {
    */
   formatCSVRow(data) {
     const {
-      device_mac_address,
-      timestamp,
-      starttime,
+      time,
       ir,
       red,
       green,
-      spo2,
       hr,
-      temp,
-      battery
+      spo2,
+      temp
     } = data;
 
     // CSV 이스케이프 처리 (쉼표, 따옴표 등)
@@ -78,32 +77,32 @@ class CSVWriter {
       return str;
     };
 
+    // CSV 헤더 순서: time,ir,red,green,hr,spo2,temp
     return [
-      escapeCSV(device_mac_address),
-      escapeCSV(timestamp),
-      escapeCSV(starttime || ''),
+      escapeCSV(time),
       escapeCSV(ir),
       escapeCSV(red),
       escapeCSV(green),
-      escapeCSV(spo2),
       escapeCSV(hr),
-      escapeCSV(temp),
-      escapeCSV(battery)
+      escapeCSV(spo2),
+      escapeCSV(temp)
     ].join(',') + '\n';
   }
 
   /**
    * 단일 데이터를 CSV 파일에 추가
    * @param {Object} data - 저장할 데이터
+   * @param {string} deviceAddress - 디바이스 MAC 주소 (옵션, data에서 추출 시도)
    */
-  appendData(data) {
-    const { device_mac_address } = data;
-    if (!device_mac_address) {
-      console.warn('[CSV Writer] device_mac_address is required');
+  appendData(data, deviceAddress = null) {
+    // deviceAddress가 없으면 data에서 추출 시도
+    const deviceAddr = deviceAddress || data.device_mac_address;
+    if (!deviceAddr) {
+      console.warn('[CSV Writer] device address is required');
       return;
     }
 
-    const filePath = this.getFilePath(device_mac_address);
+    const filePath = this.getFilePath(deviceAddr);
     
     // 파일이 없으면 헤더 작성
     this.initializeFile(filePath);
@@ -122,8 +121,9 @@ class CSVWriter {
   /**
    * 배치 데이터를 CSV 파일에 추가
    * @param {Array} dataArray - 저장할 데이터 배열
+   * @param {string} deviceAddress - 디바이스 MAC 주소 (옵션, 각 레코드에서 추출)
    */
-  appendBatch(dataArray) {
+  appendBatch(dataArray, deviceAddress = null) {
     if (!Array.isArray(dataArray) || dataArray.length === 0) {
       return;
     }
@@ -132,18 +132,19 @@ class CSVWriter {
     const deviceGroups = new Map();
     
     for (const data of dataArray) {
-      const { device_mac_address } = data;
-      if (!device_mac_address) continue;
+      // deviceAddress가 제공되면 사용, 없으면 data에서 추출 시도
+      const deviceAddr = deviceAddress || data.device_mac_address;
+      if (!deviceAddr) continue;
 
-      if (!deviceGroups.has(device_mac_address)) {
-        deviceGroups.set(device_mac_address, []);
+      if (!deviceGroups.has(deviceAddr)) {
+        deviceGroups.set(deviceAddr, []);
       }
-      deviceGroups.get(device_mac_address).push(data);
+      deviceGroups.get(deviceAddr).push(data);
     }
 
     // 디바이스별로 파일에 저장
-    for (const [deviceAddress, records] of deviceGroups.entries()) {
-      const filePath = this.getFilePath(deviceAddress);
+    for (const [deviceAddr, records] of deviceGroups.entries()) {
+      const filePath = this.getFilePath(deviceAddr);
       
       // 파일이 없으면 헤더 작성
       this.initializeFile(filePath);

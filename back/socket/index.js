@@ -57,22 +57,18 @@ module.exports = (io) => {
       try {
         const { hubId, deviceId, command, requestId } = data;
 
+        console.log(`[Socket] 📥 Received CONTROL_REQUEST:`, {
+          hubId,
+          deviceId,
+          command: JSON.stringify(command),
+          requestId
+        });
+
         if (!hubId || !deviceId || !command) {
           socket.emit("CONTROL_RESULT", {
             requestId: requestId || `req_${Date.now()}`,
             success: false,
             error: "hubId, deviceId, command는 필수입니다.",
-          });
-          return;
-        }
-
-        // MQTT 서비스 가져오기 (io 인스턴스에서)
-        const mqttService = io.mqttService;
-        if (!mqttService || !mqttService.isConnected()) {
-          socket.emit("CONTROL_RESULT", {
-            requestId: requestId || `req_${Date.now()}`,
-            success: false,
-            error: "MQTT 서비스가 연결되지 않았습니다.",
           });
           return;
         }
@@ -86,24 +82,96 @@ module.exports = (io) => {
           timestamp: new Date().toISOString(),
         });
 
-        // MQTT로 허브에 명령 전송
+        // MQTT 서비스 가져오기 (io 인스턴스에서)
+        const mqttService = io.mqttService;
+        if (!mqttService || !mqttService.isConnected()) {
+          socket.emit("CONTROL_RESULT", {
+            requestId: requestId || `req_${Date.now()}`,
+            hubId,
+            deviceId,
+            success: false,
+            error: "MQTT 서비스가 연결되지 않았습니다.",
+            timestamp: new Date().toISOString(),
+          });
+          return;
+        }
+
+        // connect:devices → hub/{hubId}/receive 에 문자열로 전송
+        if (command.action === 'connect_devices') {
+          const topic = `hub/${hubId}/receive`;
+          const payload = 'connect:devices';
+          console.log(`[Socket] 📤 Sending MQTT connect:devices to ${topic}`);
+          const success = mqttService.publish(topic, payload, { qos: 1, retain: false });
+
+          if (!success) {
+            socket.emit("CONTROL_RESULT", {
+              requestId: requestId || `req_${Date.now()}`,
+              hubId,
+              deviceId,
+              success: false,
+              error: 'MQTT publish 실패(connect:devices)',
+              timestamp: new Date().toISOString(),
+            });
+          } else {
+            socket.emit("CONTROL_RESULT", {
+              requestId: requestId || `req_${Date.now()}`,
+              hubId,
+              deviceId,
+              success: true,
+              data: { command },
+              timestamp: new Date().toISOString(),
+            });
+          }
+          return;
+        }
+
+        // blink:device_mac_address → hub/{hubId}/receive 에 문자열로 전송
+        if (command.action === 'blink' && command.mac_address) {
+          const topic = `hub/${hubId}/receive`;
+          const payload = `blink:${command.mac_address}`;
+          console.log(`[Socket] 📤 Sending MQTT blink to ${topic}: ${payload}`);
+          const success = mqttService.publish(topic, payload, { qos: 1, retain: false });
+
+          if (!success) {
+            socket.emit("CONTROL_RESULT", {
+              requestId: requestId || `req_${Date.now()}`,
+              hubId,
+              deviceId,
+              success: false,
+              error: 'MQTT publish 실패(blink)',
+              timestamp: new Date().toISOString(),
+            });
+          } else {
+            socket.emit("CONTROL_RESULT", {
+              requestId: requestId || `req_${Date.now()}`,
+              hubId,
+              deviceId,
+              success: true,
+              data: { command },
+              timestamp: new Date().toISOString(),
+            });
+          }
+          return;
+        }
+
+        // 그 외 일반 MQTT 명령인 경우 기존 sendCommand 로 처리
+        console.log(`[Socket] 📤 Sending MQTT command to hub ${hubId} device ${deviceId}:`, command);
         try {
           const response = await mqttService.sendCommand(
             hubId,
             deviceId,
             command,
-            200 // 0.2초 타임아웃
+            2000 // 2초 타임아웃 (200ms에서 증가)
           );
 
           // CONTROL_RESULT는 MQTT 응답 핸들러에서 자동으로 전송됨
           console.log(
-            `[Socket] Command sent to hub ${hubId} device ${deviceId}:`,
-            command
+            `[Socket] ✅ Command sent successfully to hub ${hubId} device ${deviceId}`
           );
         } catch (error) {
           console.error(
-            `[Socket] Failed to send command to hub ${hubId} device ${deviceId}:`,
-            error
+            `[Socket] ❌ Failed to send command to hub ${hubId} device ${deviceId}:`,
+            error.message
           );
           socket.emit("CONTROL_RESULT", {
             requestId: requestId || `req_${Date.now()}`,

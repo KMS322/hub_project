@@ -67,6 +67,16 @@ const recordsService = {
    */
   deleteFile: async (fileName) => {
     await axiosInstance.delete(`/records/${fileName}`);
+  },
+
+  /**
+   * 새 CSV 파일 내용 조회 (csv_files 기반, 그래프용)
+   * @param {Object} params - { user_email, date, device_mac_address, pet_name, start_time }
+   * @returns {Promise<Array<{ time, ir, red, green, hr, spo2, temp }>>}
+   */
+  getCsvContent: async (params) => {
+    const response = await axiosInstance.get('/records/csv-content', { params });
+    return response.data.data || [];
   }
 };
 

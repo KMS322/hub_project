@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
+import HardwareAlertBar from '../components/HardwareAlertBar'
 import { useSocket } from '../hooks/useSocket'
 import { API_URL } from '../constants'
+import { detectHardwareError } from '../utils/hardwareErrorDetector'
 import './Monitoring.css'
 
 function Monitoring() {
@@ -19,7 +21,21 @@ function Monitoring() {
     battery: 0
   })
   const [deviceInfo, setDeviceInfo] = useState(null)
+  const [isMeasurementRunning, setIsMeasurementRunning] = useState(false)
+  const [hardwareAlerts, setHardwareAlerts] = useState([])
+  const [signalProcessingStatus, setSignalProcessingStatus] = useState({
+    processedHR: null,
+    originalHR: null,
+    sqi: 0,
+    pi: 0,
+    status: 'idle',
+    message: '신호처리 대기 중'
+  })
+  const [isErrorSimulationActive, setIsErrorSimulationActive] = useState(false)
+  const [simulatedError, setSimulatedError] = useState(null) // null 또는 { code, type, message }
   const chartDataRef = useRef([])
+  const simulationIntervalRef = useRef(null)
+  const errorDurationRef = useRef(null)
 
   // Socket.IO 이벤트 리스너 설정
   useEffect(() => {
@@ -35,13 +51,28 @@ function Monitoring() {
       console.log('[Monitoring] Received TELEMETRY:', data);
       
       if (data.type === 'sensor_data' && data.deviceId) {
+        // 신호처리 결과 확인
+        if (data.data?.processedHR !== undefined) {
+          // 신호처리된 HR 사용
+          setSignalProcessingStatus({
+            processedHR: data.data.processedHR,
+            originalHR: data.data.originalHR || null,
+            sqi: data.data.sqi || 0,
+            pi: data.data.pi || 0,
+            status: data.data.status || 'normal',
+            message: data.data.statusMessage || '정상 측정'
+          });
+        }
+
         // dataArr가 있는 경우 (배치 데이터)
         if (data.data?.dataArr && Array.isArray(data.data.dataArr)) {
           const newData = data.data.dataArr.map(sample => ({
             timestamp: data.data.timestamp || Date.now(),
             time: new Date(data.data.timestamp || Date.now()).toLocaleTimeString('ko-KR'),
             ir: sample.ir || 0,
-            heartRate: sample.hr || 0,
+            heartRate: data.data.processedHR !== undefined && data.data.processedHR !== null 
+              ? data.data.processedHR 
+              : (sample.hr || 0), // 신호처리된 HR 우선 사용
             spo2: sample.spo2 || 0,
             temperature: sample.temp || 0,
             battery: sample.battery || 0
@@ -50,12 +81,31 @@ function Monitoring() {
           // 최신 데이터로 현재 값 업데이트
           if (newData.length > 0) {
             const latest = newData[newData.length - 1];
-            setCurrentValues({
-              heartRate: latest.heartRate,
-              spo2: latest.spo2,
-              temperature: latest.temperature,
-              battery: latest.battery
-            });
+          setCurrentValues({
+            heartRate: latest.heartRate,
+            spo2: latest.spo2,
+            temperature: latest.temperature,
+            battery: latest.battery
+          });
+
+          // 시뮬레이션된 오류가 있으면 그것을 우선 사용, 없으면 실제 데이터에서 감지
+          // 신호처리된 HR이 있으면 그것을 사용
+          const hrForErrorDetection = data.data.processedHR !== undefined && data.data.processedHR !== null
+            ? data.data.processedHR
+            : latest.heartRate;
+          const error = simulatedError || detectHardwareError(hrForErrorDetection);
+          if (error) {
+            setHardwareAlerts([{
+              id: `alert-${data.deviceId}-${error.code}`,
+              deviceId: data.deviceId,
+              deviceName: deviceInfo?.name || data.deviceId,
+              deviceAddress: data.deviceId,
+              ...error,
+              timestamp: Date.now()
+            }]);
+          } else {
+            setHardwareAlerts([]);
+          }
           }
 
           // 차트 데이터에 추가 (최근 60개만 유지)
@@ -82,6 +132,21 @@ function Monitoring() {
             battery: sample.battery
           });
 
+          // 시뮬레이션된 오류가 있으면 그것을 우선 사용, 없으면 실제 데이터에서 감지
+          const error = simulatedError || detectHardwareError(sample.heartRate);
+          if (error) {
+            setHardwareAlerts([{
+              id: `alert-${data.deviceId}-${error.code}`,
+              deviceId: data.deviceId,
+              deviceName: deviceInfo?.name || data.deviceId,
+              deviceAddress: data.deviceId,
+              ...error,
+              timestamp: Date.now()
+            }]);
+          } else {
+            setHardwareAlerts([]);
+          }
+
           setChartData(prev => {
             const updated = [...prev, sample];
             return updated.slice(-60);
@@ -99,10 +164,49 @@ function Monitoring() {
     // CONTROL_RESULT 수신 (명령 실행 결과)
     const handleControlResult = (data) => {
       console.log('[Monitoring] Received CONTROL_RESULT:', data);
+      
+      // 현재 경로가 Monitoring 페이지인지 확인
+      const currentPath = window.location.pathname;
+      if (!currentPath.includes('/monitoring/')) {
+        // Monitoring 페이지가 아니면 무시
+        console.log('[Monitoring] Ignoring CONTROL_RESULT (not on monitoring page)');
+        return;
+      }
+      
       if (data.success) {
-        alert('명령이 성공적으로 실행되었습니다.');
+        const command = data.data?.command || data.command || {};
+        console.log('[Monitoring] Command result success, command:', command);
+        
+        if (command.action === 'start_telemetry_test') {
+          setIsMeasurementRunning(true);
+          alert('측정이 시작되었습니다.');
+        } else if (command.action === 'stop_telemetry_test') {
+          setIsMeasurementRunning(false);
+          // 상태 확인 함수를 즉시 호출하여 상태 동기화
+          setTimeout(async () => {
+            try {
+              const response = await fetch('http://localhost:3001/api/telemetry-test/status');
+              const result = await response.json();
+              if (result.success) {
+                setIsMeasurementRunning(result.data.isRunning || false);
+              }
+            } catch (error) {
+              console.error('[Monitoring] Failed to check status after stop:', error);
+            }
+          }, 500);
+          alert('측정이 정지되었습니다.');
+        } else {
+          alert('명령이 성공적으로 실행되었습니다.');
+        }
       } else {
-        alert(`명령 실행 실패: ${data.error || '알 수 없는 오류'}`);
+        // 에러 메시지에서 타임아웃 관련 메시지 필터링
+        const errorMsg = data.error || '알 수 없는 오류';
+        if (errorMsg.includes('timeout') || errorMsg.includes('타임아웃')) {
+          console.error('[Monitoring] Command timeout error:', errorMsg);
+          alert(`명령 실행 실패: ${errorMsg}\n\nmqtt-monitor 서버가 실행 중인지 확인해주세요.`);
+        } else {
+          alert(`명령 실행 실패: ${errorMsg}`);
+        }
       }
     };
 
@@ -118,13 +222,105 @@ function Monitoring() {
       emit('GET_DEVICE_STATUS', { deviceId: patientId });
     }
 
+    // 측정 상태 확인 함수
+    const checkMeasurementStatus = async () => {
+      try {
+        const response = await fetch('http://localhost:3001/api/telemetry-test/status');
+        const result = await response.json();
+        if (result.success) {
+          setIsMeasurementRunning(result.data.isRunning || false);
+        }
+      } catch (error) {
+        console.error('[Monitoring] Failed to check measurement status:', error);
+      }
+    };
+
+    // 초기 상태 확인
+    checkMeasurementStatus();
+    
+    // 주기적으로 상태 확인 (5초마다)
+    const statusInterval = setInterval(checkMeasurementStatus, 5000);
+
     // 정리 함수
     return () => {
+      clearInterval(statusInterval);
       off('TELEMETRY', handleTelemetry);
       off('DEVICE_STATUS', handleDeviceStatus);
       off('CONTROL_RESULT', handleControlResult);
     };
-  }, [isConnected, patientId, on, emit, off]);
+  }, [isConnected, patientId, on, emit, off, simulatedError, deviceInfo]);
+
+  // 랜덤 오류 시뮬레이션
+  useEffect(() => {
+    if (!isErrorSimulationActive) {
+      // 시뮬레이션이 비활성화되면 정리
+      if (simulationIntervalRef.current) {
+        clearInterval(simulationIntervalRef.current);
+        simulationIntervalRef.current = null;
+      }
+      if (errorDurationRef.current) {
+        clearTimeout(errorDurationRef.current);
+        errorDurationRef.current = null;
+      }
+      setSimulatedError(null);
+      setHardwareAlerts([]);
+      return;
+    }
+
+    // 랜덤 오류 발생 함수
+    const triggerRandomError = () => {
+      // 랜덤하게 오류 발생 (30% 확률)
+      if (Math.random() < 0.3) {
+        const errorCodes = [
+          { code: 'hr:7', type: 'warning', message: '배터리가 부족하니 충전을 해라.' },
+          { code: 'hr:8', type: 'error', message: '신호가 불량하니 다시 해라' },
+          { code: 'hr:9', type: 'info', message: '날뛰고 있어 신호가 안나오니 참고해라' }
+        ];
+        
+        const randomError = errorCodes[Math.floor(Math.random() * errorCodes.length)];
+        setSimulatedError(randomError);
+
+        // 오류 알림 생성
+        setHardwareAlerts([{
+          id: `simulated-alert-${Date.now()}`,
+          deviceId: patientId || 'test-device',
+          deviceName: deviceInfo?.name || '테스트 디바이스',
+          deviceAddress: patientId || 'TEST:00:00:00:00:00',
+          ...randomError,
+          timestamp: Date.now()
+        }]);
+
+        // 5-15초 후 자동으로 정상 복귀
+        const errorDuration = 5000 + Math.random() * 10000; // 5-15초
+        errorDurationRef.current = setTimeout(() => {
+          setSimulatedError(null);
+          setHardwareAlerts([]);
+        }, errorDuration);
+      }
+    };
+
+    // 처음 한 번 실행
+    triggerRandomError();
+
+    // 10-30초마다 랜덤 오류 발생 시도
+    const interval = 10000 + Math.random() * 20000; // 10-30초
+    simulationIntervalRef.current = setInterval(triggerRandomError, interval);
+
+    return () => {
+      if (simulationIntervalRef.current) {
+        clearInterval(simulationIntervalRef.current);
+        simulationIntervalRef.current = null;
+      }
+      if (errorDurationRef.current) {
+        clearTimeout(errorDurationRef.current);
+        errorDurationRef.current = null;
+      }
+    };
+  }, [isErrorSimulationActive, patientId, deviceInfo]);
+
+  const handleToggleErrorSimulation = () => {
+    setIsErrorSimulationActive(prev => !prev);
+  };
 
   // 초기 더미 데이터 생성 (Socket 연결 전까지)
   useEffect(() => {
@@ -172,13 +368,47 @@ function Monitoring() {
 
     const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
-    // TODO: 실제 hubId와 deviceId를 가져와야 함
-    emit('CONTROL_REQUEST', {
-      hubId: 'AA:BB:CC:DD:EE:01', // 임시 값
-      deviceId: patientId || 'AA:BB:CC:DD:EE:FF', // 임시 값
-      command,
-      requestId
-    });
+    // 측정 시작/정지 명령인 경우 mqtt-monitor 제어
+    if (command.action === 'start_measurement') {
+      // Telemetry 테스트 시작으로 변환
+      const telemetryCommand = {
+        action: 'start_telemetry_test',
+        deviceIds: [patientId || 'AA:BB:CC:DD:EE:02'],
+        interval: 1000 // 1초마다
+      };
+      
+      console.log('[Monitoring] 📤 Sending start_telemetry_test command:', telemetryCommand);
+      
+      emit('CONTROL_REQUEST', {
+        hubId: 'AA:BB:CC:DD:EE:01', // 임시 값
+        deviceId: patientId || 'AA:BB:CC:DD:EE:02', // 임시 값
+        command: telemetryCommand,
+        requestId
+      });
+    } else if (command.action === 'stop_measurement') {
+      // Telemetry 테스트 정지로 변환
+      const telemetryCommand = {
+        action: 'stop_telemetry_test'
+      };
+      
+      console.log('[Monitoring] 📤 Sending stop_telemetry_test command:', telemetryCommand);
+      
+      emit('CONTROL_REQUEST', {
+        hubId: 'AA:BB:CC:DD:EE:01', // 임시 값
+        deviceId: patientId || 'AA:BB:CC:DD:EE:02', // 임시 값
+        command: telemetryCommand,
+        requestId
+      });
+    } else {
+      // 기타 명령은 그대로 전송
+      console.log('[Monitoring] 📤 Sending MQTT command:', command);
+      emit('CONTROL_REQUEST', {
+        hubId: 'AA:BB:CC:DD:EE:01', // 임시 값
+        deviceId: patientId || 'AA:BB:CC:DD:EE:FF', // 임시 값
+        command,
+        requestId
+      });
+    }
   };
 
   const getChartData = () => {
@@ -206,9 +436,14 @@ function Monitoring() {
     setSelectedPatient(null)
   }
 
+  const handleDismissAlert = (alertId) => {
+    setHardwareAlerts(prev => prev.filter(alert => alert.id !== alertId))
+  }
+
   return (
     <div className="monitoring-page">
       <Header />
+      <HardwareAlertBar alerts={hardwareAlerts} onDismiss={handleDismissAlert} />
       <div className="monitoring-container">
         {/* 연결 상태 표시 */}
         <div className="connection-status" style={{ 
@@ -240,12 +475,45 @@ function Monitoring() {
               {deviceInfo?.name || '디바이스 연결 중...'}
             </div>
           </div>
+          {/* 신호처리 상태 표시 */}
+          {signalProcessingStatus.processedHR !== null && (
+            <div className={`signal-processing-status ${signalProcessingStatus.status}`}>
+              <div className="signal-status-header">
+                <span className="signal-status-label">신호처리 상태:</span>
+                <span className={`signal-status-badge ${signalProcessingStatus.status}`}>
+                  {signalProcessingStatus.status === 'normal' && '✅ 정상'}
+                  {signalProcessingStatus.status === 'low_quality' && '⚠️ 신뢰도 낮음'}
+                  {signalProcessingStatus.status === 'reposition_needed' && '❌ 재부착 필요'}
+                  {signalProcessingStatus.status === 'collecting' && '📊 수집 중'}
+                </span>
+              </div>
+              <div className="signal-status-message">{signalProcessingStatus.message}</div>
+              <div className="signal-status-metrics">
+                <span className="signal-metric">
+                  SQI: <strong>{signalProcessingStatus.sqi.toFixed(2)}</strong>
+                </span>
+                <span className="signal-metric">
+                  PI: <strong>{signalProcessingStatus.pi.toFixed(2)}</strong>
+                </span>
+                {signalProcessingStatus.originalHR && (
+                  <span className="signal-metric">
+                    원본 HR: <strong>{signalProcessingStatus.originalHR} bpm</strong>
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
           <div className="current-values-row">
             <div className="current-values-left">
               <span className="current-value-item-inline">
                 <span className="current-value-label-inline">심박수:</span>
                 <span className="current-value-value-inline">
-                  {Math.round(currentValues.heartRate)} bpm
+                  {signalProcessingStatus.processedHR !== null 
+                    ? `${Math.round(signalProcessingStatus.processedHR)} bpm` 
+                    : `${Math.round(currentValues.heartRate)} bpm`}
+                  {hardwareAlerts.length > 0 && (
+                    <span className="device-warning-badge" title={hardwareAlerts[0].message}>⚠️</span>
+                  )}
                 </span>
               </span>
               <span className="current-value-item-inline">
@@ -271,18 +539,28 @@ function Monitoring() {
         </section>
 
         {/* 제어 버튼 */}
-        <section style={{ marginBottom: '20px', display: 'flex', gap: '10px' }}>
+        <section style={{ marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ 
+            padding: '8px 16px', 
+            backgroundColor: isMeasurementRunning ? '#d4edda' : '#f8d7da',
+            color: isMeasurementRunning ? '#155724' : '#721c24',
+            borderRadius: '4px',
+            fontWeight: 'bold',
+            fontSize: '14px'
+          }}>
+            {isMeasurementRunning ? '🟢 측정 실행 중' : '🔴 측정 중지됨'}
+          </div>
           <button 
             className="btn-primary"
             onClick={() => sendControlCommand({ action: 'start_measurement' })}
-            disabled={!isConnected}
+            disabled={!isConnected || isMeasurementRunning}
           >
             측정 시작
           </button>
           <button 
             className="btn-secondary"
             onClick={() => sendControlCommand({ action: 'stop_measurement' })}
-            disabled={!isConnected}
+            disabled={!isConnected || !isMeasurementRunning}
           >
             측정 정지
           </button>
@@ -292,6 +570,16 @@ function Monitoring() {
             disabled={!isConnected}
           >
             LED 깜빡임
+          </button>
+          <button 
+            className={isErrorSimulationActive ? 'btn-danger' : 'btn-secondary'}
+            onClick={handleToggleErrorSimulation}
+            style={{ 
+              backgroundColor: isErrorSimulationActive ? '#e74c3c' : '#95a5a6',
+              color: 'white'
+            }}
+          >
+            {isErrorSimulationActive ? '⏸ 오류 시뮬레이션 중지' : '▶ 오류 시뮬레이션 시작'}
           </button>
         </section>
 

@@ -1,0 +1,374 @@
+.signal-processing-test-page {
+  min-height: 100vh;
+  background-color: #f5f5f5;
+}
+
+.test-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.test-header {
+  background-color: white;
+  padding: 2rem;
+  border-radius: 8px;
+  margin-bottom: 2rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.test-header h1 {
+  margin: 0 0 1rem 0;
+  color: #2c3e50;
+  font-size: 2rem;
+}
+
+.test-description {
+  margin: 0;
+  color: #666;
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.test-controls-section,
+.status-section,
+.results-section,
+.chart-section,
+.info-section {
+  background-color: white;
+  padding: 1.5rem;
+  border-radius: 8px;
+  margin-bottom: 2rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.test-controls-section h2,
+.status-section h2,
+.results-section h2,
+.chart-section h2,
+.info-section h2 {
+  margin: 0 0 1.5rem 0;
+  color: #2c3e50;
+  font-size: 1.5rem;
+  border-bottom: 2px solid #e0e0e0;
+  padding-bottom: 0.5rem;
+}
+
+.scenario-buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.scenario-btn {
+  padding: 1.5rem 1rem;
+  border: 2px solid;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  background-color: white;
+  line-height: 1.4;
+}
+
+.scenario-btn.normal {
+  border-color: #27ae60;
+  color: #27ae60;
+}
+
+.scenario-btn.normal:hover:not(.disabled) {
+  background-color: #d4edda;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(39, 174, 96, 0.2);
+}
+
+.scenario-btn.low-pi {
+  border-color: #f39c12;
+  color: #f39c12;
+}
+
+.scenario-btn.low-pi:hover:not(.disabled) {
+  background-color: #fff3cd;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(243, 156, 18, 0.2);
+}
+
+.scenario-btn.high-noise {
+  border-color: #e74c3c;
+  color: #e74c3c;
+}
+
+.scenario-btn.high-noise:hover:not(.disabled) {
+  background-color: #f8d7da;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(231, 76, 60, 0.2);
+}
+
+.scenario-btn.irregular {
+  border-color: #9b59b6;
+  color: #9b59b6;
+}
+
+.scenario-btn.irregular:hover:not(.disabled) {
+  background-color: #e8d5f2;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(155, 89, 182, 0.2);
+}
+
+.scenario-btn.stop {
+  border-color: #e74c3c;
+  background-color: #e74c3c;
+  color: white;
+}
+
+.scenario-btn.stop:hover {
+  background-color: #c0392b;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(231, 76, 60, 0.3);
+}
+
+.scenario-btn.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.status-card {
+  padding: 1.5rem;
+  border-radius: 8px;
+  border-left: 4px solid;
+  background-color: #f8f9fa;
+}
+
+.status-card.normal {
+  border-left-color: #27ae60;
+  background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+}
+
+.status-card.low_quality {
+  border-left-color: #f39c12;
+  background: linear-gradient(135deg, #fff3cd 0%, #ffe69c 100%);
+}
+
+.status-card.reposition_needed {
+  border-left-color: #e74c3c;
+  background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
+}
+
+.status-card.collecting {
+  border-left-color: #3498db;
+  background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%);
+}
+
+.status-card.idle {
+  border-left-color: #95a5a6;
+  background-color: #f8f9fa;
+}
+
+.status-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.status-label {
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.status-badge {
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.status-badge.normal {
+  background-color: #27ae60;
+  color: white;
+}
+
+.status-badge.low_quality {
+  background-color: #f39c12;
+  color: white;
+}
+
+.status-badge.reposition_needed {
+  background-color: #e74c3c;
+  color: white;
+}
+
+.status-badge.collecting {
+  background-color: #3498db;
+  color: white;
+}
+
+.status-message {
+  font-size: 1.1rem;
+  color: #2c3e50;
+  margin-bottom: 1rem;
+  font-weight: 500;
+}
+
+.status-metrics {
+  display: flex;
+  gap: 2rem;
+}
+
+.metric {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.metric-label {
+  font-size: 0.9rem;
+  color: #666;
+  font-weight: 500;
+}
+
+.metric-value {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #2c3e50;
+}
+
+.results-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+}
+
+.result-card {
+  padding: 1.5rem;
+  border-radius: 8px;
+  border: 2px solid #e0e0e0;
+  background-color: #fafafa;
+  transition: all 0.2s;
+}
+
+.result-card:hover {
+  border-color: #3498db;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.result-card h3 {
+  margin: 0 0 1rem 0;
+  color: #2c3e50;
+  font-size: 1.1rem;
+}
+
+.result-value {
+  font-size: 2.5rem;
+  font-weight: bold;
+  color: #3498db;
+  margin-bottom: 0.5rem;
+}
+
+.result-note {
+  font-size: 0.85rem;
+  color: #666;
+  font-style: italic;
+}
+
+.chart-container {
+  position: relative;
+  width: 100%;
+  height: 400px;
+  background-color: #fafafa;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 1rem;
+}
+
+.chart-svg {
+  width: 100%;
+  height: calc(100% - 40px);
+}
+
+.chart-labels {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 0.5rem;
+  border-top: 1px solid #e0e0e0;
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.chart-label {
+  flex: 1;
+  text-align: center;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+}
+
+.info-card {
+  padding: 1.5rem;
+  border-radius: 8px;
+  border: 2px solid #e0e0e0;
+  background-color: #fafafa;
+}
+
+.info-card h3 {
+  margin: 0 0 0.75rem 0;
+  color: #2c3e50;
+  font-size: 1.2rem;
+}
+
+.info-card p {
+  margin: 0 0 0.5rem 0;
+  color: #666;
+  line-height: 1.6;
+}
+
+.info-card ul {
+  margin: 0.5rem 0 0 0;
+  padding-left: 1.5rem;
+  color: #666;
+  line-height: 1.8;
+}
+
+.test-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  padding: 2rem 0;
+}
+
+.btn-secondary {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-weight: 500;
+  background-color: #95a5a6;
+  color: white;
+}
+
+.btn-secondary:hover {
+  background-color: #7f8c8d;
+}
+
+/* 반응형 디자인 */
+@media (max-width: 768px) {
+  .test-container {
+    padding: 1rem;
+  }
+
+  .scenario-buttons {
+    grid-template-columns: 1fr;
+  }
+
+  .results-grid,
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+}
+

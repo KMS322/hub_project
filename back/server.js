@@ -14,6 +14,7 @@ const deviceRoutes = require("./routes/device");
 const petRoutes = require("./routes/pet");
 const recordsRoutes = require("./routes/records");
 const mqttTestRoutes = require("./routes/mqtt-test");
+const checkRoutes = require("./routes/check");
 const initializeDatabase = require("./seeders/init");
 const MQTTService = require("./mqtt/service");
 const TelemetryWorker = require("./workers/telemetryWorker");
@@ -22,15 +23,23 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || "http://localhost:3000",
-    methods: ["GET", "POST"],
+    origin: true, // 모든 origin 허용 (요청 origin 그대로 반환)
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Requested-With",
+      "Accept"
+    ],
     credentials: true,
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
   },
 });
 
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' })); // 요청 크기 제한 추가
+app.use(express.urlencoded({ extended: true, limit: '10mb' })); // 요청 크기 제한 추가
 
 app.set("io", io);
 
@@ -42,9 +51,13 @@ app.use("/device", deviceRoutes);
 app.use("/pet", petRoutes);
 app.use("/records", recordsRoutes);
 app.use("/mqtt-test", mqttTestRoutes);
+// check 라우트에 Socket.IO 인스턴스 전달
+checkRoutes.setIOInstance(io);
+app.use("/check", checkRoutes);
 
 // Telemetry 데이터 큐 생성
 const telemetryQueue = [];
+app.set("telemetryQueue", telemetryQueue);
 
 // Telemetry Worker 초기화
 const telemetryWorker = new TelemetryWorker(io, telemetryQueue, {

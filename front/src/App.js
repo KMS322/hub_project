@@ -8,8 +8,12 @@ import Patients from './pages/Patients'
 import Records from './pages/Records'
 import Profile from './pages/Profile'
 import Monitoring from './pages/Monitoring'
+import CsvGraph from './pages/CsvGraph'
 import Guide from './pages/Guide'
 import TelemetryTest from './pages/TelemetryTest'
+import SerialMonitor from './pages/SerialMonitor'
+import HardwareErrorTest from './pages/HardwareErrorTest'
+import SignalProcessingTest from './pages/SignalProcessingTest'
 import './App.css'
 
 function App() {
@@ -52,6 +56,22 @@ function App() {
           <Route
             path="/telemetry-test"
             element={isAuthenticated ? <TelemetryTest /> : <Navigate to="/login" />}
+          />
+          <Route
+            path="/serial-monitor"
+            element={isAuthenticated ? <SerialMonitor /> : <Navigate to="/login" />}
+          />
+          <Route
+            path="/csv-graph"
+            element={isAuthenticated ? <CsvGraph /> : <Navigate to="/login" />}
+          />
+          <Route
+            path="/hardware-error-test"
+            element={isAuthenticated ? <HardwareErrorTest /> : <Navigate to="/login" />}
+          />
+          <Route
+            path="/signal-processing-test"
+            element={isAuthenticated ? <SignalProcessingTest /> : <Navigate to="/login" />}
           />
           <Route path="/" element={<Navigate to="/dashboard" />} />
         </Routes>

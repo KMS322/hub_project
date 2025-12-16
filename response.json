@@ -1,0 +1,27 @@
+{
+    "success": true,
+    "data": {
+    "devices": {
+        "device": {
+            "mac_address": "80:b5:4e:db:44:9a",
+            "name": "device1",
+            "hub_address": "80:b5:4e:db: 44: 9a",
+            "hub_name": "hub1",
+            "hub_user_email": "user1@example.com",
+            "hub_is_change": false,
+            "hub_created_at": "2021-01-01 00:00:00",
+            "hub_updated_at": "2021-01-01 00:00:00"
+        },
+        "device": {
+            "mac_address": "80:b5:4e:db:44:9a",
+            "name": "device2",
+            "hub_address": "80:b5:4e:db:44:9a",
+            "hub_name": "hub2",
+            "hub_user_email": "user2@example.com",
+            "hub_is_change": false,
+            "hub_created_at": "2021-01-01 00:00:00",
+            "hub_updated_at": "2021-01-01 00:00:00"
+        }
+    },
+    "message": "devices fetched successfully"
+}

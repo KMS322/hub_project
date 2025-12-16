@@ -17,6 +17,97 @@
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
+/* 신호처리 상태 스타일 */
+.signal-processing-status {
+  padding: 1rem;
+  margin: 1rem 0;
+  border-radius: 6px;
+  border-left: 4px solid;
+  background-color: #f8f9fa;
+}
+
+.signal-processing-status.normal {
+  border-left-color: #27ae60;
+  background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+}
+
+.signal-processing-status.low_quality {
+  border-left-color: #f39c12;
+  background: linear-gradient(135deg, #fff3cd 0%, #ffe69c 100%);
+}
+
+.signal-processing-status.reposition_needed {
+  border-left-color: #e74c3c;
+  background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
+}
+
+.signal-processing-status.collecting {
+  border-left-color: #3498db;
+  background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%);
+}
+
+.signal-status-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.signal-status-label {
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.signal-status-badge {
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.signal-status-badge.normal {
+  background-color: #27ae60;
+  color: white;
+}
+
+.signal-status-badge.low_quality {
+  background-color: #f39c12;
+  color: white;
+}
+
+.signal-status-badge.reposition_needed {
+  background-color: #e74c3c;
+  color: white;
+}
+
+.signal-status-badge.collecting {
+  background-color: #3498db;
+  color: white;
+}
+
+.signal-status-message {
+  font-size: 0.95rem;
+  color: #2c3e50;
+  margin-bottom: 0.75rem;
+  font-weight: 500;
+}
+
+.signal-status-metrics {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.signal-metric {
+  font-size: 0.9rem;
+  color: #666;
+}
+
+.signal-metric strong {
+  color: #2c3e50;
+  font-weight: 600;
+}
+
 .current-values-row {
   display: flex;
   flex-direction: row;
@@ -358,5 +449,24 @@
 .patient-detail-grid .detail-value {
   color: #2c3e50;
   font-size: 1rem;
+}
+
+.device-warning-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  font-size: 1.2rem;
+  animation: pulse 2s infinite;
+  cursor: help;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.1);
+  }
 }
 

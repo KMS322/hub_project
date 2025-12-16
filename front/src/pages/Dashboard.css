@@ -338,3 +338,22 @@
   line-height: 1.8;
 }
 
+.device-warning-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  font-size: 1.2rem;
+  animation: pulse 2s infinite;
+  cursor: help;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.1);
+  }
+}
+

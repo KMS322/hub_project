@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
+import HardwareAlertBar from '../components/HardwareAlertBar'
 import petService from '../api/petService'
 import deviceService from '../api/deviceService'
 import { useSocket } from '../hooks/useSocket'
+import { detectDeviceErrors } from '../utils/hardwareErrorDetector'
 import './Dashboard.css'
 
 function Dashboard() {
@@ -13,13 +15,14 @@ function Dashboard() {
   const [connectedDevices, setConnectedDevices] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [hardwareAlerts, setHardwareAlerts] = useState([])
 
   // 데이터 로드
   useEffect(() => {
     loadData()
   }, [])
 
-  // Socket.IO로 실시간 데이터 업데이트
+    // Socket.IO로 실시간 데이터 업데이트
   useEffect(() => {
     if (!isConnected) return
 
@@ -50,6 +53,16 @@ function Dashboard() {
       off('TELEMETRY', handleTelemetry)
     }
   }, [isConnected, on, off])
+
+  // 하드웨어 오류 감지 및 알림 업데이트
+  useEffect(() => {
+    const alerts = detectDeviceErrors(connectedDevices)
+    setHardwareAlerts(alerts)
+  }, [connectedDevices])
+
+  const handleDismissAlert = (alertId) => {
+    setHardwareAlerts(prev => prev.filter(alert => alert.id !== alertId))
+  }
 
   const loadData = async () => {
     try {
@@ -143,6 +156,7 @@ function Dashboard() {
   return (
     <div className="dashboard-page">
       <Header />
+      <HardwareAlertBar alerts={hardwareAlerts} onDismiss={handleDismissAlert} />
       <div className="dashboard-container">
         {/* 현황 섹션 */}
         <section className="monitoring-section">
@@ -156,7 +170,12 @@ function Dashboard() {
                     <div className="monitoring-header">
                       <div className="patient-info-left">
                         <div className="patient-name-row">
-                          <h3>환자명 : {patient?.name || '알 수 없음'}</h3>
+                          <h3>
+                            환자명 : {patient?.name || '알 수 없음'}
+                            {hardwareAlerts.some(alert => alert.deviceId === device.id || alert.deviceAddress === device.address) && (
+                              <span className="device-warning-badge" title="하드웨어 오류 감지됨">⚠️</span>
+                            )}
+                          </h3>
                           {patient && (
                             <div className="patient-basic-info">
                               <span className="info-text">{patient.weight}kg / {patient.gender}</span>

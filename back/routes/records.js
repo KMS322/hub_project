@@ -247,6 +247,289 @@ router.delete('/:fileName', verifyToken, async (req, res) => {
 });
 
 /**
+ * CSV 파일 저장 (HUB에서 250개 데이터 전송)
+ * POST /records/csv
+ * body: {
+ *   device_mac_address: "AA:BB:CC:DD:EE:01",
+ *   sampling_rate: 50,
+ *   spo2: 0,
+ *   hr: 8,
+ *   temp: 33.8,
+ *   data: ["123456,654321,123456", ...],
+ *   start_time: "17:36:45:163"
+ * }
+ */
+router.post('/csv', async (req, res) => {
+  try {
+    const { device_mac_address, sampling_rate, spo2, hr, temp, data, start_time } = req.body;
+
+    // 필수 필드 검증
+    if (!device_mac_address || !sampling_rate || !data || !Array.isArray(data) || !start_time) {
+      return res.status(400).json({
+        success: false,
+        message: '필수 필드가 누락되었습니다. (device_mac_address, sampling_rate, data, start_time)'
+      });
+    }
+
+    // MAC 주소 형식 검증
+    const macPattern = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
+    if (!macPattern.test(device_mac_address)) {
+      return res.status(400).json({
+        success: false,
+        message: '올바른 MAC 주소 형식이 아닙니다.'
+      });
+    }
+
+    // start_time 형식 검증 (HH:mm:ss:SSS)
+    const timePattern = /^(\d{2}):(\d{2}):(\d{2}):(\d{3})$/;
+    if (!timePattern.test(start_time)) {
+      return res.status(400).json({
+        success: false,
+        message: '올바른 시간 형식이 아닙니다. (HH:mm:ss:SSS 형식)'
+      });
+    }
+
+    // 디바이스와 연결된 펫 정보 조회
+    const device = await db.Device.findOne({
+      where: { address: device_mac_address },
+      include: [
+        {
+          model: db.Pet,
+          as: 'Pet',
+          attributes: ['id', 'name', 'user_email']
+        },
+        {
+          model: db.Hub,
+          as: 'Hub',
+          attributes: ['address', 'user_email']
+        }
+      ]
+    });
+
+    if (!device) {
+      return res.status(404).json({
+        success: false,
+        message: '디바이스를 찾을 수 없습니다.'
+      });
+    }
+
+    // 펫 정보 확인
+    if (!device.Pet) {
+      return res.status(400).json({
+        success: false,
+        message: '디바이스에 연결된 펫이 없습니다.'
+      });
+    }
+
+    const userEmail = device.Pet.user_email || device.Hub?.user_email;
+    const petName = device.Pet.name;
+
+    if (!userEmail) {
+      return res.status(400).json({
+        success: false,
+        message: '사용자 정보를 찾을 수 없습니다.'
+      });
+    }
+
+    // start_time 파싱 (HH:mm:ss:SSS -> 밀리초)
+    const [hours, minutes, seconds, milliseconds] = start_time.split(':').map(Number);
+    const today = new Date();
+    today.setHours(hours, minutes, seconds, milliseconds);
+    const startTimeMs = today.getTime();
+
+    // 현재 날짜 (YYYY-MM-DD)
+    const dateStr = today.toISOString().split('T')[0];
+
+    // 파일 경로 생성: csv_files/user_email/YYYY-MM-DD/device_mac_address/pet_name/device_mac_address-HH:mm:ss:SSS.csv
+    const sanitizedEmail = userEmail.replace(/[@.]/g, '_');
+    const sanitizedAddress = device_mac_address.replace(/:/g, '-');
+    const sanitizedTime = start_time.replace(/:/g, '-');
+    const fileName = `${sanitizedAddress}-${sanitizedTime}.csv`;
+    
+    const fileDir = path.join(
+      process.cwd(),
+      'csv_files',
+      sanitizedEmail,
+      dateStr,
+      sanitizedAddress,
+      petName
+    );
+    
+    const filePath = path.join(fileDir, fileName);
+
+    // 디렉토리 생성
+    if (!fs.existsSync(fileDir)) {
+      fs.mkdirSync(fileDir, { recursive: true });
+      console.log(`[CSV Save] Created directory: ${fileDir}`);
+    }
+
+    // CSV 헤더 작성
+    const csvHeader = 'time,ir,red,green,hr,spo2,temp\n';
+    
+    // CSV 데이터 생성
+    const csvRows = [];
+    const intervalMs = 1000 / sampling_rate; // 각 데이터 간격 (ms)
+
+    for (let i = 0; i < data.length; i++) {
+      const dataStr = data[i];
+      if (!dataStr || typeof dataStr !== 'string') continue;
+
+      // "ir,red,green" 형식 파싱
+      const values = dataStr.split(',');
+      if (values.length !== 3) continue;
+
+      const ir = values[0].trim();
+      const red = values[1].trim();
+      const green = values[2].trim();
+
+      // 시간 계산: start_time + (i * intervalMs)
+      const currentTimeMs = startTimeMs + (i * intervalMs);
+      const currentTime = new Date(currentTimeMs);
+      const timeStr = `${String(currentTime.getHours()).padStart(2, '0')}:${String(currentTime.getMinutes()).padStart(2, '0')}:${String(currentTime.getSeconds()).padStart(2, '0')}:${String(currentTime.getMilliseconds()).padStart(3, '0')}`;
+
+      // 마지막 행인지 확인
+      const isLastRow = i === data.length - 1;
+      
+      // spo2, hr, temp: 마지막 행이 아니면 0, 마지막 행이면 받아온 값 사용
+      const rowSpo2 = isLastRow ? spo2 : 0;
+      const rowHr = isLastRow ? hr : 0;
+      const rowTemp = isLastRow ? temp : 0;
+
+      // CSV 행 생성
+      csvRows.push(`${timeStr},${ir},${red},${green},${rowHr},${rowSpo2},${rowTemp}\n`);
+    }
+
+    // CSV 파일 작성/추가
+    const rowsContent = csvRows.join('');
+    const fileExists = fs.existsSync(filePath);
+
+    if (!fileExists) {
+      // 파일이 없으면 헤더 + 데이터 작성
+      const csvContent = csvHeader + rowsContent;
+      fs.writeFileSync(filePath, csvContent, 'utf8');
+      console.log(`[CSV Save] ✅ CSV file created: ${filePath}`);
+    } else {
+      // 파일이 이미 있으면 데이터만 이어서 추가
+      fs.appendFileSync(filePath, rowsContent, 'utf8');
+      console.log(`[CSV Save] ✅ CSV file appended: ${filePath}`);
+    }
+
+    console.log(`[CSV Save]   - Device: ${device_mac_address}`);
+    console.log(`[CSV Save]   - Pet: ${petName}`);
+    console.log(`[CSV Save]   - User: ${userEmail}`);
+    console.log(`[CSV Save]   - Appended Records: ${csvRows.length} rows`);
+
+    res.status(200).json({
+      success: true,
+      message: 'CSV 파일이 저장되었습니다.',
+      data: {
+        filePath: filePath,
+        fileName: fileName,
+        device_mac_address: device_mac_address,
+        pet_name: petName,
+        user_email: userEmail,
+        recordCount: csvRows.length,
+        start_time: start_time,
+        sampling_rate: sampling_rate
+      }
+    });
+  } catch (error) {
+    console.error('[CSV Save] Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'CSV 파일 저장 중 오류가 발생했습니다.',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+});
+
+/**
+ * CSV 파일 내용 조회 (그래프용)
+ * GET /records/csv-content
+ * query: user_email, date(YYYY-MM-DD), device_mac_address, pet_name, start_time(HH:mm:ss:SSS)
+ */
+router.get('/csv-content', async (req, res) => {
+  try {
+    const { user_email, date, device_mac_address, pet_name, start_time } = req.query;
+
+    if (!user_email || !date || !device_mac_address || !pet_name || !start_time) {
+      return res.status(400).json({
+        success: false,
+        message: 'user_email, date, device_mac_address, pet_name, start_time 쿼리 파라미터가 모두 필요합니다.'
+      });
+    }
+
+    // start_time 형식 검증
+    const timePattern = /^(\d{2}):(\d{2}):(\d{2}):(\d{3})$/;
+    if (!timePattern.test(start_time)) {
+      return res.status(400).json({
+        success: false,
+        message: 'start_time 형식이 올바르지 않습니다. (HH:mm:ss:SSS)'
+      });
+    }
+
+    const sanitizedEmail = user_email.replace(/[@.]/g, '_');
+    const sanitizedAddress = device_mac_address.replace(/:/g, '-');
+    const sanitizedTime = start_time.replace(/:/g, '-');
+    const fileName = `${sanitizedAddress}-${sanitizedTime}.csv`;
+
+    const fileDir = path.join(
+      process.cwd(),
+      'csv_files',
+      sanitizedEmail,
+      date,
+      sanitizedAddress,
+      pet_name
+    );
+    const filePath = path.join(fileDir, fileName);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({
+        success: false,
+        message: 'CSV 파일을 찾을 수 없습니다.',
+        filePath
+      });
+    }
+
+    const content = fs.readFileSync(filePath, 'utf8');
+    const lines = content.trim().split('\n');
+    if (lines.length <= 1) {
+      return res.json({
+        success: true,
+        data: []
+      });
+    }
+
+    // 첫 줄은 헤더
+    const dataLines = lines.slice(1);
+    const rows = dataLines.map((line) => {
+      const [time, ir, red, green, hr, spo2, temp] = line.split(',');
+      return {
+        time,
+        ir: Number(ir) || 0,
+        red: Number(red) || 0,
+        green: Number(green) || 0,
+        hr: Number(hr) || 0,
+        spo2: Number(spo2) || 0,
+        temp: Number(temp) || 0
+      };
+    });
+
+    res.json({
+      success: true,
+      data: rows
+    });
+  } catch (error) {
+    console.error('[CSV Content] Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'CSV 파일 내용을 읽는 중 오류가 발생했습니다.',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+});
+
+/**
  * 파일 크기 포맷팅 헬퍼 함수
  */
 function formatFileSize(bytes) {

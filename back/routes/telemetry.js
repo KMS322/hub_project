@@ -131,5 +131,59 @@ router.get('/db/recent/:deviceAddress', verifyToken, async (req, res) => {
   }
 });
 
+/**
+ * 테스트용 Telemetry 데이터 수신
+ * POST /telemetry/test
+ * 개발/테스트 환경에서만 사용
+ */
+router.post('/test', (req, res) => {
+  try {
+    const { hubId, deviceId, data } = req.body;
+
+    if (!hubId || !deviceId || !data) {
+      return res.status(400).json({
+        success: false,
+        message: 'hubId, deviceId, data가 필요합니다.'
+      });
+    }
+
+    const telemetryWorker = req.app.get('telemetryWorker');
+    const telemetryQueue = req.app.get('telemetryQueue') || [];
+
+    if (!telemetryWorker) {
+      return res.status(503).json({
+        success: false,
+        message: 'Telemetry Worker가 초기화되지 않았습니다.'
+      });
+    }
+
+    // 큐에 추가 (실제 MQTT 수신과 동일한 방식)
+    telemetryQueue.push({
+      hubId,
+      deviceId,
+      data: {
+        ...data,
+        timestamp: data.timestamp || Date.now()
+      },
+      timestamp: new Date(),
+      topic: `test/${hubId}/telemetry/${deviceId}`,
+      receiveStartTime: Date.now()
+    });
+
+    res.json({
+      success: true,
+      message: '테스트 데이터가 큐에 추가되었습니다.',
+      queueLength: telemetryQueue.length
+    });
+  } catch (error) {
+    console.error('[Telemetry API] Test Error:', error);
+    res.status(500).json({
+      success: false,
+      message: '테스트 데이터 처리 중 오류가 발생했습니다.',
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;
 

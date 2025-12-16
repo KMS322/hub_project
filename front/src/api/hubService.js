@@ -51,6 +51,28 @@ const hubService = {
    */
   deleteHub: async (hubAddress) => {
     await axiosInstance.delete(`/hub/${hubAddress}`);
+  },
+
+  /**
+   * 허브 재시작
+   * @param {string} hubAddress - 허브 MAC 주소
+   * @returns {Promise<Object>}
+   */
+  restartHub: async (hubAddress) => {
+    // MQTT publish를 통해 허브 설정 토픽에 재시작 명령 전송
+    const response = await axiosInstance.post('/mqtt/publish', {
+      topic: `hub/${hubAddress}/settings`,
+      message: {
+        command: 'restart',
+        action: 'reboot',
+        timestamp: new Date().toISOString()
+      },
+      options: {
+        qos: 1,
+        retain: false
+      }
+    });
+    return response.data;
   }
 };
 

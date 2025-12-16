@@ -14,10 +14,11 @@ router.get('/', verifyToken, async (req, res) => {
 
     const where = {};
     
-    // 사용자의 허브에 속한 디바이스만 조회
+    // 사용자의 허브에 속한 디바이스만 조회 (최적화: 필요한 필드만 조회)
     const userHubs = await db.Hub.findAll({
       where: { user_email: req.user.email },
-      attributes: ['address']
+      attributes: ['address'],
+      raw: true // 객체 변환 오버헤드 제거
     });
     const hubAddresses = userHubs.map(h => h.address);
 
@@ -70,7 +71,7 @@ router.get('/', verifyToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: '디바이스 목록 조회 중 오류가 발생했습니다.',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 });

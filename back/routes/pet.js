@@ -13,14 +13,17 @@ router.get('/', verifyToken, async (req, res) => {
       where: {
         user_email: req.user.email
       },
+      attributes: ['id', 'name', 'species', 'breed', 'weight', 'gender', 'neutering', 'birthDate', 'admissionDate', 'veterinarian', 'diagnosis', 'medicalHistory', 'user_email', 'device_address'], // 필요한 필드만 조회
       include: [{
         model: db.Device,
         as: 'Device',
         attributes: ['address', 'name'],
+        required: false, // LEFT JOIN으로 변경하여 성능 향상
         include: [{
           model: db.Hub,
           as: 'Hub',
-          attributes: ['address', 'name']
+          attributes: ['address', 'name'],
+          required: false
         }]
       }],
       order: [['createdAt', 'DESC']]
@@ -57,7 +60,7 @@ router.get('/', verifyToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: '환자 목록 조회 중 오류가 발생했습니다.',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 });

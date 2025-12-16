@@ -33,7 +33,8 @@ class MQTTClient {
     // 연결 성공 이벤트
     this.client.on('connect', () => {
       this.isConnected = true;
-      console.log(`[MQTT] Connected to broker: ${brokerUrl}`);
+      console.log(`[MQTT] ✅ Connected to broker: ${brokerUrl}`);
+      console.log(`[MQTT] ℹ️  Note: Mosquitto is running as a Windows service`);
       
       // 백엔드 상태를 online으로 발행
       this.client.publish('backend/status', 'online', { qos: 1, retain: true });
@@ -42,9 +43,12 @@ class MQTTClient {
       this.subscriptions.forEach((callback, topic) => {
         this.client.subscribe(topic, (err) => {
           if (err) {
-            console.error(`[MQTT] Failed to resubscribe to ${topic}:`, err);
+            console.error(`[MQTT] ❌ Failed to resubscribe to ${topic}:`, err);
           } else {
-            console.log(`[MQTT] Resubscribed to ${topic}`);
+            console.log(`[MQTT] ✅ Resubscribed to ${topic}`);
+            if (topic.startsWith('test/')) {
+              console.log(`[MQTT] 🧪 Test topic resubscribed - ready to receive messages`);
+            }
           }
         });
       });
@@ -82,8 +86,14 @@ class MQTTClient {
     // 메시지 수신 이벤트
     this.client.on('message', (topic, message) => {
       try {
+        // 모든 메시지에 대해 로그 출력 (디버깅용)
+        console.log(`\n[MQTT Client] 🔔 Raw message event received`);
+        console.log(`  Topic: ${topic}`);
+        console.log(`  Message type: ${typeof message}, isBuffer: ${Buffer.isBuffer(message)}`);
+        
         // 명령 토픽은 무시 (자신이 발행한 메시지)
         if (topic.includes('/command/')) {
+          console.log(`  ⏭️  Skipping command topic (self-published)`);
           return; // 명령 토픽은 처리하지 않음
         }
 
@@ -112,16 +122,36 @@ class MQTTClient {
           console.log(`  ℹ️  Not JSON, using raw string`);
         }
         
+        // test/ 토픽인 경우 특별히 강조
+        if (topic.startsWith('test/')) {
+          console.log(`  🧪 TEST TOPIC DETECTED (${topic}) - Processing test message...`);
+        }
+        
         // 해당 토픽에 등록된 콜백 실행
         const callback = this.subscriptions.get(topic);
         if (callback) {
+          console.log(`  ✅ Found exact topic subscription callback`);
           callback(parsedMessage, topic);
         } else {
           // 와일드카드 구독 처리
+          let matched = false;
           for (const [subscribedTopic, cb] of this.subscriptions.entries()) {
             if (this.topicMatches(subscribedTopic, topic)) {
+              console.log(`  ✅ Found wildcard subscription match: ${subscribedTopic} matches ${topic}`);
               cb(parsedMessage, topic);
+              matched = true;
               break; // 첫 번째 매칭만 처리
+            }
+          }
+          if (!matched) {
+            console.log(`  ⚠️  No subscription callback found for topic: ${topic}`);
+            console.log(`  Available subscriptions:`, Array.from(this.subscriptions.keys()));
+            console.log(`  Attempted wildcard matching but no match found`);
+            
+            // 디버깅: 각 구독 패턴과의 매칭 시도
+            for (const [subscribedTopic] of this.subscriptions.entries()) {
+              const matches = this.topicMatches(subscribedTopic, topic);
+              console.log(`    - Pattern "${subscribedTopic}" matches "${topic}": ${matches}`);
             }
           }
         }
@@ -160,10 +190,15 @@ class MQTTClient {
       // 연결되어 있으면 즉시 구독
       this.client.subscribe(topic, { qos }, (err) => {
         if (err) {
-          console.error(`[MQTT] Failed to subscribe to ${topic}:`, err);
+          console.error(`[MQTT] ❌ Failed to subscribe to ${topic}:`, err);
         } else {
-          console.log(`[MQTT] Subscribed to ${topic}`);
+          console.log(`[MQTT] ✅ Subscribed to ${topic} (QoS ${qos})`);
           this.subscriptions.set(topic, callback);
+          
+          // test/ 토픽인 경우 특별히 강조
+          if (topic.startsWith('test/')) {
+            console.log(`[MQTT] 🧪 Test topic subscription active - ready to receive ESP32 messages`);
+          }
         }
       });
     } else {
@@ -256,18 +291,37 @@ class MQTTClient {
    * @returns {boolean} 매칭 여부
    */
   topicMatches(pattern, topic) {
-    // 단순 와일드카드 매칭 (#, +)
+    // MQTT 와일드카드 매칭 규칙 (#, +)
     const patternParts = pattern.split('/');
     const topicParts = topic.split('/');
     
-    if (patternParts.length !== topicParts.length && !pattern.includes('#')) {
+    // #는 반드시 마지막에 와야 하고, 나머지 모든 레벨을 매칭
+    if (pattern.includes('#')) {
+      const hashIndex = patternParts.indexOf('#');
+      if (hashIndex !== patternParts.length - 1) {
+        // #가 마지막이 아니면 잘못된 패턴
+        return false;
+      }
+      // # 이전의 모든 레벨이 매칭되는지 확인
+      for (let i = 0; i < hashIndex; i++) {
+        if (patternParts[i] === '+') {
+          continue; // +는 한 레벨 매칭
+        }
+        if (patternParts[i] !== topicParts[i]) {
+          return false;
+        }
+      }
+      // # 이후의 모든 레벨이 매칭됨
+      return topicParts.length >= hashIndex;
+    }
+    
+    // #가 없으면 길이가 같아야 함
+    if (patternParts.length !== topicParts.length) {
       return false;
     }
     
+    // 각 레벨 비교
     for (let i = 0; i < patternParts.length; i++) {
-      if (patternParts[i] === '#') {
-        return true; // #는 나머지 모두 매칭
-      }
       if (patternParts[i] === '+') {
         continue; // +는 한 레벨 매칭
       }

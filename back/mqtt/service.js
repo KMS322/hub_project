@@ -23,11 +23,6 @@ class MQTTService {
   initialize() {
     // MQTT 클라이언트 연결
     mqttClient.connect();
-
-    // 구독 설정 (연결 전이어도 대기 목록에 추가됨)
-    // mqttClient.subscribe()가 연결 상태를 확인하고
-    // 연결되지 않았으면 자동으로 대기 목록에 추가하여
-    // 연결 완료 시 자동으로 구독됨
     this.setupSubscriptions();
   }
 
@@ -49,6 +44,13 @@ class MQTTService {
     mqttClient.subscribe('hub/+/response/+', (message, topic) => {
       this.handleCommandResponse(message, topic);
     }, 1); // QoS 1
+
+    // 테스트 토픽 구독: test/# (ESP32 통신 테스트용)
+    mqttClient.subscribe('test/#', (message, topic) => {
+      console.log(`[MQTT Service] 📥 Test topic subscription triggered: ${topic}`);
+      this.handleTestMessage(message, topic);
+    }, 1); // QoS 1
+    console.log(`[MQTT Service] ✅ Subscribed to test/# for ESP32 communication testing`);
 
     // 모든 허브 메시지 구독 (디버깅용, 개발 모드에서만)
     // 명령 토픽(/command/)은 제외 - 자신이 발행한 메시지를 받지 않도록
@@ -181,7 +183,8 @@ class MQTTService {
         data: telemetryData,
         timestamp: new Date(),
         topic,
-        receiveStartTime // 성능 측정용
+        receiveStartTime, // 성능 측정용 (MQTT 수신 시간)
+        publishStartTime: telemetryData.publishStartTime || null // mqtt-monitor에서 발행한 시간
       });
       const queueTime = Date.now() - receiveStartTime;
       console.log(`[MQTT Service] ✅ Telemetry queued for processing (Queue time: ${queueTime}ms)`);
@@ -237,6 +240,58 @@ class MQTTService {
       }
     } else {
       console.warn(`[MQTT Service] No pending command found for requestId: ${requestId}`);
+    }
+  }
+
+  /**
+   * 테스트 메시지 처리
+   * @param {Object|string} message - 수신된 메시지
+   * @param {string} topic - 메시지가 수신된 토픽
+   */
+  handleTestMessage(message, topic) {
+    console.log(`\n[MQTT Service] 🧪 ===== Test Message Received =====`);
+    console.log(`  Topic: ${topic}`);
+    console.log(`  Message type: ${typeof message}, isBuffer: ${Buffer.isBuffer(message)}`);
+    
+    let testData;
+    try {
+      const messageStr = Buffer.isBuffer(message) ? message.toString('utf8') : 
+                        typeof message === 'string' ? message : JSON.stringify(message);
+      console.log(`  Raw message length: ${messageStr.length} bytes`);
+      console.log(`  Raw message preview: ${messageStr.substring(0, 200)}${messageStr.length > 200 ? '...' : ''}`);
+      
+      testData = JSON.parse(messageStr);
+      console.log(`  ✅ Parsed as JSON successfully`);
+    } catch (e) {
+      console.log(`  ⚠️  JSON parse failed, using raw message: ${e.message}`);
+      testData = { message: Buffer.isBuffer(message) ? message.toString('utf8') : message };
+    }
+
+    console.log(`[MQTT Service] 🧪 Test message data:`, JSON.stringify(testData, null, 2));
+    console.log(`[MQTT Service] 🧪 ====================================\n`);
+
+    // 응답이 필요한 경우 (requestId가 있고 needResponse가 true인 경우)
+    if (testData.requestId && testData.needResponse) {
+      const responseTopic = testData.responseTopic || topic.replace('/request', '/response');
+      const response = {
+        requestId: testData.requestId,
+        success: true,
+        message: 'Test response from backend',
+        originalMessage: testData,
+        timestamp: new Date().toISOString()
+      };
+
+      console.log(`[MQTT Service] 🧪 Sending test response to ${responseTopic}`);
+      mqttClient.publish(responseTopic, response, { qos: 1 });
+    }
+
+    // Socket.IO로 프론트엔드에 전달
+    if (this.io) {
+      this.io.emit('TEST_MESSAGE', {
+        topic,
+        data: testData,
+        timestamp: new Date().toISOString()
+      });
     }
   }
 

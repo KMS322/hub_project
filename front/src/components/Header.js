@@ -53,6 +53,16 @@ function Header() {
           >
             기록 관리
           </Link>
+          {process.env.NODE_ENV === 'development' && (
+            <>
+              <Link
+                to="/signal-processing-test"
+                className={`nav-link ${isActive('/signal-processing-test') ? 'active' : ''}`}
+              >
+                신호처리 테스트
+              </Link>
+            </>
+          )}
         </nav>
         <div className="header-actions">
           <span className="hospital-name">{user?.name || '병원명'}</span>
