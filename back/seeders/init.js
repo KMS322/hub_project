@@ -107,7 +107,7 @@ const initializeDatabase = async () => {
         diagnosis: "건강함",
         medicalHistory: "예방접종 완료",
         user_email: "a@a.com",
-        device_address: "",
+        device_address: null,
       },
       {
         name: "나비",
@@ -122,7 +122,7 @@ const initializeDatabase = async () => {
         diagnosis: "건강함",
         medicalHistory: "정기검진 완료",
         user_email: "b@b.com",
-        device_address: "",
+        device_address: null,
       },
     ];
 
