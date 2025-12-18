@@ -16,10 +16,7 @@ class SocketService {
    * @param {string} token - JWT 인증 토큰
    * @param {string} serverUrl - 서버 URL (기본: http://localhost:5000)
    */
-  connect(
-    token,
-    serverUrl = import.meta.env.VITE_API_URL || "http://localhost:5000"
-  ) {
+  connect(token, serverUrl = import.meta.env.VITE_API_URL) {
     if (this.socket && this.isConnected) {
       console.log("[Socket] Already connected");
       return;

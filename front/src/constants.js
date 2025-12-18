@@ -1,2 +1,2 @@
-export const API_URL = "http://localhost:5000";
-export const MQTT_BROKER_URL = "ws://localhost:9001"; // MQTT over WebSocket
+export const API_URL = import.meta.env.VITE_API_URL;
+export const MQTT_BROKER_URL = import.meta.env.VITE_MQTT_BROKER_URL; // MQTT over WebSocket
