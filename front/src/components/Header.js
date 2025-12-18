@@ -25,7 +25,7 @@ function Header() {
       <div className="header-container">
         <div className="header-logo">
           <Link to="/dashboard" className="logo-link">
-            <img src="/logo.png" alt="로고" className="logo-image" />
+            <img src="/images/logo.png" alt="Talktail" className="logo-image" />
           </Link>
         </div>
         <nav className="header-nav">
@@ -53,7 +53,7 @@ function Header() {
           >
             기록 관리
           </Link>
-          {process.env.NODE_ENV === "development" && (
+          {/* {process.env.NODE_ENV === "development" && (
             <>
               <Link
                 to="/signal-processing-test"
@@ -64,7 +64,7 @@ function Header() {
                 신호처리 테스트
               </Link>
             </>
-          )}
+          )} */}
         </nav>
         <div className="header-actions">
           <span className="hospital-name">{user?.name || "병원명"}</span>

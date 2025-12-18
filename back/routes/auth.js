@@ -182,4 +182,109 @@ router.post("/logout", verifyToken, (req, res) => {
   });
 });
 
+router.put("/update", verifyToken, async (req, res) => {
+  try {
+    const { name, postcode, address, detail_address, phone } = req.body;
+
+    if (!name || !postcode || !address || !detail_address || !phone) {
+      return res.status(400).json({
+        success: false,
+        message: "필수 항목을 모두 입력해주세요.",
+      });
+    }
+
+    const user = await db.User.findByPk(req.user.email);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "사용자를 찾을 수 없습니다.",
+      });
+    }
+
+    await user.update({
+      name,
+      postcode,
+      address,
+      detail_address,
+      phone,
+    });
+
+    res.json({
+      success: true,
+      message: "정보가 수정되었습니다.",
+      data: {
+        user: {
+          email: user.email,
+          name: user.name,
+          postcode: user.postcode,
+          address: user.address,
+          detail_address: user.detail_address,
+          phone: user.phone,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Update user error:", error);
+    res.status(500).json({
+      success: false,
+      message: "정보 수정 중 오류가 발생했습니다.",
+    });
+  }
+});
+
+router.put("/update-password", verifyToken, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "현재 비밀번호와 새 비밀번호를 입력해주세요.",
+      });
+    }
+
+    const user = await db.User.findByPk(req.user.email);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "사용자를 찾을 수 없습니다.",
+      });
+    }
+
+    // 현재 비밀번호 확인
+    const isPasswordValid = await bcrypt.compare(
+      currentPassword,
+      user.password
+    );
+
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        success: false,
+        message: "현재 비밀번호가 올바르지 않습니다.",
+      });
+    }
+
+    // 새 비밀번호 해시화
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // 비밀번호 업데이트
+    await user.update({
+      password: hashedPassword,
+    });
+
+    res.json({
+      success: true,
+      message: "비밀번호가 변경되었습니다.",
+    });
+  } catch (error) {
+    console.error("Update password error:", error);
+    res.status(500).json({
+      success: false,
+      message: "비밀번호 변경 중 오류가 발생했습니다.",
+    });
+  }
+});
+
 module.exports = router;

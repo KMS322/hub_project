@@ -11,6 +11,8 @@ function Patients() {
   const [devices, setDevices] = useState([])
   const [filter, setFilter] = useState('admitted') // all, admitted, discharged
   const [showAddModal, setShowAddModal] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editingPatient, setEditingPatient] = useState(null)
   const [alertModal, setAlertModal] = useState({ isOpen: false, title: '', message: '' })
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null })
   const [deviceSelectModal, setDeviceSelectModal] = useState({ isOpen: false, patientId: null })
@@ -20,15 +22,19 @@ function Patients() {
     species: '',
     breed: '',
     weight: '',
-    gender: '',
-    neutering: '',
-    birthDate: '',
-    admissionDate: '',
+    gender: '수컷',
+    neutering: '여',
+    birthDate: '2020-01-01',
+    admissionDate: new Date().toISOString().split('T')[0],
     veterinarian: '',
     diagnosis: '',
     medicalHistory: '',
-    device_address: ''
+    device_address: '',
+    state: '입원중'
   })
+
+  // 오늘 날짜 (YYYY-MM-DD 형식)
+  const today = new Date().toISOString().split('T')[0]
 
   // 데이터 로드
   useEffect(() => {
@@ -42,7 +48,7 @@ function Patients() {
         petService.getPets(),
         deviceService.getDevices()
       ])
-      
+
       setPatients(petsData)
       setDevices(devicesData)
     } catch (error) {
@@ -57,9 +63,46 @@ function Patients() {
     }
   }
 
-  const filteredPatients = filter === 'all' 
-    ? patients 
+  const filteredPatients = filter === 'all'
+    ? patients
     : patients.filter(p => p.status === filter)
+
+  const handleEdit = (patient) => {
+    setEditingPatient(patient)
+    setFormData({
+      name: patient.name,
+      species: patient.species,
+      breed: patient.breed,
+      weight: patient.weight,
+      gender: patient.gender,
+      neutering: patient.neutering,
+      birthDate: patient.birthDate,
+      admissionDate: patient.admissionDate,
+      veterinarian: patient.veterinarian,
+      diagnosis: patient.diagnosis,
+      medicalHistory: patient.medicalHistory,
+      device_address: patient.device_address || '',
+      state: patient.state || '입원중'
+    })
+    setShowEditModal(true)
+  }
+
+  const handleDelete = (patientId) => {
+    setConfirmModal({
+      isOpen: true,
+      title: '환자 삭제',
+      message: '이 환자를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.',
+      onConfirm: async () => {
+        try {
+          await petService.deletePet(patientId)
+          setAlertModal({ isOpen: true, title: '삭제 완료', message: '환자가 삭제되었습니다.' })
+          loadData()
+        } catch (error) {
+          setAlertModal({ isOpen: true, title: '오류', message: error.message || '환자 삭제에 실패했습니다.' })
+        }
+      }
+    })
+  }
 
   const handleDischarge = async (patientId) => {
     setConfirmModal({
@@ -68,7 +111,7 @@ function Patients() {
       message: '이 환자를 퇴원 처리하시겠습니까?',
       onConfirm: async () => {
         try {
-          await petService.updatePet(patientId, { device_address: null })
+          await petService.updatePet(patientId, { state: '퇴원' })
           setAlertModal({ isOpen: true, title: '처리 완료', message: '퇴원 처리가 완료되었습니다.' })
           loadData()
         } catch (error) {
@@ -126,14 +169,15 @@ function Patients() {
         species: '',
         breed: '',
         weight: '',
-        gender: '',
-        neutering: '',
-        birthDate: '',
-        admissionDate: '',
+        gender: '수컷',
+        neutering: '여',
+        birthDate: '2020-01-01',
+        admissionDate: new Date().toISOString().split('T')[0],
         veterinarian: '',
         diagnosis: '',
         medicalHistory: '',
-        device_address: ''
+        device_address: '',
+        state: '입원중'
       })
       loadData()
     } catch (error) {
@@ -141,8 +185,36 @@ function Patients() {
     }
   }
 
+  const handleEditSubmit = async (e) => {
+    e.preventDefault()
+    try {
+      await petService.updatePet(editingPatient.id, formData)
+      setAlertModal({ isOpen: true, title: '수정 완료', message: '환자 정보가 수정되었습니다.' })
+      setShowEditModal(false)
+      setEditingPatient(null)
+      setFormData({
+        name: '',
+        species: '',
+        breed: '',
+        weight: '',
+        gender: '수컷',
+        neutering: '여',
+        birthDate: '2020-01-01',
+        admissionDate: new Date().toISOString().split('T')[0],
+        veterinarian: '',
+        diagnosis: '',
+        medicalHistory: '',
+        device_address: '',
+        state: '입원중'
+      })
+      loadData()
+    } catch (error) {
+      setAlertModal({ isOpen: true, title: '오류', message: error.message || '환자 수정에 실패했습니다.' })
+    }
+  }
+
   // 가용 디바이스 목록
-  const availableDevices = devices.filter(d => 
+  const availableDevices = devices.filter(d =>
     d.status === 'connected' && !d.connectedPatient
   )
 
@@ -157,30 +229,251 @@ function Patients() {
     )
   }
 
+  const PatientForm = ({ onSubmit, isEdit = false }) => (
+    <form onSubmit={onSubmit}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+        {/* 왼쪽 열 */}
+        <div>
+          <div className="form-group">
+            <label>이름 *</label>
+            <input
+              type="text"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label>종류 *</label>
+            <input
+              type="text"
+              value={formData.species}
+              onChange={(e) => setFormData({ ...formData, species: e.target.value })}
+              placeholder="개 or 고양이"
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label>품종 *</label>
+            <input
+              type="text"
+              value={formData.breed}
+              onChange={(e) => setFormData({ ...formData, breed: e.target.value })}
+              placeholder="ex) 말티즈, 푸들"
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label>체중 *</label>
+            <input
+              type="text"
+              value={formData.weight}
+              onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
+              placeholder="체중 (kg)"
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label>성별 *</label>
+            <div style={{ display: 'flex', gap: '1rem', paddingTop: '0.5rem' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name="gender"
+                  value="수컷"
+                  checked={formData.gender === '수컷'}
+                  onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+                  required
+                />
+                수컷
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name="gender"
+                  value="암컷"
+                  checked={formData.gender === '암컷'}
+                  onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+                  required
+                />
+                암컷
+              </label>
+            </div>
+          </div>
+          <div className="form-group">
+            <label>중성화 여부 *</label>
+            <div style={{ display: 'flex', gap: '1rem', paddingTop: '0.5rem' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name="neutering"
+                  value="여"
+                  checked={formData.neutering === '여'}
+                  onChange={(e) => setFormData({ ...formData, neutering: e.target.value })}
+                  required
+                />
+                여
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name="neutering"
+                  value="부"
+                  checked={formData.neutering === '부'}
+                  onChange={(e) => setFormData({ ...formData, neutering: e.target.value })}
+                  required
+                />
+                부
+              </label>
+            </div>
+          </div>
+        </div>
+
+        {/* 오른쪽 열 */}
+        <div>
+          <div className="form-group">
+            <label>생년월일 *</label>
+            <input
+              type="date"
+              value={formData.birthDate}
+              onChange={(e) => setFormData({ ...formData, birthDate: e.target.value })}
+              max={today}
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label>입원일 *</label>
+            <input
+              type="date"
+              value={formData.admissionDate}
+              onChange={(e) => setFormData({ ...formData, admissionDate: e.target.value })}
+              max={today}
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label>담당수의사 *</label>
+            <input
+              type="text"
+              value={formData.veterinarian}
+              onChange={(e) => setFormData({ ...formData, veterinarian: e.target.value })}
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label>진단명 *</label>
+            <input
+              type="text"
+              value={formData.diagnosis}
+              onChange={(e) => setFormData({ ...formData, diagnosis: e.target.value })}
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label>과거병력 *</label>
+            <textarea
+              value={formData.medicalHistory}
+              onChange={(e) => setFormData({ ...formData, medicalHistory: e.target.value })}
+              required
+              style={{ minHeight: '80px' }}
+            />
+          </div>
+          <div className="form-group">
+            <label>연결할 디바이스 (선택사항)</label>
+            <select
+              value={formData.device_address}
+              onChange={(e) => setFormData({ ...formData, device_address: e.target.value })}
+            >
+              <option value="">없음</option>
+              {availableDevices.map(device => (
+                <option key={device.address} value={device.address}>
+                  {device.name} ({device.address})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* 버튼 하단 중앙 배치 */}
+      <div className="form-actions" style={{ marginTop: '2rem', display: 'flex', justifyContent: 'center', gap: '1rem' }}>
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={() => {
+            if (isEdit) {
+              setShowEditModal(false)
+              setEditingPatient(null)
+            } else {
+              setShowAddModal(false)
+            }
+            setFormData({
+              name: '',
+              species: '',
+              breed: '',
+              weight: '',
+              gender: '수컷',
+              neutering: '여',
+              birthDate: '2020-01-01',
+              admissionDate: new Date().toISOString().split('T')[0],
+              veterinarian: '',
+              diagnosis: '',
+              medicalHistory: '',
+              device_address: '',
+              state: '입원중'
+            })
+          }}
+        >
+          취소
+        </button>
+        <button type="submit" className="btn-primary">
+          {isEdit ? '수정' : '등록'}
+        </button>
+      </div>
+    </form>
+  )
+
   return (
     <div className="patients-page">
       <Header />
       <div className="patients-container">
         <div className="patients-header">
-          <button className="btn-primary" onClick={() => setShowAddModal(true)}>
+          <button className="btn-primary" onClick={() => {
+            setFormData({
+              name: '',
+              species: '',
+              breed: '',
+              weight: '',
+              gender: '수컷',
+              neutering: '여',
+              birthDate: '2020-01-01',
+              admissionDate: new Date().toISOString().split('T')[0],
+              veterinarian: '',
+              diagnosis: '',
+              medicalHistory: '',
+              device_address: '',
+              state: '입원중'
+            })
+            setShowAddModal(true)
+          }}>
             환자 등록
           </button>
         </div>
 
         <div className="filter-tabs">
-          <button 
+          <button
             className={filter === 'all' ? 'filter-tab active' : 'filter-tab'}
             onClick={() => setFilter('all')}
           >
             전체 ({patients.length})
           </button>
-          <button 
+          <button
             className={filter === 'admitted' ? 'filter-tab active' : 'filter-tab'}
             onClick={() => setFilter('admitted')}
           >
             입원중 ({patients.filter(p => p.status === 'admitted').length})
           </button>
-          <button 
+          <button
             className={filter === 'discharged' ? 'filter-tab active' : 'filter-tab'}
             onClick={() => setFilter('discharged')}
           >
@@ -238,9 +531,15 @@ function Patients() {
                 </div>
               </div>
               <div className="patient-actions">
+                <button
+                  className="btn-primary"
+                  onClick={() => handleEdit(patient)}
+                >
+                  정보 수정
+                </button>
                 {patient.connectedDevice && (
                   <>
-                    <button 
+                    <button
                       className="btn-secondary"
                       onClick={() => {
                         const newDevice = availableDevices[0]
@@ -253,7 +552,7 @@ function Patients() {
                     >
                       디바이스 변경
                     </button>
-                    <button 
+                    <button
                       className="btn-secondary"
                       onClick={() => handleDeviceDisconnect(patient.id)}
                     >
@@ -262,7 +561,7 @@ function Patients() {
                   </>
                 )}
                 {!patient.connectedDevice && availableDevices.length > 0 && (
-                  <button 
+                  <button
                     className="btn-primary"
                     onClick={() => setDeviceSelectModal({ isOpen: true, patientId: patient.id })}
                   >
@@ -270,13 +569,19 @@ function Patients() {
                   </button>
                 )}
                 {patient.status === 'admitted' && (
-                  <button 
-                    className="btn-danger"
+                  <button
+                    className="btn-secondary"
                     onClick={() => handleDischarge(patient.id)}
                   >
                     퇴원 처리
                   </button>
                 )}
+                <button
+                  className="btn-danger"
+                  onClick={() => handleDelete(patient.id)}
+                >
+                  환자 삭제
+                </button>
               </div>
             </div>
           ))}
@@ -296,144 +601,22 @@ function Patients() {
               <button onClick={() => setShowAddModal(false)}>×</button>
             </div>
             <div className="modal-body">
-              <form onSubmit={handleSubmit}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-                  {/* 왼쪽 열 */}
-                  <div>
-                    <div className="form-group">
-                      <label>이름 *</label>
-                      <input
-                        type="text"
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        required
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>종류 *</label>
-                      <input
-                        type="text"
-                        value={formData.species}
-                        onChange={(e) => setFormData({ ...formData, species: e.target.value })}
-                        required
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>품종 *</label>
-                      <input
-                        type="text"
-                        value={formData.breed}
-                        onChange={(e) => setFormData({ ...formData, breed: e.target.value })}
-                        required
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>체중 *</label>
-                      <input
-                        type="text"
-                        value={formData.weight}
-                        onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
-                        required
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>성별 *</label>
-                      <select
-                        value={formData.gender}
-                        onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
-                        required
-                      >
-                        <option value="">선택</option>
-                        <option value="수컷">수컷</option>
-                        <option value="암컷">암컷</option>
-                      </select>
-                    </div>
-                    <div className="form-group">
-                      <label>중성화 여부 *</label>
-                      <select
-                        value={formData.neutering}
-                        onChange={(e) => setFormData({ ...formData, neutering: e.target.value })}
-                        required
-                      >
-                        <option value="">선택</option>
-                        <option value="완료">완료</option>
-                        <option value="미완료">미완료</option>
-                      </select>
-                    </div>
-                  </div>
+              <PatientForm onSubmit={handleSubmit} isEdit={false} />
+            </div>
+          </div>
+        </div>
+      )}
 
-                  {/* 오른쪽 열 */}
-                  <div>
-                    <div className="form-group">
-                      <label>생년월일 *</label>
-                      <input
-                        type="date"
-                        value={formData.birthDate}
-                        onChange={(e) => setFormData({ ...formData, birthDate: e.target.value })}
-                        required
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>입원일 *</label>
-                      <input
-                        type="date"
-                        value={formData.admissionDate}
-                        onChange={(e) => setFormData({ ...formData, admissionDate: e.target.value })}
-                        required
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>담당수의사 *</label>
-                      <input
-                        type="text"
-                        value={formData.veterinarian}
-                        onChange={(e) => setFormData({ ...formData, veterinarian: e.target.value })}
-                        required
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>진단명 *</label>
-                      <input
-                        type="text"
-                        value={formData.diagnosis}
-                        onChange={(e) => setFormData({ ...formData, diagnosis: e.target.value })}
-                        required
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>과거병력 *</label>
-                      <textarea
-                        value={formData.medicalHistory}
-                        onChange={(e) => setFormData({ ...formData, medicalHistory: e.target.value })}
-                        required
-                        style={{ minHeight: '80px' }}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>연결할 디바이스 (선택사항)</label>
-                      <select
-                        value={formData.device_address}
-                        onChange={(e) => setFormData({ ...formData, device_address: e.target.value })}
-                      >
-                        <option value="">없음</option>
-                        {availableDevices.map(device => (
-                          <option key={device.address} value={device.address}>
-                            {device.name} ({device.address})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 버튼 하단 중앙 배치 */}
-                <div className="form-actions" style={{ marginTop: '2rem', display: 'flex', justifyContent: 'center', gap: '1rem' }}>
-                  <button type="button" className="btn-secondary" onClick={() => setShowAddModal(false)}>
-                    취소
-                  </button>
-                  <button type="submit" className="btn-primary">등록</button>
-                </div>
-              </form>
+      {/* 환자 수정 모달 */}
+      {showEditModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h3>환자 정보 수정</h3>
+              <button onClick={() => setShowEditModal(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <PatientForm onSubmit={handleEditSubmit} isEdit={true} />
             </div>
           </div>
         </div>
@@ -483,8 +666,8 @@ function Patients() {
               )}
             </div>
             <div className="modal-footer">
-              <button 
-                className="btn-secondary" 
+              <button
+                className="btn-secondary"
                 onClick={() => setDeviceSelectModal({ isOpen: false, patientId: null })}
               >
                 취소
