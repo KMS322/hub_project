@@ -3,7 +3,7 @@ node_modules/
 npm-debug.log*
 .DS_Store
 .claude
-
+hrv_hub/
 # Logs
 logs
 *.log

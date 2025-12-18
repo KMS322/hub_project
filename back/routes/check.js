@@ -132,76 +132,100 @@ router.post("/hub", async (req, res) => {
                   }]
                 });
 
+                // CSV 저장은 디바이스가 허브에 연결되어 있고 펫이 연결된 경우에만
                 if (device && device.Hub && device.Hub.user_email) {
                   const userEmail = device.Hub.user_email;
                   const petName = device.Pet?.name || 'Unknown';
                   
-                  // CSV 세션이 없으면 시작
-                  if (!csvWriter.hasActiveSession(data.device_mac_address)) {
-                    const startTime = data.start_time || '000000000';
-                    csvWriter.startSession(data.device_mac_address, userEmail, petName, startTime);
-                    log(`[Hub Check] Started CSV session for ${data.device_mac_address}`);
+                  // 펫이 연결된 경우에만 CSV 저장
+                  if (device.Pet) {
+                    // CSV 세션이 없으면 시작
+                    if (!csvWriter.hasActiveSession(data.device_mac_address)) {
+                      const startTime = data.start_time || '000000000';
+                      csvWriter.startSession(data.device_mac_address, userEmail, petName, startTime);
+                      log(`[Hub Check] Started CSV session for ${data.device_mac_address}`);
+                    }
+                    
+                    // CSV에 데이터 저장
+                    await csvWriter.writeBatch(data);
+                  }
+                }
+
+                // 실시간 모니터링을 위한 Telemetry 데이터는 항상 전송 (디바이스가 DB에 없어도)
+                if (ioInstance) {
+                  // 배터리 캐시 (전역 변수로 관리)
+                  if (!global.batteryCache) {
+                    global.batteryCache = new Map();
                   }
                   
-                  // CSV에 데이터 저장
-                  await csvWriter.writeBatch(data);
-
-                  // 실시간 모니터링을 위한 최소 Telemetry 데이터 Socket.IO 브로드캐스트
-                  if (ioInstance) {
-                    // start_time을 밀리초로 변환 (HHmmssSSS 형식)
-                    const parseStartTime = (startTimeStr) => {
-                      if (!startTimeStr || startTimeStr.length < 9) return Date.now();
-                      try {
-                        const hours = parseInt(startTimeStr.substring(0, 2));
-                        const minutes = parseInt(startTimeStr.substring(2, 4));
-                        const seconds = parseInt(startTimeStr.substring(4, 6));
-                        const milliseconds = parseInt(startTimeStr.substring(6, 9));
-                        const today = new Date();
-                        today.setHours(hours, minutes, seconds, milliseconds);
-                        return today.getTime();
-                      } catch (e) {
-                        return Date.now();
-                      }
-                    };
-
-                    const startTimeMs = parseStartTime(data.start_time);
-                    const samplingRate = data.sampling_rate || 50;
-                    const intervalMs = (1 / samplingRate) * 250; // 250 샘플당 간격 (ms)
-
-                    // data 배열의 각 샘플에 대해 시간 계산
-                    const dataArr = data.data.map((dataStr, index) => {
-                      const sampleTime = startTimeMs + (index * intervalMs);
-                      return {
-                        hr: data.hr || 0,
-                        spo2: data.spo2 || 0,
-                        temp: data.temp || 0,
-                        battery: data.battery || 0,
-                        timestamp: sampleTime,
-                        index: index
-                      };
-                    });
-
-                    const telemetryPayload = {
-                      type: 'sensor_data',
-                      hubId: mac_address,
-                      deviceId: data.device_mac_address,
-                      data: {
-                        hr: data.hr || 0,
-                        spo2: data.spo2 || 0,
-                        temp: data.temp || 0,
-                        battery: data.battery || 0,
-                        start_time: data.start_time,
-                        sampling_rate: samplingRate,
-                        dataArr: dataArr,
-                        timestamp: Date.now()
-                      },
-                      timestamp: new Date().toISOString()
-                    };
-
-                    ioInstance.emit('TELEMETRY', telemetryPayload);
+                  // 배터리 값 처리: 0이 아닐 때만 캐시 업데이트
+                  const currentBattery = data.battery || 0;
+                  let batteryToUse = currentBattery;
+                  
+                  if (currentBattery === 0) {
+                    // 0이면 캐시된 값 사용
+                    if (global.batteryCache.has(data.device_mac_address)) {
+                      batteryToUse = global.batteryCache.get(data.device_mac_address);
+                      log(`[Hub Check] Using cached battery value for ${data.device_mac_address}: ${batteryToUse}%`);
+                    }
+                  } else {
+                    // 0이 아니면 캐시 업데이트
+                    global.batteryCache.set(data.device_mac_address, currentBattery);
+                    log(`[Hub Check] Updated battery cache for ${data.device_mac_address}: ${currentBattery}%`);
                   }
-                } else {
-                  log(`[Hub Check] Device ${data.device_mac_address} not found or not connected to pet`);
+
+                  // start_time을 밀리초로 변환 (HHmmssSSS 형식)
+                  const parseStartTime = (startTimeStr) => {
+                    if (!startTimeStr || startTimeStr.length < 9) return Date.now();
+                    try {
+                      const hours = parseInt(startTimeStr.substring(0, 2));
+                      const minutes = parseInt(startTimeStr.substring(2, 4));
+                      const seconds = parseInt(startTimeStr.substring(4, 6));
+                      const milliseconds = parseInt(startTimeStr.substring(6, 9));
+                      const today = new Date();
+                      today.setHours(hours, minutes, seconds, milliseconds);
+                      return today.getTime();
+                    } catch (e) {
+                      return Date.now();
+                    }
+                  };
+
+                  const startTimeMs = parseStartTime(data.start_time);
+                  const samplingRate = data.sampling_rate || 50;
+                  const intervalMs = (1 / samplingRate) * 250; // 250 샘플당 간격 (ms)
+
+                  // data 배열의 각 샘플에 대해 시간 계산
+                  const dataArr = data.data.map((dataStr, index) => {
+                    const sampleTime = startTimeMs + (index * intervalMs);
+                    return {
+                      hr: data.hr || 0,
+                      spo2: data.spo2 || 0,
+                      temp: data.temp || 0,
+                      battery: batteryToUse, // 캐시된 배터리 값 사용
+                      timestamp: sampleTime,
+                      index: index
+                    };
+                  });
+
+                  const telemetryPayload = {
+                    type: 'sensor_data',
+                    hubId: mac_address,
+                    deviceId: data.device_mac_address,
+                    data: {
+                      hr: data.hr || 0,
+                      spo2: data.spo2 || 0,
+                      temp: data.temp || 0,
+                      battery: batteryToUse, // 캐시된 배터리 값 사용
+                      start_time: data.start_time,
+                      sampling_rate: samplingRate,
+                      dataArr: dataArr,
+                      timestamp: Date.now()
+                    },
+                    timestamp: new Date().toISOString()
+                  };
+
+                  ioInstance.emit('TELEMETRY', telemetryPayload);
+                  log(`[Hub Check] ✅ Emitted TELEMETRY for device ${data.device_mac_address} (battery: ${batteryToUse}%)`);
                 }
               } catch (error) {
                 console.error(`[Hub Check] Error processing telemetry data:`, error);

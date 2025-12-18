@@ -15,6 +15,7 @@ class MQTTService {
     this.telemetryQueue = telemetryQueue; // Telemetry 데이터 큐
     this.pendingCommands = new Map(); // requestId 기반 명령 대기 목록
     this.hubCallbacks = new Map(); // 허브별 콜백 저장
+    this.batteryCache = new Map(); // 디바이스별 마지막 배터리 값 저장
   }
 
   /**
@@ -143,11 +144,11 @@ class MQTTService {
   }
 
   /**
-   * Hub Send 메시지 처리 (mqtt ready 등)
+   * Hub Send 메시지 처리 (mqtt ready, 측정 데이터 등)
    * @param {Object|string} message - 수신된 메시지
    * @param {string} topic - 메시지가 수신된 토픽 (예: hub/80:b5:4e:db:44:9a/send)
    */
-  handleHubSendMessage(message, topic) {
+  async handleHubSendMessage(message, topic) {
     const parts = topic.split('/');
     const hubId = parts[1]; // hub/80:b5:4e:db:44:9a/send에서 허브 ID 추출
     
@@ -162,6 +163,133 @@ class MQTTService {
     }
 
     console.log(`[MQTT Service] 📨 Hub send message from ${topic}: ${messageStr}`);
+
+    // JSON 형식의 측정 데이터 처리
+    try {
+      const data = JSON.parse(messageStr);
+      
+      // 측정 데이터인지 확인 (device_mac_address와 data 배열이 있으면 측정 데이터)
+      if (data.device_mac_address && Array.isArray(data.data)) {
+        console.log(`[MQTT Service] 📊 Measurement data detected from hub ${hubId}, device ${data.device_mac_address}`);
+        
+        // check.js와 동일한 로직으로 처리하기 위해 check.js의 로직을 호출
+        // 또는 직접 TELEMETRY 이벤트를 emit
+        const db = require('../models');
+        const csvWriter = require('../utils/csvWriter');
+        
+        try {
+          const device = await db.Device.findOne({
+            where: { address: data.device_mac_address },
+            include: [{
+              model: db.Hub,
+              as: 'Hub',
+              attributes: ['address', 'user_email']
+            }, {
+              model: db.Pet,
+              as: 'Pet',
+              attributes: ['id', 'name', 'user_email']
+            }]
+          });
+
+          // CSV 저장은 디바이스가 허브에 연결되어 있고 펫이 연결된 경우에만
+          if (device && device.Hub && device.Hub.user_email) {
+            const userEmail = device.Hub.user_email;
+            const petName = device.Pet?.name || 'Unknown';
+            
+            // 펫이 연결된 경우에만 CSV 저장
+            if (device.Pet) {
+              // CSV 세션이 없으면 시작
+              if (!csvWriter.hasActiveSession(data.device_mac_address)) {
+                const startTime = data.start_time || '000000000';
+                csvWriter.startSession(data.device_mac_address, userEmail, petName, startTime);
+                console.log(`[MQTT Service] Started CSV session for ${data.device_mac_address}`);
+              }
+              
+              // CSV에 데이터 저장
+              await csvWriter.writeBatch(data);
+            }
+          }
+
+          // 실시간 모니터링을 위한 Telemetry 데이터는 항상 전송 (디바이스가 DB에 없어도)
+          if (this.io) {
+            // 배터리 값 처리: 0이 아닐 때만 캐시 업데이트
+            const currentBattery = data.battery || 0;
+            let batteryToUse = currentBattery;
+            
+            if (currentBattery === 0) {
+              // 0이면 캐시된 값 사용
+              if (this.batteryCache.has(data.device_mac_address)) {
+                batteryToUse = this.batteryCache.get(data.device_mac_address);
+                console.log(`[MQTT Service] Using cached battery value for ${data.device_mac_address}: ${batteryToUse}%`);
+              }
+            } else {
+              // 0이 아니면 캐시 업데이트
+              this.batteryCache.set(data.device_mac_address, currentBattery);
+              console.log(`[MQTT Service] Updated battery cache for ${data.device_mac_address}: ${currentBattery}%`);
+            }
+
+            // start_time을 밀리초로 변환 (HHmmssSSS 형식)
+            const parseStartTime = (startTimeStr) => {
+              if (!startTimeStr || startTimeStr.length < 9) return Date.now();
+              try {
+                const hours = parseInt(startTimeStr.substring(0, 2));
+                const minutes = parseInt(startTimeStr.substring(2, 4));
+                const seconds = parseInt(startTimeStr.substring(4, 6));
+                const milliseconds = parseInt(startTimeStr.substring(6, 9));
+                const today = new Date();
+                today.setHours(hours, minutes, seconds, milliseconds);
+                return today.getTime();
+              } catch (e) {
+                return Date.now();
+              }
+            };
+
+            const startTimeMs = parseStartTime(data.start_time);
+            const samplingRate = data.sampling_rate || 50;
+            const intervalMs = (1 / samplingRate) * 250; // 250 샘플당 간격 (ms)
+
+            // data 배열의 각 샘플에 대해 시간 계산
+            const dataArr = data.data.map((dataStr, index) => {
+              const sampleTime = startTimeMs + (index * intervalMs);
+              return {
+                hr: data.hr || 0,
+                spo2: data.spo2 || 0,
+                temp: data.temp || 0,
+                battery: batteryToUse, // 캐시된 배터리 값 사용
+                timestamp: sampleTime,
+                index: index
+              };
+            });
+
+            const telemetryPayload = {
+              type: 'sensor_data',
+              hubId: hubId,
+              deviceId: data.device_mac_address,
+              data: {
+                hr: data.hr || 0,
+                spo2: data.spo2 || 0,
+                temp: data.temp || 0,
+                battery: batteryToUse, // 캐시된 배터리 값 사용
+                start_time: data.start_time,
+                sampling_rate: samplingRate,
+                dataArr: dataArr,
+                timestamp: Date.now()
+              },
+              timestamp: new Date().toISOString()
+            };
+
+            this.io.emit('TELEMETRY', telemetryPayload);
+            console.log(`[MQTT Service] ✅ Emitted TELEMETRY for device ${data.device_mac_address} (battery: ${batteryToUse}%)`);
+          }
+        } catch (error) {
+          console.error(`[MQTT Service] Error processing measurement data:`, error);
+        }
+        
+        return; // 측정 데이터 처리 완료
+      }
+    } catch (e) {
+      // JSON 파싱 실패는 무시 (문자열 메시지일 수 있음)
+    }
 
     // "message:80:b5:4e:db:44:9a mqtt ready" 형식 메시지 처리
     if (messageStr.includes('mqtt ready')) {
