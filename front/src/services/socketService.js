@@ -27,7 +27,18 @@ class SocketService {
       this.disconnect();
     }
 
-    this.socket = io(serverUrl, {
+    // Socket.IO는 네임스페이스를 사용하므로, URL에서 path를 제거하고 origin만 사용
+    let socketUrl = serverUrl;
+    try {
+      const urlObj = new URL(serverUrl);
+      socketUrl = urlObj.origin; // 예: http://localhost:5000/api -> http://localhost:5000
+      console.log(`[Socket] Connecting to ${socketUrl} (original: ${serverUrl})`);
+    } catch (e) {
+      console.warn("[Socket] Invalid URL format for serverUrl, using as is:", serverUrl);
+      socketUrl = serverUrl;
+    }
+
+    this.socket = io(socketUrl, {
       auth: {
         token: token,
       },

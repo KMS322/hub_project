@@ -77,35 +77,36 @@ function Hardware() {
     loadData()
   }, [])
 
-  // 페이지 접속 시마다 허브 상태 체크
+  // 페이지 접속 시 한 번만 허브 상태 체크
+  const hasCheckedRef = useRef(false);
+  
   useEffect(() => {
-    if (!isConnected || hubs.length === 0) return;
+    // 이미 체크했거나 연결되지 않았거나 허브가 없으면 리턴
+    if (hasCheckedRef.current || !isConnected || hubs.length === 0) return;
 
-    // 모든 허브에 대해 상태 체크
-      const checkHubStates = () => {
-        hubs.forEach(hub => {
-          const requestId = `state_check_${hub.address}_${Date.now()}`;
-          emit('CONTROL_REQUEST', {
-            hubId: hub.address,
-            deviceId: 'HUB',
-            command: {
-              raw_command: 'state:hub'
-            },
-            requestId
-          });
-        });
-      };
+    // 모든 허브에 대해 상태 체크 (한 번만 실행)
+    hubs.forEach(hub => {
+      const requestId = `state_check_${hub.address}_${Date.now()}`;
+      emit('CONTROL_REQUEST', {
+        hubId: hub.address,
+        deviceId: 'HUB',
+        command: {
+          raw_command: 'state:hub'
+        },
+        requestId
+      });
+    });
 
-    // 즉시 한 번 실행
-    checkHubStates();
+    // 체크 완료 플래그 설정
+    hasCheckedRef.current = true;
+  }, [isConnected, hubs, emit]);
 
-    // 30초마다 상태 체크
-    const interval = setInterval(checkHubStates, 30000);
-
+  // 페이지를 떠날 때 플래그 리셋
+  useEffect(() => {
     return () => {
-      clearInterval(interval);
+      hasCheckedRef.current = false;
     };
-  }, [isConnected, hubs, emit])
+  }, [])
 
   // MQTT는 백엔드에서만 사용하므로 프론트엔드에서 직접 연결하지 않음
   // Socket.IO를 통해 백엔드와 통신
