@@ -45,18 +45,18 @@ app.use(express.urlencoded({ extended: true, limit: '30mb' })); // 요청 크기
 
 app.set("io", io);
 
-app.use("/auth", authRoutes);
-app.use("/mqtt", mqttRoutes);
-app.use("/telemetry", telemetryRoutes);
-app.use("/hub", hubRoutes);
-app.use("/device", deviceRoutes);
-app.use("/pet", petRoutes);
-app.use("/records", recordsRoutes);
-app.use("/mqtt-test", mqttTestRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/mqtt", mqttRoutes);
+app.use("/api/telemetry", telemetryRoutes);
+app.use("/api/hub", hubRoutes);
+app.use("/api/device", deviceRoutes);
+app.use("/api/pet", petRoutes);
+app.use("/api/records", recordsRoutes);
+app.use("/api/mqtt-test", mqttTestRoutes);
 app.use("/api/measurement", measurementRoutes);
 // check 라우트에 Socket.IO 인스턴스 전달
 checkRoutes.setIOInstance(io);
-app.use("/check", checkRoutes);
+app.use("/api/check", checkRoutes);
 
 // Telemetry 데이터 큐 생성
 const telemetryQueue = [];

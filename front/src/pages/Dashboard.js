@@ -24,6 +24,9 @@ function Dashboard() {
     message: "",
     onConfirm: null,
   });
+  const [deviceConnectionStatuses, setDeviceConnectionStatuses] = useState({}); // 디바이스 연결 상태
+  const [hubStatuses, setHubStatuses] = useState({}); // 허브 온라인 상태
+  const [measurementStates, setMeasurementStates] = useState({}); // 디바이스별 측정 상태 { deviceAddress: true/false }
 
   // 데이터 로드
   useEffect(() => {
@@ -59,12 +62,94 @@ function Dashboard() {
       }
     };
 
+    // 연결된 디바이스 목록 수신 (state:hub 응답)
+    const handleConnectedDevices = (payload) => {
+      const hubAddress = payload.hubAddress;
+      const connectedDevices = payload.connected_devices || [];
+
+      if (hubAddress) {
+        setHubStatuses(prev => ({
+          ...prev,
+          [hubAddress]: true
+        }));
+      }
+
+      // 연결된 디바이스 상태 업데이트
+      const normalizeMac = (mac) => mac.replace(/[:-]/g, '').toUpperCase();
+      const connectedMacSet = new Set(connectedDevices.map(mac => normalizeMac(mac)));
+
+      setDeviceConnectionStatuses(prev => {
+        const newStatuses = { ...prev };
+        connectedDevices.forEach(device => {
+          const deviceMac = normalizeMac(device);
+          newStatuses[deviceMac] = 'connected';
+        });
+        return newStatuses;
+      });
+    };
+
+    // 측정 시작/정지 결과 수신
+    const handleControlResult = (data) => {
+      if (data.success && data.deviceId) {
+        const command = data.data?.command || data.command || {};
+        if (command.action === 'start_measurement') {
+          setMeasurementStates(prev => ({
+            ...prev,
+            [data.deviceId]: true
+          }));
+        } else if (command.action === 'stop_measurement') {
+          setMeasurementStates(prev => ({
+            ...prev,
+            [data.deviceId]: false
+          }));
+        }
+      }
+    };
+
     on("TELEMETRY", handleTelemetry);
+    on("CONNECTED_DEVICES", handleConnectedDevices);
+    on("CONTROL_RESULT", handleControlResult);
 
     return () => {
       off("TELEMETRY", handleTelemetry);
+      off("CONNECTED_DEVICES", handleConnectedDevices);
+      off("CONTROL_RESULT", handleControlResult);
     };
   }, [isConnected, on, off]);
+
+  // 페이지 접속 시 허브 상태 체크
+  useEffect(() => {
+    if (!isConnected) return;
+
+    const checkHubStates = async () => {
+      try {
+        const hubs = await hubService.getHubs();
+        hubs.forEach(hub => {
+          const requestId = `state_check_${hub.address}_${Date.now()}`;
+          emit('CONTROL_REQUEST', {
+            hubId: hub.address,
+            deviceId: 'HUB',
+            command: {
+              raw_command: 'state:hub'
+            },
+            requestId
+          });
+        });
+      } catch (error) {
+        console.error('[Dashboard] Failed to check hub states:', error);
+      }
+    };
+
+    // 즉시 한 번 실행
+    checkHubStates();
+
+    // 30초마다 상태 체크
+    const interval = setInterval(checkHubStates, 30000);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [isConnected, emit]);
 
   // 하드웨어 오류 감지 및 알림 업데이트
   useEffect(() => {
@@ -85,6 +170,17 @@ function Dashboard() {
 
     if (!device.hub_address) {
       alert('디바이스의 허브 정보를 찾을 수 없습니다.');
+      return;
+    }
+
+    // 디바이스 연결 상태 확인
+    const normalizeMac = (mac) => mac.replace(/[:-]/g, '').toUpperCase();
+    const deviceMac = normalizeMac(device.address);
+    const isConnected = deviceConnectionStatuses[deviceMac] === 'connected' || 
+                       deviceConnectionStatuses[device.address] === 'connected';
+    
+    if (!isConnected) {
+      alert('디바이스가 연결되어 있지 않습니다. 디바이스를 켜주세요.');
       return;
     }
 
@@ -132,6 +228,12 @@ function Dashboard() {
       },
       requestId
     });
+
+    // 측정 상태 즉시 업데이트 (응답 대기 전)
+    setMeasurementStates(prev => ({
+      ...prev,
+      [device.address]: true
+    }));
   };
 
   // 측정 정지
@@ -184,6 +286,12 @@ function Dashboard() {
       },
       requestId
     });
+
+    // 측정 상태 즉시 업데이트 (응답 대기 전)
+    setMeasurementStates(prev => ({
+      ...prev,
+      [device.address]: false
+    }));
   };
 
   const loadData = async () => {
@@ -280,6 +388,13 @@ function Dashboard() {
         });
 
       setConnectedDevices(devicesWithPatients);
+
+      // 디바이스 연결 상태 초기화 (모두 disconnected로 시작, 이후 CONNECTED_DEVICES 이벤트로 업데이트)
+      const initialStatuses = {};
+      devicesWithPatients.forEach(device => {
+        initialStatuses[device.address] = 'disconnected';
+      });
+      setDeviceConnectionStatuses(initialStatuses);
     } catch (err) {
       console.error("Failed to load data:", err);
       setError(err.message || "데이터를 불러오는데 실패했습니다.");
@@ -392,26 +507,55 @@ function Dashboard() {
                       </div>
                       <div className="header-right">
                         <span className="device-name">{device.name}</span>
-                        <button
-                          className="monitor-btn"
-                          onClick={() => handleStartMeasurement(device)}
-                          disabled={!isConnected}
-                        >
-                          측정 시작
-                        </button>
-                        <button
-                          className="monitor-btn"
-                          onClick={() => handleStopMeasurement(device)}
-                          disabled={!isConnected}
-                        >
-                          측정 정지
-                        </button>
-                        <button
-                          className="monitor-btn"
-                          onClick={() => handleMonitor(patient?.id)}
-                        >
-                          모니터링하기
-                        </button>
+                        {(() => {
+                          const normalizeMac = (mac) => mac.replace(/[:-]/g, '').toUpperCase();
+                          const deviceMac = normalizeMac(device.address);
+                          const isDeviceConnected = deviceConnectionStatuses[deviceMac] === 'connected' || 
+                                                   deviceConnectionStatuses[device.address] === 'connected';
+                          const isMeasuring = measurementStates[device.address] === true;
+
+                          if (!isDeviceConnected) {
+                            return (
+                              <button
+                                className="monitor-btn"
+                                disabled
+                                style={{ opacity: 0.5, cursor: 'not-allowed' }}
+                                title="디바이스가 연결되어 있지 않습니다"
+                              >
+                                디바이스 미연결
+                              </button>
+                            );
+                          }
+
+                          return (
+                            <>
+                              {isMeasuring ? (
+                                <button
+                                  className="monitor-btn"
+                                  onClick={() => handleStopMeasurement(device)}
+                                  disabled={!isConnected}
+                                >
+                                  측정 정지
+                                </button>
+                              ) : (
+                                <button
+                                  className="monitor-btn"
+                                  onClick={() => handleStartMeasurement(device)}
+                                  disabled={!isConnected}
+                                >
+                                  측정 시작
+                                </button>
+                              )}
+                              <button
+                                className="monitor-btn"
+                                onClick={() => handleMonitor(patient?.id)}
+                                disabled={!isDeviceConnected}
+                              >
+                                모니터링하기
+                              </button>
+                            </>
+                          );
+                        })()}
                       </div>
                     </div>
                     <div className="monitoring-data">

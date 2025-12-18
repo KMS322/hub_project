@@ -77,6 +77,73 @@ function Hardware() {
     loadData()
   }, [])
 
+  // 페이지 접속 시마다 허브 상태 체크
+  const hubsRef = useRef(hubs);
+  const intervalRef = useRef(null);
+  const lastCheckTimeRef = useRef(0);
+
+  useEffect(() => {
+    hubsRef.current = hubs; // hubs 변경 시 ref 업데이트
+  }, [hubs]);
+
+  useEffect(() => {
+    if (!isConnected) {
+      // 연결이 끊기면 interval 정리
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      return;
+    }
+
+    // 모든 허브에 대해 상태 체크
+    const checkHubStates = () => {
+      const currentHubs = hubsRef.current; // ref에서 최신 hubs 가져오기
+      if (!currentHubs || currentHubs.length === 0) return;
+
+      // 마지막 체크로부터 최소 5초가 지났는지 확인 (너무 자주 실행 방지)
+      const now = Date.now();
+      if (now - lastCheckTimeRef.current < 5000) {
+        return;
+      }
+      lastCheckTimeRef.current = now;
+
+      currentHubs.forEach(hub => {
+        const requestId = `state_check_${hub.address}_${Date.now()}`;
+        emit('CONTROL_REQUEST', {
+          hubId: hub.address,
+          deviceId: 'HUB',
+          command: {
+            raw_command: 'state:hub'
+          },
+          requestId
+        });
+      });
+    };
+
+    // 기존 interval 정리
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
+
+    // 초기 실행은 hubs가 있을 때만 (연결 후 최소 1초 대기)
+    if (hubs.length > 0) {
+      setTimeout(() => {
+        checkHubStates();
+      }, 1000);
+    }
+
+    // 30초마다 상태 체크
+    intervalRef.current = setInterval(checkHubStates, 30000);
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [isConnected, emit]) // emit은 useSocket에서 안정적으로 제공되지만, 명시적으로 포함
+
   // MQTT는 백엔드에서만 사용하므로 프론트엔드에서 직접 연결하지 않음
   // Socket.IO를 통해 백엔드와 통신
 
@@ -280,7 +347,11 @@ function Hardware() {
 
     // CONTROL_RESULT 수신 (명령 실행 결과 - blink 등)
     const handleControlResult = async (data) => {
-      console.log('[Hardware] Received CONTROL_RESULT:', data)
+      // state:hub 명령에 대한 응답은 로그를 출력하지 않음 (너무 많이 발생)
+      const isStateCheck = data.requestId?.includes('state_check');
+      if (!isStateCheck) {
+        console.log('[Hardware] Received CONTROL_RESULT:', data);
+      }
 
       // 허브가 응답을 보냈으면 온라인으로 표시
       if (data.hubId) {
@@ -296,6 +367,7 @@ function Hardware() {
 
       // 현재는 blink 등의 단순 명령에 대해서만 성공 여부 확인용으로 사용
       // connect_devices 결과는 CONNECTED_DEVICES 이벤트에서 처리
+      // state:hub 결과는 CONNECTED_DEVICES 이벤트에서 처리
     }
 
     // 허브에서 MQTT send 토픽으로 전달하는 연결된 디바이스 목록 처리
@@ -312,6 +384,22 @@ function Hardware() {
         }))
       }
 
+      // 연결된 디바이스 상태 업데이트
+      if (Array.isArray(connectedDevices) && connectedDevices.length > 0) {
+        const normalizeMac = (mac) => mac.replace(/[:-]/g, '').toUpperCase()
+        const connectedMacSet = new Set(connectedDevices.map(mac => normalizeMac(mac)))
+        
+        // 모든 디바이스 상태 업데이트
+        setDeviceConnectionStatuses(prev => {
+          const newStatuses = { ...prev }
+          devices.forEach(device => {
+            const deviceMac = normalizeMac(device.address)
+            newStatuses[device.address] = connectedMacSet.has(deviceMac) ? 'connected' : 'disconnected'
+          })
+          return newStatuses
+        })
+      }
+
       if (!Array.isArray(connectedDevices) || connectedDevices.length === 0) {
         // 디바이스 전체 연결 중이면 성공 메시지 표시
         if (isConnectingAll) {
@@ -322,6 +410,14 @@ function Hardware() {
           })
           setIsConnectingAll(false)
         }
+        // 연결된 디바이스가 없으면 모든 디바이스를 disconnected로 표시
+        setDeviceConnectionStatuses(prev => {
+          const newStatuses = { ...prev }
+          devices.forEach(device => {
+            newStatuses[device.address] = 'disconnected'
+          })
+          return newStatuses
+        })
         return
       }
 

@@ -91,10 +91,16 @@ class MQTTClient {
         console.log(`  Topic: ${topic}`);
         console.log(`  Message type: ${typeof message}, isBuffer: ${Buffer.isBuffer(message)}`);
         
-        // 명령 토픽은 무시 (자신이 발행한 메시지)
+        // 명령 토픽과 receive 토픽은 무시 (자신이 발행한 메시지)
         if (topic.includes('/command/')) {
           console.log(`  ⏭️  Skipping command topic (self-published)`);
           return; // 명령 토픽은 처리하지 않음
+        }
+        
+        // receive 토픽도 무시 (백엔드가 허브에 명령을 보내는 토픽)
+        if (topic.includes('/receive')) {
+          console.log(`  ⏭️  Skipping receive topic (self-published)`);
+          return; // receive 토픽은 처리하지 않음
         }
 
         // Buffer를 문자열로 변환
