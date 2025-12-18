@@ -52,6 +52,32 @@ const authService = {
   getMe: async () => {
     const response = await axiosInstance.get('/auth/me');
     return response.data;
+  },
+
+  /**
+   * 사용자 정보 수정
+   * @param {Object} userData - 수정할 사용자 데이터
+   * @returns {Promise<{user: Object}>}
+   */
+  updateUser: async (userData) => {
+    const response = await axiosInstance.put('/auth/update', userData);
+    if (response.data.success && response.data.data) {
+      return response.data.data;
+    }
+    throw new Error(response.data.message || '정보 수정에 실패했습니다.');
+  },
+
+  /**
+   * 비밀번호 변경
+   * @param {Object} passwordData - 비밀번호 데이터
+   * @returns {Promise<void>}
+   */
+  updatePassword: async (passwordData) => {
+    const response = await axiosInstance.put('/auth/update-password', passwordData);
+    if (response.data.success) {
+      return response.data;
+    }
+    throw new Error(response.data.message || '비밀번호 변경에 실패했습니다.');
   }
 };
 

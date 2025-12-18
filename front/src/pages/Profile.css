@@ -98,6 +98,7 @@
 }
 
 .btn-primary,
+.btn-secondary,
 .btn-danger {
   padding: 0.75rem 1.5rem;
   border: none;
@@ -116,6 +117,20 @@
   background-color: #2980b9;
 }
 
+.btn-primary:disabled {
+  background-color: #95a5a6;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background-color: #95a5a6;
+  color: white;
+}
+
+.btn-secondary:hover {
+  background-color: #7f8c8d;
+}
+
 .btn-danger {
   background-color: #e74c3c;
   color: white;
@@ -123,5 +138,14 @@
 
 .btn-danger:hover {
   background-color: #c0392b;
+}
+
+.withdraw-section {
+  background-color: white;
+  padding: 2rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  display: flex;
+  justify-content: flex-end;
 }
 

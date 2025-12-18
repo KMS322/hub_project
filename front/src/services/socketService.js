@@ -1,4 +1,4 @@
-import { io } from 'socket.io-client';
+import { io } from "socket.io-client";
 
 /**
  * Socket.IO 서비스
@@ -18,7 +18,7 @@ class SocketService {
    */
   connect(token, serverUrl = import.meta.env.VITE_API_URL) {
     if (this.socket && this.isConnected) {
-      console.log('[Socket] Already connected');
+      console.log("[Socket] Already connected");
       return;
     }
 
@@ -29,41 +29,41 @@ class SocketService {
 
     this.socket = io(serverUrl, {
       auth: {
-        token: token
+        token: token,
       },
-      transports: ['websocket', 'polling'],
+      transports: ["websocket", "polling"],
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-      reconnectionAttempts: Infinity
+      reconnectionAttempts: Infinity,
     });
 
     // 연결 성공 이벤트
-    this.socket.on('connect', () => {
+    this.socket.on("connect", () => {
       this.isConnected = true;
-      console.log('[Socket] Connected to server');
+      console.log("[Socket] Connected to server");
     });
 
     // 연결 해제 이벤트
-    this.socket.on('disconnect', (reason) => {
+    this.socket.on("disconnect", (reason) => {
       this.isConnected = false;
-      console.log('[Socket] Disconnected:', reason);
+      console.log("[Socket] Disconnected:", reason);
     });
 
     // 연결 에러 이벤트
-    this.socket.on('connect_error', (error) => {
-      console.error('[Socket] Connection error:', error);
+    this.socket.on("connect_error", (error) => {
+      console.error("[Socket] Connection error:", error);
       this.isConnected = false;
     });
 
     // 서버에서 보낸 연결 확인
-    this.socket.on('connected', (data) => {
-      console.log('[Socket] Server confirmed connection:', data);
+    this.socket.on("connected", (data) => {
+      console.log("[Socket] Server confirmed connection:", data);
     });
 
     // 재연결 성공 이벤트
-    this.socket.on('reconnect', (attemptNumber) => {
-      console.log('[Socket] Reconnected after', attemptNumber, 'attempts');
+    this.socket.on("reconnect", (attemptNumber) => {
+      console.log("[Socket] Reconnected after", attemptNumber, "attempts");
       this.isConnected = true;
     });
   }
@@ -82,7 +82,7 @@ class SocketService {
       this.socket.disconnect();
       this.socket = null;
       this.isConnected = false;
-      console.log('[Socket] Disconnected');
+      console.log("[Socket] Disconnected");
     }
   }
 
@@ -93,7 +93,7 @@ class SocketService {
    */
   on(event, callback) {
     if (!this.socket) {
-      console.warn('[Socket] Socket not initialized. Call connect() first.');
+      console.warn("[Socket] Socket not initialized. Call connect() first.");
       return;
     }
 
@@ -124,7 +124,7 @@ class SocketService {
    */
   emit(event, data) {
     if (!this.socket || !this.isConnected) {
-      console.warn('[Socket] Socket not connected. Cannot emit:', event);
+      console.warn("[Socket] Socket not connected. Cannot emit:", event);
       return false;
     }
 
@@ -151,4 +151,3 @@ class SocketService {
 const socketService = new SocketService();
 
 export default socketService;
-

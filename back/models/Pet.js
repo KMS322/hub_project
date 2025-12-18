@@ -60,6 +60,11 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING(100),
         allowNull: true,
       },
+      state: {
+        type: DataTypes.STRING(20),
+        allowNull: false,
+        defaultValue: "입원중",
+      },
     },
     {
       charset: "utf8mb4",

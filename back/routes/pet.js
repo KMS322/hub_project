@@ -13,7 +13,7 @@ router.get('/', verifyToken, async (req, res) => {
       where: {
         user_email: req.user.email
       },
-      attributes: ['id', 'name', 'species', 'breed', 'weight', 'gender', 'neutering', 'birthDate', 'admissionDate', 'veterinarian', 'diagnosis', 'medicalHistory', 'user_email', 'device_address'], // 필요한 필드만 조회
+      attributes: ['id', 'name', 'species', 'breed', 'weight', 'gender', 'neutering', 'birthDate', 'admissionDate', 'veterinarian', 'diagnosis', 'medicalHistory', 'user_email', 'device_address', 'state'], // 필요한 필드만 조회
       include: [{
         model: db.Device,
         as: 'Device',
@@ -47,12 +47,13 @@ router.get('/', verifyToken, async (req, res) => {
         medicalHistory: pet.medicalHistory,
         user_email: pet.user_email,
         device_address: pet.device_address,
+        state: pet.state,
         connectedDevice: pet.Device ? {
           id: pet.Device.address,
           name: pet.Device.name,
           hubName: pet.Device.Hub?.name || ''
         } : null,
-        status: pet.device_address ? 'admitted' : 'discharged'
+        status: pet.state === '입원중' ? 'admitted' : 'discharged'
       }))
     });
   } catch (error) {
@@ -112,6 +113,7 @@ router.get('/:petId', verifyToken, async (req, res) => {
         medicalHistory: pet.medicalHistory,
         user_email: pet.user_email,
         device_address: pet.device_address,
+        state: pet.state,
         connectedDevice: pet.Device || null
       }
     });
@@ -186,7 +188,8 @@ router.post('/', verifyToken, async (req, res) => {
       diagnosis,
       medicalHistory,
       user_email: req.user.email,
-      device_address: device_address || null
+      device_address: device_address || null,
+      state: '입원중'
     });
 
     res.status(201).json({
@@ -205,7 +208,8 @@ router.post('/', verifyToken, async (req, res) => {
         veterinarian: pet.veterinarian,
         diagnosis: pet.diagnosis,
         medicalHistory: pet.medicalHistory,
-        device_address: pet.device_address
+        device_address: pet.device_address,
+        state: pet.state
       }
     });
   } catch (error) {
@@ -266,7 +270,7 @@ router.put('/:petId', verifyToken, async (req, res) => {
     const allowedFields = [
       'name', 'species', 'breed', 'weight', 'gender', 'neutering',
       'birthDate', 'admissionDate', 'veterinarian', 'diagnosis',
-      'medicalHistory', 'device_address'
+      'medicalHistory', 'device_address', 'state'
     ];
 
     allowedFields.forEach(field => {
@@ -293,7 +297,8 @@ router.put('/:petId', verifyToken, async (req, res) => {
         veterinarian: pet.veterinarian,
         diagnosis: pet.diagnosis,
         medicalHistory: pet.medicalHistory,
-        device_address: pet.device_address
+        device_address: pet.device_address,
+        state: pet.state
       }
     });
   } catch (error) {
