@@ -165,9 +165,12 @@ router.post('/', verifyToken, async (req, res) => {
       });
     }
 
+    // 이름이 없거나 비어있으면 MAC 주소의 tailing(마지막 5글자)을 기본값으로 사용
+    const deviceName = name && name.trim() ? name.trim() : address.slice(-5);
+
     const device = await db.Device.create({
       address,
-      name,
+      name: deviceName,
       hub_address: hubAddress
     });
 

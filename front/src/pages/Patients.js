@@ -13,6 +13,7 @@ function Patients() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [alertModal, setAlertModal] = useState({ isOpen: false, title: '', message: '' })
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null })
+  const [deviceSelectModal, setDeviceSelectModal] = useState({ isOpen: false, patientId: null })
   const [loading, setLoading] = useState(true)
   const [formData, setFormData] = useState({
     name: '',
@@ -263,7 +264,7 @@ function Patients() {
                 {!patient.connectedDevice && availableDevices.length > 0 && (
                   <button 
                     className="btn-primary"
-                    onClick={() => handleDeviceConnect(patient.id, availableDevices[0].address)}
+                    onClick={() => setDeviceSelectModal({ isOpen: true, patientId: patient.id })}
                   >
                     디바이스 연결
                   </button>
@@ -288,8 +289,8 @@ function Patients() {
 
       {/* 환자 등록 모달 */}
       {showAddModal && (
-        <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="modal-content">
             <div className="modal-header">
               <h3>환자 등록</h3>
               <button onClick={() => setShowAddModal(false)}>×</button>
@@ -451,6 +452,47 @@ function Patients() {
         title={confirmModal.title}
         message={confirmModal.message}
       />
+
+      {/* 디바이스 선택 모달 */}
+      {deviceSelectModal.isOpen && (
+        <div className="modal-overlay" onClick={() => setDeviceSelectModal({ isOpen: false, patientId: null })}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>디바이스 선택</h3>
+              <button onClick={() => setDeviceSelectModal({ isOpen: false, patientId: null })}>×</button>
+            </div>
+            <div className="modal-body">
+              {availableDevices.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {availableDevices.map(device => (
+                    <button
+                      key={device.address}
+                      className="btn-secondary"
+                      style={{ width: '100%', textAlign: 'left', padding: '0.75rem' }}
+                      onClick={() => {
+                        handleDeviceConnect(deviceSelectModal.patientId, device.address);
+                        setDeviceSelectModal({ isOpen: false, patientId: null });
+                      }}
+                    >
+                      {device.name} ({device.address})
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div>연결 가능한 디바이스가 없습니다.</div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button 
+                className="btn-secondary" 
+                onClick={() => setDeviceSelectModal({ isOpen: false, patientId: null })}
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

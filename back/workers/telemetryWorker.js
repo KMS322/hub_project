@@ -18,6 +18,7 @@ class TelemetryWorker {
     this.broadcastTimer = null;
     this.processTimer = null;
     this.csvWriter = csvWriter; // 싱글톤 CSV Writer 인스턴스 사용
+    this.batteryCache = new Map(); // 디바이스별 마지막 배터리 값 저장
   }
 
   /**
@@ -252,6 +253,20 @@ class TelemetryWorker {
       // 신호처리 수행
       let processedData = { ...data };
       
+      // 배터리 값 처리: 0이 아닐 때만 캐시 업데이트
+      const currentBattery = data.battery || 0;
+      let batteryToUse = currentBattery;
+      
+      if (currentBattery === 0) {
+        // 0이면 캐시된 값 사용
+        if (this.batteryCache.has(deviceId)) {
+          batteryToUse = this.batteryCache.get(deviceId);
+        }
+      } else {
+        // 0이 아니면 캐시 업데이트
+        this.batteryCache.set(deviceId, currentBattery);
+      }
+      
       // 원시 PPG 데이터가 있는 경우 신호처리 적용
       if (data.data && Array.isArray(data.data) && data.data.length > 0) {
         try {
@@ -281,7 +296,7 @@ class TelemetryWorker {
                 hr: hrResult.hr, // 안정화된 HR
                 spo2: data.spo2 || hrResult.spo2 || null, // 원본 SpO2 우선 사용
                 temp: data.temp || hrResult.temp || null, // 원본 Temp 우선 사용
-                battery: data.battery || null
+                battery: batteryToUse
               }]
             };
           } else {
@@ -300,7 +315,7 @@ class TelemetryWorker {
                 hr: null, // HR 없음
                 spo2: data.spo2 || null,
                 temp: data.temp || null,
-                battery: data.battery || null
+                battery: batteryToUse
               }]
             };
           }
@@ -321,7 +336,7 @@ class TelemetryWorker {
               hr: data.hr || null,
               spo2: data.spo2 || null,
               temp: data.temp || null,
-              battery: data.battery || null
+              battery: batteryToUse
             }]
           };
         }

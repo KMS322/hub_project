@@ -452,10 +452,9 @@ function Dashboard() {
 
       {/* 환자 상세 정보 모달 */}
       {selectedPatient && (
-        <div className="modal-overlay" onClick={handleCloseModal}>
+        <div className="modal-overlay">
           <div
             className="modal-content patient-detail-modal"
-            onClick={(e) => e.stopPropagation()}
           >
             <div className="modal-header">
               <h3>환자 상세 정보</h3>

@@ -148,6 +148,39 @@ router.post("/hub", async (req, res) => {
 
                   // 실시간 모니터링을 위한 최소 Telemetry 데이터 Socket.IO 브로드캐스트
                   if (ioInstance) {
+                    // start_time을 밀리초로 변환 (HHmmssSSS 형식)
+                    const parseStartTime = (startTimeStr) => {
+                      if (!startTimeStr || startTimeStr.length < 9) return Date.now();
+                      try {
+                        const hours = parseInt(startTimeStr.substring(0, 2));
+                        const minutes = parseInt(startTimeStr.substring(2, 4));
+                        const seconds = parseInt(startTimeStr.substring(4, 6));
+                        const milliseconds = parseInt(startTimeStr.substring(6, 9));
+                        const today = new Date();
+                        today.setHours(hours, minutes, seconds, milliseconds);
+                        return today.getTime();
+                      } catch (e) {
+                        return Date.now();
+                      }
+                    };
+
+                    const startTimeMs = parseStartTime(data.start_time);
+                    const samplingRate = data.sampling_rate || 50;
+                    const intervalMs = (1 / samplingRate) * 250; // 250 샘플당 간격 (ms)
+
+                    // data 배열의 각 샘플에 대해 시간 계산
+                    const dataArr = data.data.map((dataStr, index) => {
+                      const sampleTime = startTimeMs + (index * intervalMs);
+                      return {
+                        hr: data.hr || 0,
+                        spo2: data.spo2 || 0,
+                        temp: data.temp || 0,
+                        battery: data.battery || 0,
+                        timestamp: sampleTime,
+                        index: index
+                      };
+                    });
+
                     const telemetryPayload = {
                       type: 'sensor_data',
                       hubId: mac_address,
@@ -157,13 +190,9 @@ router.post("/hub", async (req, res) => {
                         spo2: data.spo2 || 0,
                         temp: data.temp || 0,
                         battery: data.battery || 0,
-                        // Dashboard / Monitoring 이 사용하는 dataArr 형식 맞추기
-                        dataArr: [{
-                          hr: data.hr || 0,
-                          spo2: data.spo2 || 0,
-                          temp: data.temp || 0,
-                          battery: data.battery || 0
-                        }],
+                        start_time: data.start_time,
+                        sampling_rate: samplingRate,
+                        dataArr: dataArr,
                         timestamp: Date.now()
                       },
                       timestamp: new Date().toISOString()
@@ -181,28 +210,29 @@ router.post("/hub", async (req, res) => {
 
               // 허브에서 연결된 디바이스 목록을 보내온 경우
             if (data && Array.isArray(data.connected_devices) && ioInstance) {
-              // 디바이스 정보를 DB에 저장 (이미 존재하는 경우 업데이트)
+              // 기존 디바이스만 업데이트 (등록하지 않고 연결만)
               data.connected_devices.forEach(async (deviceMac) => {
                 try {
-                  const [device] = await db.Device.findOrCreate({
-                    where: { address: deviceMac, hub_address: mac_address },
-                    defaults: {
-                      address: deviceMac,
-                      hub_address: mac_address,
-                      name: deviceMac.slice(-5), // tailing
-                      user_email: null // 나중에 연결
-                    }
+                  // 기존 디바이스만 찾아서 업데이트
+                  const device = await db.Device.findOne({
+                    where: { address: deviceMac }
                   });
                   
-                  if (device.hub_address !== mac_address) {
-                    device.hub_address = mac_address;
-                    await device.save();
+                  if (device) {
+                    // 기존 디바이스가 있으면 허브 주소와 활동 시간만 업데이트
+                    if (device.hub_address !== mac_address) {
+                      device.hub_address = mac_address;
+                      await device.save();
+                    }
+                    
+                    // 마지막 활동 시간 업데이트 (온라인 상태 표시용)
+                    await device.update({ updatedAt: new Date() });
+                  } else {
+                    // DB에 없는 디바이스는 등록하지 않고 로그만 남김
+                    log(`[Hub Check] Device ${deviceMac} not found in DB, skipping registration`);
                   }
-                  
-                  // 마지막 활동 시간 업데이트 (온라인 상태 표시용)
-                  await device.update({ updatedAt: new Date() });
                 } catch (error) {
-                  console.error(`[Hub Check] Error saving device ${deviceMac}:`, error);
+                  console.error(`[Hub Check] Error updating device ${deviceMac}:`, error);
                 }
               });
               

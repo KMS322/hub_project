@@ -68,19 +68,45 @@ function Monitoring() {
 
         // dataArr가 있는 경우 (배치 데이터)
         if (data.data?.dataArr && Array.isArray(data.data.dataArr)) {
-          const timestamp = data.timestamp || Date.now();
+          // start_time과 sampling_rate를 사용하여 정확한 시간 계산
+          const parseStartTime = (startTimeStr) => {
+            if (!startTimeStr || startTimeStr.length < 9) return Date.now();
+            try {
+              const hours = parseInt(startTimeStr.substring(0, 2));
+              const minutes = parseInt(startTimeStr.substring(2, 4));
+              const seconds = parseInt(startTimeStr.substring(4, 6));
+              const milliseconds = parseInt(startTimeStr.substring(6, 9));
+              const today = new Date();
+              today.setHours(hours, minutes, seconds, milliseconds);
+              return today.getTime();
+            } catch (e) {
+              return Date.now();
+            }
+          };
+
+          const startTimeStr = data.data.start_time || '000000000';
+          const startTimeMs = parseStartTime(startTimeStr);
+          const samplingRate = data.data.sampling_rate || 50;
+          const intervalMs = (1 / samplingRate) * 250; // 250 샘플당 간격 (ms)
+
           const newData = data.data.dataArr.map((sample, index) => {
             // 신호처리된 HR 우선 사용
-            const hr = data.data.processedHR !== undefined && data.data.processedHR !== null 
+            const heartRate = data.data.processedHR !== undefined && data.data.processedHR !== null 
               ? data.data.processedHR 
-              : (sample.hr || 0);
+              : (sample.hr || data.data.hr || 0);
+            
+            const spo2 = sample.spo2 !== null && sample.spo2 !== undefined ? sample.spo2 : (data.data.spo2 || 0);
+            
+            // start_time + (1 / sampling_rate * 250 * index) 계산
+            const sampleTime = startTimeMs + (index * intervalMs);
+            const timeObj = new Date(sampleTime);
             
             return {
-              timestamp: timestamp + index, // 각 샘플마다 고유한 타임스탬프
-              time: new Date(timestamp + index).toLocaleTimeString('ko-KR'),
+              timestamp: sampleTime,
+              time: timeObj.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 }),
               ir: sample.ir || 0,
-              heartRate: hr,
-              spo2: sample.spo2 !== null && sample.spo2 !== undefined ? sample.spo2 : (data.data.spo2 || 0),
+              heartRate: heartRate,
+              spo2: spo2,
               temperature: sample.temp !== null && sample.temp !== undefined ? sample.temp : (data.data.temp || 0),
               battery: sample.battery || 0
             };
@@ -89,12 +115,18 @@ function Monitoring() {
           // 최신 데이터로 현재 값 업데이트
           if (newData.length > 0) {
             const latest = newData[newData.length - 1];
-          setCurrentValues({
+          setCurrentValues(prev => ({
             heartRate: latest.heartRate,
             spo2: latest.spo2,
             temperature: latest.temperature,
-            battery: latest.battery
-          });
+            battery: latest.battery !== 0 ? latest.battery : prev.battery
+          }));
+          
+          // spo2가 9일 때 움직임 경고
+          if (latest.heartRate === 9) {
+            const patientName = selectedPatient?.name || '환자';
+            alert(`${patientName}이/가 많이 움직이고 있어 정확한 측정이 어렵습니다.`);
+          }
 
           // 시뮬레이션된 오류가 있으면 그것을 우선 사용, 없으면 실제 데이터에서 감지
           // 신호처리된 HR이 있으면 그것을 사용
@@ -116,33 +148,62 @@ function Monitoring() {
           }
           }
 
-          // 차트 데이터에 추가 (최근 60개만 유지)
+          // 차트 데이터에 추가 (최근 10개만 유지)
           setChartData(prev => {
             const updated = [...prev, ...newData];
-            return updated.slice(-60); // 최근 60개만 유지
+            return updated.slice(-10); // 최근 10개만 유지
           });
         } else {
           // 단일 샘플인 경우 또는 신호처리된 데이터
-          const hr = data.data?.processedHR !== undefined && data.data.processedHR !== null
+          const heartRate = data.data?.processedHR !== undefined && data.data?.processedHR !== null
             ? data.data.processedHR
             : (data.data?.hr || 0);
           
+          const spo2 = data.data?.spo2 || 0;
+          
+          // start_time이 있으면 파싱, 없으면 현재 시간 사용
+          const parseStartTime = (startTimeStr) => {
+            if (!startTimeStr || startTimeStr.length < 9) return Date.now();
+            try {
+              const hours = parseInt(startTimeStr.substring(0, 2));
+              const minutes = parseInt(startTimeStr.substring(2, 4));
+              const seconds = parseInt(startTimeStr.substring(4, 6));
+              const milliseconds = parseInt(startTimeStr.substring(6, 9));
+              const today = new Date();
+              today.setHours(hours, minutes, seconds, milliseconds);
+              return today.getTime();
+            } catch (e) {
+              return Date.now();
+            }
+          };
+
+          const deviceTime = data.data?.start_time 
+            ? parseStartTime(data.data.start_time)
+            : (data.timestamp || data.data?.timestamp || Date.now());
+          const timeObj = new Date(deviceTime);
+          
           const sample = {
-            timestamp: data.timestamp || data.data?.timestamp || Date.now(),
-            time: new Date(data.timestamp || data.data?.timestamp || Date.now()).toLocaleTimeString('ko-KR'),
+            timestamp: deviceTime,
+            time: timeObj.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 }),
             ir: data.data?.ir || 0,
-            heartRate: hr,
-            spo2: data.data?.spo2 || 0,
+            heartRate: heartRate,
+            spo2: spo2,
             temperature: data.data?.temp || 0,
             battery: data.data?.battery || 0
           };
 
-          setCurrentValues({
+          setCurrentValues(prev => ({
             heartRate: sample.heartRate,
             spo2: sample.spo2,
             temperature: sample.temperature,
-            battery: sample.battery
-          });
+            battery: sample.battery !== 0 ? sample.battery : prev.battery
+          }));
+          
+          // spo2가 9일 때 움직임 경고
+          if (sample.heartRate === 9) {
+            const patientName = selectedPatient?.name || '환자';
+            alert(`${patientName}이/가 많이 움직이고 있어 정확한 측정이 어렵습니다.`);
+          }
 
           // 시뮬레이션된 오류가 있으면 그것을 우선 사용, 없으면 실제 데이터에서 감지
           const error = simulatedError || detectHardwareError(sample.heartRate);
@@ -161,7 +222,7 @@ function Monitoring() {
 
           setChartData(prev => {
             const updated = [...prev, sample];
-            return updated.slice(-60);
+            return updated.slice(-10); // 최근 10개만 유지
           });
         }
       }
@@ -171,6 +232,16 @@ function Monitoring() {
     const handleDeviceStatus = (data) => {
       console.log('[Monitoring] Received DEVICE_STATUS:', data);
       setDeviceInfo(data);
+    };
+
+    // MQTT_READY 메시지 수신 (디바이스 검색 모달 트리거)
+    const handleMqttReady = (data) => {
+      console.log('[Monitoring] Received MQTT_READY:', data);
+      if (data.message && data.message.includes('mqtt ready')) {
+        // TODO: 디바이스 검색 모달 표시
+        console.log('[Monitoring] 디바이스 검색 모달 표시 필요');
+        alert('디바이스 검색을 시작합니다.');
+      }
     };
 
     // CONTROL_RESULT 수신 (명령 실행 결과)
@@ -214,6 +285,7 @@ function Monitoring() {
     on('TELEMETRY', handleTelemetry);
     on('DEVICE_STATUS', handleDeviceStatus);
     on('CONTROL_RESULT', handleControlResult);
+    on('MQTT_READY', handleMqttReady);
 
     // 디바이스 상태 조회 요청
     if (patientId) {
@@ -229,6 +301,7 @@ function Monitoring() {
       off('TELEMETRY', handleTelemetry);
       off('DEVICE_STATUS', handleDeviceStatus);
       off('CONTROL_RESULT', handleControlResult);
+      off('MQTT_READY', handleMqttReady);
     };
   }, [isConnected, patientId, on, emit, off, simulatedError, deviceInfo]);
 
@@ -304,42 +377,7 @@ function Monitoring() {
     setIsErrorSimulationActive(prev => !prev);
   };
 
-  // 초기 더미 데이터 생성 (Socket 연결 전까지)
-  useEffect(() => {
-    if (chartData.length === 0 && !isConnected) {
-      const generateInitialData = () => {
-        const data = []
-        const now = Date.now()
-        const interval = 1000
-        const count = 60
 
-        for (let i = count - 1; i >= 0; i--) {
-          const timestamp = now - (i * interval)
-          data.push({
-            timestamp,
-            time: new Date(timestamp).toLocaleTimeString('ko-KR'),
-            ir: 50000 + Math.random() * 10000,
-            heartRate: 80 + (Math.random() - 0.5) * 20,
-            spo2: 98 + (Math.random() - 0.5) * 2,
-            temperature: 38.0 + (Math.random() - 0.5) * 0.5,
-            battery: 85
-          })
-        }
-        setChartData(data)
-        if (data.length > 0) {
-          const latest = data[data.length - 1]
-          setCurrentValues({
-            heartRate: latest.heartRate,
-            spo2: latest.spo2,
-            temperature: latest.temperature,
-            battery: latest.battery
-          })
-        }
-      }
-
-      generateInitialData()
-    }
-  }, [isConnected, chartData.length])
 
   // 디바이스 제어 함수
   const sendControlCommand = async (command) => {
@@ -459,8 +497,8 @@ function Monitoring() {
       // 기타 명령은 그대로 전송
       console.log('[Monitoring] 📤 Sending MQTT command:', command);
       emit('CONTROL_REQUEST', {
-        hubId: 'AA:BB:CC:DD:EE:01', // 임시 값
-        deviceId: patientId || 'AA:BB:CC:DD:EE:FF', // 임시 값
+        hubId: '', // 임시 값
+        deviceId: patientId || '', // 임시 값
         command,
         requestId
       });
@@ -472,6 +510,105 @@ function Monitoring() {
       time: d.time,
       value: d[activeTab] || 0
     }))
+  }
+
+  const renderChart = () => {
+    const data = getChartData();
+    
+    if (data.length === 0) {
+      return null;
+    }
+
+    if (data.length === 1) {
+      // 단일 데이터 포인트는 점으로 표시
+      return (
+        <circle
+          cx="400"
+          cy="150"
+          r="4"
+          fill="#3498db"
+        />
+      );
+    }
+
+    // Y축 범위 계산
+    const values = data.map(d => d.value);
+    const maxValue = Math.max(...values);
+    const minValue = Math.min(...values);
+    const range = maxValue - minValue;
+    
+    // 범위가 너무 작으면 확대
+    const effectiveRange = range < 1 ? 10 : range;
+    const centerValue = (maxValue + minValue) / 2;
+    const effectiveMin = centerValue - effectiveRange / 2;
+    const effectiveMax = centerValue + effectiveRange / 2;
+
+    // 포인트 생성 (10개 데이터를 전체 너비에 균등 배치)
+    const totalSlots = 10;
+    const points = data.map((d, i) => {
+      const x = (i / (totalSlots - 1)) * 800;
+      const normalizedValue = (d.value - effectiveMin) / (effectiveMax - effectiveMin);
+      const y = 280 - (normalizedValue * 260); // 10px 여백, 260px 그래프 영역
+      return `${x},${Math.max(10, Math.min(290, y))}`; // Y 범위 제한
+    }).join(' ');
+
+    return (
+      <>
+        {/* 그리드 라인 */}
+        {[0, 1, 2, 3, 4].map(i => (
+          <line
+            key={`grid-${i}`}
+            x1="0"
+            y1={10 + i * 70}
+            x2="800"
+            y2={10 + i * 70}
+            stroke="#e0e0e0"
+            strokeWidth="1"
+            strokeDasharray="5,5"
+          />
+        ))}
+        
+        {/* Y축 레이블 */}
+        {[0, 1, 2, 3, 4].map(i => {
+          const value = effectiveMax - (i * effectiveRange / 4);
+          return (
+            <text
+              key={`label-${i}`}
+              x="5"
+              y={15 + i * 70}
+              fill="#666"
+              fontSize="12"
+            >
+              {value.toFixed(1)}
+            </text>
+          );
+        })}
+        
+        {/* 차트 라인 */}
+        <polyline
+          fill="none"
+          stroke="#3498db"
+          strokeWidth="2.5"
+          points={points}
+        />
+        
+        {/* 데이터 포인트 표시 */}
+        {data.map((d, i) => {
+          const x = (i / (totalSlots - 1)) * 800;
+          const normalizedValue = (d.value - effectiveMin) / (effectiveMax - effectiveMin);
+          const y = Math.max(10, Math.min(290, 280 - (normalizedValue * 260)));
+          return (
+            <circle
+              key={`point-${i}`}
+              cx={x}
+              cy={y}
+              r="4"
+              fill="#3498db"
+            />
+          );
+        })}
+      </>
+    );
   }
 
   const handleShowMore = () => {
@@ -655,24 +792,15 @@ function Monitoring() {
             </div>
             <div className="chart-area">
               <svg className="chart-svg" viewBox="0 0 800 300" preserveAspectRatio="none">
-                {getChartData().length > 1 && ((
-                  <polyline
-                    fill="none"
-                    stroke="#3498db"
-                    strokeWidth="2"
-                    points={getChartData().map((d, i) => {
-                      const x = (i / (getChartData().length - 1)) * 800
-                      const maxValue = Math.max(...getChartData().map(d => d.value))
-                      const minValue = Math.min(...getChartData().map(d => d.value))
-                      const range = maxValue - minValue || 1
-                      const y = 300 - ((d.value - minValue) / range) * 280 - 10
-                      return `${x},${y}`
-                    }).join(' ')}
-                  />
-                ))}
+                {renderChart()}
+                {getChartData().length === 0 && (
+                  <text x="400" y="150" textAnchor="middle" fill="#999" fontSize="16">
+                    데이터를 기다리는 중...
+                  </text>
+                )}
               </svg>
               <div className="chart-labels">
-                {getChartData().filter((_, i) => i % 10 === 0).map((d, i) => (
+                {getChartData().map((d, i) => (
                   <div key={i} className="chart-label">{d.time}</div>
                 ))}
               </div>
@@ -689,8 +817,8 @@ function Monitoring() {
 
       {/* 환자 상세 정보 모달 */}
       {selectedPatient && (
-        <div className="modal-overlay" onClick={handleCloseModal}>
-          <div className="modal-content patient-detail-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="modal-content patient-detail-modal">
             <div className="modal-header">
               <h3>환자 상세 정보</h3>
               <button onClick={handleCloseModal} className="close-btn">×</button>

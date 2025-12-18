@@ -45,6 +45,11 @@ class MQTTService {
       this.handleCommandResponse(message, topic);
     }, 1); // QoS 1
 
+    // hub/+/send 토픽 구독: mqtt ready 메시지 처리
+    mqttClient.subscribe('hub/+/send', (message, topic) => {
+      this.handleHubSendMessage(message, topic);
+    }, 1); // QoS 1
+
     // 테스트 토픽 구독: test/# (ESP32 통신 테스트용)
     mqttClient.subscribe('test/#', (message, topic) => {
       console.log(`[MQTT Service] 📥 Test topic subscription triggered: ${topic}`);
@@ -134,6 +139,44 @@ class MQTTService {
     const callback = this.hubCallbacks.get(`status:${hubId}`);
     if (callback) {
       callback(statusData, hubId);
+    }
+  }
+
+  /**
+   * Hub Send 메시지 처리 (mqtt ready 등)
+   * @param {Object|string} message - 수신된 메시지
+   * @param {string} topic - 메시지가 수신된 토픽 (예: hub/80:b5:4e:db:44:9a/send)
+   */
+  handleHubSendMessage(message, topic) {
+    const parts = topic.split('/');
+    const hubId = parts[1]; // hub/80:b5:4e:db:44:9a/send에서 허브 ID 추출
+    
+    let messageStr;
+    try {
+      // Buffer를 문자열로 변환
+      messageStr = Buffer.isBuffer(message) ? message.toString('utf8') : 
+                  typeof message === 'string' ? message : JSON.stringify(message);
+    } catch (e) {
+      console.error(`[MQTT Service] Failed to parse hub send message from ${topic}:`, e);
+      return;
+    }
+
+    console.log(`[MQTT Service] 📨 Hub send message from ${topic}: ${messageStr}`);
+
+    // "message:80:b5:4e:db:44:9a mqtt ready" 형식 메시지 처리
+    if (messageStr.includes('mqtt ready')) {
+      console.log(`[MQTT Service] 🔍 MQTT Ready detected from hub ${hubId}`);
+      
+      // Socket.IO로 클라이언트에 전달
+      if (this.io) {
+        this.io.emit('MQTT_READY', {
+          type: 'mqtt_ready',
+          hubId,
+          message: messageStr,
+          timestamp: new Date().toISOString()
+        });
+        console.log(`[MQTT Service] ✅ MQTT_READY event emitted to clients`);
+      }
     }
   }
 

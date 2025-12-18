@@ -2147,8 +2147,8 @@ function Hardware() {
 
       {/* 허브 등록 모달 */}
       {hubRegisterModal.isOpen && (
-        <div className="modal-overlay" onClick={handleCloseHubRegister}>
-          <div className="modal-content hub-register-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="modal-content hub-register-modal">
             <div className="modal-header">
               <h3>허브 등록</h3>
               <button onClick={handleCloseHubRegister} className="close-btn">×</button>
@@ -2285,8 +2285,8 @@ function Hardware() {
 
       {/* 디바이스 등록 모달 */}
       {deviceRegisterModal.isOpen && (
-        <div className="modal-overlay" onClick={handleCloseDeviceRegister}>
-          <div className="modal-content device-register-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="modal-content device-register-modal">
             <div className="modal-header">
               <h3>디바이스 등록</h3>
               <button onClick={handleCloseDeviceRegister} className="close-btn">×</button>
