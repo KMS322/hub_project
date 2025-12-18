@@ -125,8 +125,8 @@ class CSVWriter {
       const time = new Date(baseMs + elapsedMs);
       const timeStr = this.formatTime(time);
 
-      const hr = i === 0 ? payload.hr ?? '' : '';
-      const spo2 = i === 0 ? payload.spo2 ?? '' : '';
+      const hr = i === 0 ? payload.spo2 ?? '' : '';
+      const spo2 = i === 0 ? payload.hr ?? '' : '';
       const temp = i === 0 ? payload.temp ?? '' : '';
 
       buffer += `${timeStr},${ir},${red},${green},${hr},${spo2},${temp}\n`;

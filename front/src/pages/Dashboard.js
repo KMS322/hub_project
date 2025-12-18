@@ -418,13 +418,13 @@ function Dashboard() {
                       <div className="data-item">
                         <span className="data-label">심박수</span>
                         <span className="data-value">
-                          {device.currentData.heartRate} bpm
+                          {device.currentData.spo2} bpm
                         </span>
                       </div>
                       <div className="data-item">
                         <span className="data-label">산포도</span>
                         <span className="data-value">
-                          {device.currentData.spo2}%
+                          {device.currentData.heartRate}%
                         </span>
                       </div>
                       <div className="data-item">
