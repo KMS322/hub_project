@@ -3,273 +3,180 @@ const path = require('path');
 
 /**
  * CSV 파일 저장 유틸리티
- * Telemetry 데이터를 CSV 형식으로 저장
+ * Windows-safe + ENOENT 방지 버전
  */
 class CSVWriter {
-  constructor(baseDir = 'data/csv') {
+  constructor(baseDir = 'csv_files') {
     this.baseDir = baseDir;
-    this.fileHandles = new Map(); // 디바이스별 파일 핸들
-    // CSV 헤더: time,ir,red,green,hr,spo2,temp 순서 (요구사항에 맞춤)
-    // 주의: hr, spo2는 장치에서 전달된 원본 값 (신호처리 결과 아님)
+    this.activeSessions = new Map();
     this.csvHeaders = 'time,ir,red,green,hr,spo2,temp\n';
-    
-    // CSV 디렉토리 생성
+    this.dataCounters = new Map();
+
     this.ensureDirectoryExists();
   }
 
-  /**
-   * CSV 디렉토리 생성
-   */
+  /* =========================
+   * 공통 유틸
+   * ========================= */
+
+  sanitize(value) {
+    return String(value)
+      .replace(/:/g, '_')          // ❌ Windows 폴더 불가
+      .replace(/@/g, '_at_')       // 이메일 안전화
+      .replace(/[^\w\-가-힣]/g, ''); // 기타 특수문자 제거
+  }
+
   ensureDirectoryExists() {
     const fullPath = path.join(process.cwd(), this.baseDir);
-    if (!fs.existsSync(fullPath)) {
-      fs.mkdirSync(fullPath, { recursive: true });
-      console.log(`[CSV Writer] Created directory: ${fullPath}`);
-    }
+    fs.mkdirSync(fullPath, { recursive: true });
   }
 
-  /**
-   * 디바이스별 CSV 파일 경로 생성
-   * @param {string} deviceAddress - 디바이스 MAC 주소
-   * @returns {string} 파일 경로
-   */
-  getFilePath(deviceAddress) {
-    // 파일명: device_mac_address_YYYY-MM-DD.csv
-    const today = new Date().toISOString().split('T')[0];
-    const sanitizedAddress = deviceAddress.replace(/:/g, '-');
-    const fileName = `${sanitizedAddress}_${today}.csv`;
-    return path.join(process.cwd(), this.baseDir, fileName);
-  }
+  /* =========================
+   * 세션 관리
+   * ========================= */
 
-  /**
-   * CSV 파일 초기화 (헤더 작성)
-   * @param {string} filePath - 파일 경로
-   */
-  initializeFile(filePath) {
-    if (!fs.existsSync(filePath)) {
-      fs.writeFileSync(filePath, this.csvHeaders, 'utf8');
-    }
-  }
+  startSession(deviceAddress, userEmail, petName, startTime) {
+    const now = new Date();
+    const date = now.toISOString().split('T')[0];
 
-  /**
-   * 데이터를 CSV 형식으로 변환
-   * @param {Object} data - Telemetry 데이터
-   * @returns {string} CSV 행
-   */
-  formatCSVRow(data) {
-    const {
-      time,
-      ir,
-      red,
-      green,
-      hr,
-      spo2,
-      temp
-    } = data;
+    const safeEmail = this.sanitize(userEmail);
+    const safeDevice = this.sanitize(deviceAddress);
+    const safePet = this.sanitize(petName);
 
-    // CSV 이스케이프 처리 (쉼표, 따옴표 등)
-    const escapeCSV = (value) => {
-      if (value === null || value === undefined) return '';
-      const str = String(value);
-      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-        return `"${str.replace(/"/g, '""')}"`;
-      }
-      return str;
-    };
+    const safeTime = this.sanitize(startTime);
 
-    // CSV 헤더 순서: time,ir,red,green,hr,spo2,temp
-    return [
-      escapeCSV(time),
-      escapeCSV(ir),
-      escapeCSV(red),
-      escapeCSV(green),
-      escapeCSV(hr),
-      escapeCSV(spo2),
-      escapeCSV(temp)
-    ].join(',') + '\n';
-  }
+    const dirPath = path.join(
+      process.cwd(),
+      this.baseDir,
+      safeEmail,
+      date,
+      safeDevice,
+      safePet
+    );
 
-  /**
-   * 단일 데이터를 CSV 파일에 추가
-   * @param {Object} data - 저장할 데이터
-   * @param {string} deviceAddress - 디바이스 MAC 주소 (옵션, data에서 추출 시도)
-   */
-  appendData(data, deviceAddress = null) {
-    // deviceAddress가 없으면 data에서 추출 시도
-    const deviceAddr = deviceAddress || data.device_mac_address;
-    if (!deviceAddr) {
-      console.warn('[CSV Writer] device address is required');
-      return;
-    }
+    // 🔥 핵심: 중간 경로 포함 전부 생성
+    fs.mkdirSync(dirPath, { recursive: true });
 
-    const filePath = this.getFilePath(deviceAddr);
-    
-    // 파일이 없으면 헤더 작성
-    this.initializeFile(filePath);
+    const filePath = path.join(
+      dirPath,
+      `${safeDevice}-${safeTime}.csv`
+    );
 
-    // CSV 행 생성
-    const csvRow = this.formatCSVRow(data);
+    fs.writeFileSync(filePath, this.csvHeaders, 'utf8');
 
-    // 파일에 append (비동기)
-    fs.appendFile(filePath, csvRow, 'utf8', (err) => {
-      if (err) {
-        console.error(`[CSV Writer] Failed to write to ${filePath}:`, err);
-      }
+    this.activeSessions.set(deviceAddress, {
+      filePath,
+      startTime,
+      baseTimestamp: now.getTime(),
     });
+
+    this.dataCounters.set(deviceAddress, {
+      total: 0,
+    });
+
+    console.log(`[CSV Writer] Session started: ${filePath}`);
   }
 
-  /**
-   * 배치 데이터를 CSV 파일에 추가
-   * @param {Array} dataArray - 저장할 데이터 배열
-   * @param {string} deviceAddress - 디바이스 MAC 주소 (옵션, 각 레코드에서 추출)
-   */
-  appendBatch(dataArray, deviceAddress = null) {
-    if (!Array.isArray(dataArray) || dataArray.length === 0) {
-      return;
-    }
-
-    // 디바이스별로 그룹화
-    const deviceGroups = new Map();
-    
-    for (const data of dataArray) {
-      // deviceAddress가 제공되면 사용, 없으면 data에서 추출 시도
-      const deviceAddr = deviceAddress || data.device_mac_address;
-      if (!deviceAddr) continue;
-
-      if (!deviceGroups.has(deviceAddr)) {
-        deviceGroups.set(deviceAddr, []);
-      }
-      deviceGroups.get(deviceAddr).push(data);
-    }
-
-    // 디바이스별로 파일에 저장
-    for (const [deviceAddr, records] of deviceGroups.entries()) {
-      const filePath = this.getFilePath(deviceAddr);
-      
-      // 파일이 없으면 헤더 작성
-      this.initializeFile(filePath);
-
-      // 모든 행을 하나의 문자열로 결합
-      const csvRows = records.map(record => this.formatCSVRow(record)).join('');
-      
-      // 파일에 append (비동기)
-      fs.appendFile(filePath, csvRows, 'utf8', (err) => {
-        if (err) {
-          console.error(`[CSV Writer] Failed to write batch to ${filePath}:`, err);
-        }
-      });
+  endSession(deviceAddress) {
+    if (this.activeSessions.has(deviceAddress)) {
+      this.activeSessions.delete(deviceAddress);
+      this.dataCounters.delete(deviceAddress);
+      console.log(`[CSV Writer] Session ended: ${deviceAddress}`);
     }
   }
 
-  /**
-   * 최근 데이터 읽기
-   * @param {string} deviceAddress - 디바이스 MAC 주소
-   * @param {number} limit - 읽을 최대 행 수 (기본 100)
-   * @returns {Array} CSV 데이터 배열
-   */
-  readRecentData(deviceAddress, limit = 100) {
-    const filePath = this.getFilePath(deviceAddress);
-    
-    if (!fs.existsSync(filePath)) {
-      return [];
-    }
-
-    try {
-      const content = fs.readFileSync(filePath, 'utf8');
-      const lines = content.trim().split('\n');
-      
-      if (lines.length <= 1) { // 헤더만 있거나 비어있음
-        return [];
-      }
-
-      // 헤더 제외하고 최근 limit개만 가져오기
-      const dataLines = lines.slice(1).slice(-limit);
-      
-      return dataLines.map(line => {
-        const values = this.parseCSVLine(line);
-        return {
-          device_mac_address: values[0],
-          timestamp: values[1] ? parseInt(values[1]) : null,
-          starttime: values[2] ? parseInt(values[2]) : null,
-          ir: values[3] ? parseInt(values[3]) : null,
-          red: values[4] ? parseInt(values[4]) : null,
-          green: values[5] ? parseInt(values[5]) : null,
-          spo2: values[6] ? parseFloat(values[6]) : null,
-          hr: values[7] ? parseInt(values[7]) : null,
-          temp: values[8] ? parseFloat(values[8]) : null,
-          battery: values[9] ? parseInt(values[9]) : null
-        };
-      });
-    } catch (error) {
-      console.error(`[CSV Writer] Failed to read ${filePath}:`, error);
-      return [];
-    }
+  hasActiveSession(deviceAddress) {
+    return this.activeSessions.has(deviceAddress);
   }
 
-  /**
-   * CSV 라인 파싱 (간단한 버전)
-   * @param {string} line - CSV 라인
-   * @returns {Array} 파싱된 값 배열
-   */
-  parseCSVLine(line) {
-    const values = [];
-    let current = '';
-    let inQuotes = false;
-
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-      
-      if (char === '"') {
-        if (inQuotes && line[i + 1] === '"') {
-          current += '"';
-          i++; // 다음 따옴표 건너뛰기
-        } else {
-          inQuotes = !inQuotes;
-        }
-      } else if (char === ',' && !inQuotes) {
-        values.push(current);
-        current = '';
-      } else {
-        current += char;
-      }
-    }
-    values.push(current); // 마지막 값
-    
-    return values;
+  closeAllSessions() {
+    this.activeSessions.clear();
+    this.dataCounters.clear();
   }
 
-  /**
-   * 모든 디바이스의 최근 데이터 읽기
-   * @param {number} limit - 디바이스당 최대 행 수
-   * @returns {Object} 디바이스별 데이터 맵
-   */
-  readAllRecentData(limit = 100) {
-    const result = {};
-    const fullPath = path.join(process.cwd(), this.baseDir);
-    
-    if (!fs.existsSync(fullPath)) {
-      return result;
+  /* =========================
+   * 데이터 기록
+   * ========================= */
+
+  async writeBatch(payload) {
+    const deviceAddress = payload.device_mac_address;
+    const session = this.activeSessions.get(deviceAddress);
+    if (!session) return;
+
+    const counter = this.dataCounters.get(deviceAddress);
+    const samplingRate = payload.sampling_rate || 50;
+    const intervalMs = 1000 / samplingRate;
+
+    const startTimeStr = payload.start_time || session.startTime;
+    const [h, m, s, ms] = this.parseStartTime(startTimeStr);
+
+    const baseMs =
+      h * 3600000 +
+      m * 60000 +
+      s * 1000 +
+      ms;
+
+    let buffer = '';
+
+    for (let i = 0; i < payload.data.length; i++) {
+      const [ir, red, green] = payload.data[i].split(',');
+
+      const elapsedMs = counter.total * intervalMs;
+      const time = new Date(baseMs + elapsedMs);
+      const timeStr = this.formatTime(time);
+
+      const hr = i === 0 ? payload.hr ?? '' : '';
+      const spo2 = i === 0 ? payload.spo2 ?? '' : '';
+      const temp = i === 0 ? payload.temp ?? '' : '';
+
+      buffer += `${timeStr},${ir},${red},${green},${hr},${spo2},${temp}\n`;
+      counter.total++;
     }
 
-    try {
-      const files = fs.readdirSync(fullPath);
-      const csvFiles = files.filter(f => f.endsWith('.csv'));
-      
-      for (const file of csvFiles) {
-        // 파일명에서 디바이스 주소 추출: device_mac_address_YYYY-MM-DD.csv
-        const match = file.match(/^(.+)_\d{4}-\d{2}-\d{2}\.csv$/);
-        if (match) {
-          const deviceAddress = match[1].replace(/-/g, ':');
-          result[deviceAddress] = this.readRecentData(deviceAddress, limit);
-        }
-      }
-    } catch (error) {
-      console.error('[CSV Writer] Failed to read directory:', error);
+    fs.appendFileSync(session.filePath, buffer, 'utf8');
+  }
+
+  /* =========================
+   * 시간 처리
+   * ========================= */
+
+  parseStartTime(startTime) {
+    if (!startTime) return [0, 0, 0, 0];
+
+    // HHmmssSSS
+    if (!startTime.includes(':') && startTime.length === 9) {
+      return [
+        Number(startTime.slice(0, 2)),
+        Number(startTime.slice(2, 4)),
+        Number(startTime.slice(4, 6)),
+        Number(startTime.slice(6, 9)),
+      ];
     }
 
-    return result;
+    // HH:mm:ss:SSS
+    if (startTime.includes(':')) {
+      const parts = startTime.split(':').map(Number);
+      return [
+        parts[0] || 0,
+        parts[1] || 0,
+        parts[2] || 0,
+        parts[3] || 0,
+      ];
+    }
+
+    return [0, 0, 0, 0];
+  }
+
+  formatTime(date) {
+    return [
+      String(date.getHours()).padStart(2, '0'),
+      String(date.getMinutes()).padStart(2, '0'),
+      String(date.getSeconds()).padStart(2, '0'),
+      String(date.getMilliseconds()).padStart(3, '0'),
+    ].join(':');
   }
 }
 
-module.exports = CSVWriter;
-
+const csvWriterInstance = new CSVWriter();
+module.exports = csvWriterInstance;
+module.exports.CSVWriter = CSVWriter;

@@ -63,7 +63,8 @@ router.get('/', verifyToken, async (req, res) => {
           species: device.Pet.species,
           breed: device.Pet.breed
         } : null,
-        status: 'connected' // TODO: 실제 연결 상태 확인
+        status: 'connected', // TODO: 실제 연결 상태 확인
+        updatedAt: device.updatedAt // 마지막 활동 시간
       }))
     });
   } catch (error) {

@@ -5,13 +5,15 @@ import HardwareAlertBar from '../components/HardwareAlertBar'
 import { useSocket } from '../hooks/useSocket'
 import { API_URL } from '../constants'
 import { detectHardwareError } from '../utils/hardwareErrorDetector'
+import deviceService from '../api/deviceService'
+import petService from '../api/petService'
 import './Monitoring.css'
 
 function Monitoring() {
   const { patientId } = useParams()
   const navigate = useNavigate()
   const { isConnected, on, emit, off } = useSocket()
-  const [activeTab, setActiveTab] = useState('ir') // ir, heartRate, spo2, temperature
+  const [activeTab, setActiveTab] = useState('heartRate') // ir, heartRate, spo2, temperature
   const [chartData, setChartData] = useState([])
   const [selectedPatient, setSelectedPatient] = useState(null)
   const [currentValues, setCurrentValues] = useState({
@@ -66,17 +68,23 @@ function Monitoring() {
 
         // dataArr가 있는 경우 (배치 데이터)
         if (data.data?.dataArr && Array.isArray(data.data.dataArr)) {
-          const newData = data.data.dataArr.map(sample => ({
-            timestamp: data.data.timestamp || Date.now(),
-            time: new Date(data.data.timestamp || Date.now()).toLocaleTimeString('ko-KR'),
-            ir: sample.ir || 0,
-            heartRate: data.data.processedHR !== undefined && data.data.processedHR !== null 
+          const timestamp = data.timestamp || Date.now();
+          const newData = data.data.dataArr.map((sample, index) => {
+            // 신호처리된 HR 우선 사용
+            const hr = data.data.processedHR !== undefined && data.data.processedHR !== null 
               ? data.data.processedHR 
-              : (sample.hr || 0), // 신호처리된 HR 우선 사용
-            spo2: sample.spo2 || 0,
-            temperature: sample.temp || 0,
-            battery: sample.battery || 0
-          }));
+              : (sample.hr || 0);
+            
+            return {
+              timestamp: timestamp + index, // 각 샘플마다 고유한 타임스탬프
+              time: new Date(timestamp + index).toLocaleTimeString('ko-KR'),
+              ir: sample.ir || 0,
+              heartRate: hr,
+              spo2: sample.spo2 !== null && sample.spo2 !== undefined ? sample.spo2 : (data.data.spo2 || 0),
+              temperature: sample.temp !== null && sample.temp !== undefined ? sample.temp : (data.data.temp || 0),
+              battery: sample.battery || 0
+            };
+          });
 
           // 최신 데이터로 현재 값 업데이트
           if (newData.length > 0) {
@@ -114,12 +122,16 @@ function Monitoring() {
             return updated.slice(-60); // 최근 60개만 유지
           });
         } else {
-          // 단일 샘플인 경우
+          // 단일 샘플인 경우 또는 신호처리된 데이터
+          const hr = data.data?.processedHR !== undefined && data.data.processedHR !== null
+            ? data.data.processedHR
+            : (data.data?.hr || 0);
+          
           const sample = {
-            timestamp: data.data?.timestamp || Date.now(),
-            time: new Date(data.data?.timestamp || Date.now()).toLocaleTimeString('ko-KR'),
+            timestamp: data.timestamp || data.data?.timestamp || Date.now(),
+            time: new Date(data.timestamp || data.data?.timestamp || Date.now()).toLocaleTimeString('ko-KR'),
             ir: data.data?.ir || 0,
-            heartRate: data.data?.hr || 0,
+            heartRate: hr,
             spo2: data.data?.spo2 || 0,
             temperature: data.data?.temp || 0,
             battery: data.data?.battery || 0
@@ -177,26 +189,14 @@ function Monitoring() {
         const command = data.data?.command || data.command || {};
         console.log('[Monitoring] Command result success, command:', command);
         
-        if (command.action === 'start_telemetry_test') {
+        if (command.action === 'start_measurement') {
           setIsMeasurementRunning(true);
-          alert('측정이 시작되었습니다.');
-        } else if (command.action === 'stop_telemetry_test') {
+          console.log('[Monitoring] 측정이 시작되었습니다.');
+        } else if (command.action === 'stop_measurement') {
           setIsMeasurementRunning(false);
-          // 상태 확인 함수를 즉시 호출하여 상태 동기화
-          setTimeout(async () => {
-            try {
-              const response = await fetch('http://localhost:3001/api/telemetry-test/status');
-              const result = await response.json();
-              if (result.success) {
-                setIsMeasurementRunning(result.data.isRunning || false);
-              }
-            } catch (error) {
-              console.error('[Monitoring] Failed to check status after stop:', error);
-            }
-          }, 500);
-          alert('측정이 정지되었습니다.');
+          console.log('[Monitoring] 측정이 정지되었습니다.');
         } else {
-          alert('명령이 성공적으로 실행되었습니다.');
+          console.log('[Monitoring] 명령이 성공적으로 실행되었습니다.');
         }
       } else {
         // 에러 메시지에서 타임아웃 관련 메시지 필터링
@@ -222,28 +222,10 @@ function Monitoring() {
       emit('GET_DEVICE_STATUS', { deviceId: patientId });
     }
 
-    // 측정 상태 확인 함수
-    const checkMeasurementStatus = async () => {
-      try {
-        const response = await fetch('http://localhost:3001/api/telemetry-test/status');
-        const result = await response.json();
-        if (result.success) {
-          setIsMeasurementRunning(result.data.isRunning || false);
-        }
-      } catch (error) {
-        console.error('[Monitoring] Failed to check measurement status:', error);
-      }
-    };
-
-    // 초기 상태 확인
-    checkMeasurementStatus();
-    
-    // 주기적으로 상태 확인 (5초마다)
-    const statusInterval = setInterval(checkMeasurementStatus, 5000);
+    // 측정 상태는 Socket.IO 이벤트로 관리 (localhost:3001 호출 제거)
 
     // 정리 함수
     return () => {
-      clearInterval(statusInterval);
       off('TELEMETRY', handleTelemetry);
       off('DEVICE_STATUS', handleDeviceStatus);
       off('CONTROL_RESULT', handleControlResult);
@@ -360,7 +342,7 @@ function Monitoring() {
   }, [isConnected, chartData.length])
 
   // 디바이스 제어 함수
-  const sendControlCommand = (command) => {
+  const sendControlCommand = async (command) => {
     if (!isConnected) {
       alert('Socket이 연결되지 않았습니다.');
       return;
@@ -368,35 +350,109 @@ function Monitoring() {
 
     const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
-    // 측정 시작/정지 명령인 경우 mqtt-monitor 제어
-    if (command.action === 'start_measurement') {
-      // Telemetry 테스트 시작으로 변환
-      const telemetryCommand = {
-        action: 'start_telemetry_test',
-        deviceIds: [patientId || 'AA:BB:CC:DD:EE:02'],
-        interval: 1000 // 1초마다
-      };
+    // 측정 시작/정지 명령
+    if (command.action === 'start_measurement' || command.action === 'stop_measurement') {
+      // 디바이스 정보 가져오기
+      let deviceMacAddress = null;
+      let hubId = null;
       
-      console.log('[Monitoring] 📤 Sending start_telemetry_test command:', telemetryCommand);
+      // deviceInfo가 있으면 사용
+      if (deviceInfo && deviceInfo.hub_address) {
+        hubId = deviceInfo.hub_address;
+        deviceMacAddress = deviceInfo.address;
+      } else if (patientId) {
+        // patientId는 pet의 ID이므로, pet 테이블에서 device_address를 가져온 다음 device 조회
+        try {
+          // 1. pet 정보 조회
+          const pet = await petService.getPet(patientId);
+          if (!pet || !pet.device_address) {
+            alert('환자에 연결된 디바이스를 찾을 수 없습니다.');
+            return;
+          }
+          
+          // 2. device 정보 조회 (사용자 email 확인 포함)
+          const device = await deviceService.getDevice(pet.device_address);
+          if (!device || !device.hub_address) {
+            alert('디바이스 정보를 찾을 수 없습니다.');
+            return;
+          }
+          
+          hubId = device.hub_address;
+          deviceMacAddress = device.address;
+          
+          // deviceInfo 업데이트
+          setDeviceInfo(device);
+        } catch (error) {
+          console.error('[Monitoring] Failed to get device info:', error);
+          alert('디바이스 정보를 가져오는데 실패했습니다.');
+          return;
+        }
+      }
       
-      emit('CONTROL_REQUEST', {
-        hubId: 'AA:BB:CC:DD:EE:01', // 임시 값
-        deviceId: patientId || 'AA:BB:CC:DD:EE:02', // 임시 값
-        command: telemetryCommand,
-        requestId
+      if (!hubId) {
+        alert('디바이스의 허브 정보를 찾을 수 없습니다.');
+        return;
+      }
+      
+      const measurementCommand = command.action === 'start_measurement' 
+        ? `start:${deviceMacAddress}`
+        : `stop:${deviceMacAddress}`;
+      
+      console.log(`[Monitoring] 📤 Sending ${command.action} command:`, {
+        hubId,
+        deviceId: deviceMacAddress,
+        command: measurementCommand
       });
-    } else if (command.action === 'stop_measurement') {
-      // Telemetry 테스트 정지로 변환
-      const telemetryCommand = {
-        action: 'stop_telemetry_test'
-      };
       
-      console.log('[Monitoring] 📤 Sending stop_telemetry_test command:', telemetryCommand);
+      // CSV 세션 시작/종료
+      try {
+        const now = new Date();
+        const startTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}:${String(now.getMilliseconds()).padStart(3, '0')}`;
+        
+        if (command.action === 'start_measurement') {
+          const response = await fetch('http://localhost:5000/api/measurement/start', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              deviceAddress: deviceMacAddress,
+              userEmail: 'test@example.com', // TODO: 실제 사용자 이메일로 변경
+              petName: '테스트펫', // TODO: 실제 펫 이름으로 변경
+              startTime
+            })
+          });
+          const result = await response.json();
+          if (!result.success) {
+            console.error('[Monitoring] Failed to start CSV session:', result.message);
+          }
+        } else {
+          const response = await fetch('http://localhost:5000/api/measurement/stop', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              deviceAddress: deviceMacAddress
+            })
+          });
+          const result = await response.json();
+          if (!result.success) {
+            console.error('[Monitoring] Failed to stop CSV session:', result.message);
+          }
+        }
+      } catch (error) {
+        console.error(`[Monitoring] Error ${command.action} CSV session:`, error);
+      }
       
+      // Socket.IO로 제어 명령 전송
       emit('CONTROL_REQUEST', {
-        hubId: 'AA:BB:CC:DD:EE:01', // 임시 값
-        deviceId: patientId || 'AA:BB:CC:DD:EE:02', // 임시 값
-        command: telemetryCommand,
+        hubId,
+        deviceId: deviceMacAddress,
+        command: {
+          action: command.action,
+          raw_command: measurementCommand
+        },
         requestId
       });
     } else {
@@ -564,34 +620,11 @@ function Monitoring() {
           >
             측정 정지
           </button>
-          <button 
-            className="btn-secondary"
-            onClick={() => sendControlCommand({ action: 'led_blink' })}
-            disabled={!isConnected}
-          >
-            LED 깜빡임
-          </button>
-          <button 
-            className={isErrorSimulationActive ? 'btn-danger' : 'btn-secondary'}
-            onClick={handleToggleErrorSimulation}
-            style={{ 
-              backgroundColor: isErrorSimulationActive ? '#e74c3c' : '#95a5a6',
-              color: 'white'
-            }}
-          >
-            {isErrorSimulationActive ? '⏸ 오류 시뮬레이션 중지' : '▶ 오류 시뮬레이션 시작'}
-          </button>
         </section>
 
         {/* 차트 섹션 */}
         <section className="chart-section">
           <div className="chart-tabs">
-            <button
-              className={activeTab === 'ir' ? 'chart-tab active' : 'chart-tab'}
-              onClick={() => setActiveTab('ir')}
-            >
-              IR
-            </button>
             <button
               className={activeTab === 'heartRate' ? 'chart-tab active' : 'chart-tab'}
               onClick={() => setActiveTab('heartRate')}
@@ -615,7 +648,6 @@ function Monitoring() {
           <div className="chart-container">
             <div className="chart-header">
               <h3>
-                {activeTab === 'ir' && 'IR 데이터'}
                 {activeTab === 'heartRate' && '심박수'}
                 {activeTab === 'spo2' && '산포도'}
                 {activeTab === 'temperature' && '온도'}

@@ -132,6 +132,69 @@ router.get('/db/recent/:deviceAddress', verifyToken, async (req, res) => {
 });
 
 /**
+ * 최신 Telemetry 데이터 조회 (실시간, Socket.IO 대체)
+ * GET /telemetry/latest - 모든 디바이스
+ * GET /telemetry/latest/:deviceId - 특정 디바이스
+ */
+router.get('/latest', verifyToken, (req, res) => {
+  try {
+    const telemetryWorker = req.app.get('telemetryWorker');
+    if (!telemetryWorker) {
+      return res.status(503).json({
+        success: false,
+        message: 'Telemetry Worker가 초기화되지 않았습니다.'
+      });
+    }
+
+    const data = telemetryWorker.getLatestTelemetry(null);
+
+    res.json({
+      success: true,
+      deviceId: 'all',
+      data,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('[Telemetry API] Latest Error:', error);
+    res.status(500).json({
+      success: false,
+      message: '최신 데이터 조회 중 오류가 발생했습니다.',
+      error: error.message
+    });
+  }
+});
+
+router.get('/latest/:deviceId', verifyToken, (req, res) => {
+  try {
+    const { deviceId } = req.params;
+    
+    const telemetryWorker = req.app.get('telemetryWorker');
+    if (!telemetryWorker) {
+      return res.status(503).json({
+        success: false,
+        message: 'Telemetry Worker가 초기화되지 않았습니다.'
+      });
+    }
+
+    const data = telemetryWorker.getLatestTelemetry(deviceId);
+
+    res.json({
+      success: true,
+      deviceId,
+      data,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('[Telemetry API] Latest Error:', error);
+    res.status(500).json({
+      success: false,
+      message: '최신 데이터 조회 중 오류가 발생했습니다.',
+      error: error.message
+    });
+  }
+});
+
+/**
  * 테스트용 Telemetry 데이터 수신
  * POST /telemetry/test
  * 개발/테스트 환경에서만 사용

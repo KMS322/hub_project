@@ -154,6 +154,64 @@ module.exports = (io) => {
           return;
         }
 
+        // start_measurement: start:device_mac_address
+        if (command.action === 'start_measurement') {
+          const topic = `hub/${hubId}/receive`;
+          const payload = command.raw_command || `start:${deviceId}`;
+          console.log(`[Socket] 📤 Sending MQTT start measurement to ${topic}: ${payload}`);
+          const success = mqttService.publish(topic, payload, { qos: 1, retain: false });
+
+          if (!success) {
+            socket.emit("CONTROL_RESULT", {
+              requestId: requestId || `req_${Date.now()}`,
+              hubId,
+              deviceId,
+              success: false,
+              error: 'MQTT publish 실패(start_measurement)',
+              timestamp: new Date().toISOString(),
+            });
+          } else {
+            socket.emit("CONTROL_RESULT", {
+              requestId: requestId || `req_${Date.now()}`,
+              hubId,
+              deviceId,
+              success: true,
+              data: { command },
+              timestamp: new Date().toISOString(),
+            });
+          }
+          return;
+        }
+
+        // stop_measurement: stop:device_mac_address
+        if (command.action === 'stop_measurement') {
+          const topic = `hub/${hubId}/receive`;
+          const payload = command.raw_command || `stop:${deviceId}`;
+          console.log(`[Socket] 📤 Sending MQTT stop measurement to ${topic}: ${payload}`);
+          const success = mqttService.publish(topic, payload, { qos: 1, retain: false });
+
+          if (!success) {
+            socket.emit("CONTROL_RESULT", {
+              requestId: requestId || `req_${Date.now()}`,
+              hubId,
+              deviceId,
+              success: false,
+              error: 'MQTT publish 실패(stop_measurement)',
+              timestamp: new Date().toISOString(),
+            });
+          } else {
+            socket.emit("CONTROL_RESULT", {
+              requestId: requestId || `req_${Date.now()}`,
+              hubId,
+              deviceId,
+              success: true,
+              data: { command },
+              timestamp: new Date().toISOString(),
+            });
+          }
+          return;
+        }
+
         // 그 외 일반 MQTT 명령인 경우 기존 sendCommand 로 처리
         console.log(`[Socket] 📤 Sending MQTT command to hub ${hubId} device ${deviceId}:`, command);
         try {

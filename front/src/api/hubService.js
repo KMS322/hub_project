@@ -73,6 +73,21 @@ const hubService = {
       }
     });
     return response.data;
+  },
+
+  /**
+   * 허브 제어 명령 전송 (Socket.IO 대체)
+   * @param {string} hubAddress - 허브 MAC 주소
+   * @param {string} deviceId - 디바이스 ID
+   * @param {Object} command - 명령 객체 { action, ... }
+   * @returns {Promise<Object>}
+   */
+  sendControlCommand: async (hubAddress, deviceId, command) => {
+    const response = await axiosInstance.post(`/hub/${hubAddress}/control`, {
+      deviceId,
+      command
+    });
+    return response.data;
   }
 };
 

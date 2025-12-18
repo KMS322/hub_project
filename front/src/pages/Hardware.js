@@ -7,20 +7,19 @@ import deviceService from '../api/deviceService'
 import AlertModal from '../components/AlertModal'
 import ConfirmModal from '../components/ConfirmModal'
 import { useAuthStore } from '../stores/useAuthStore'
-import { API_URL, MQTT_BROKER_URL } from '../constants'
+import { API_URL } from '../constants'
 import { useSocket } from '../hooks/useSocket'
 import axiosInstance from '../api/axios'
-import mqttService from '../services/mqttService'
 import { detectHardwareError } from '../utils/hardwareErrorDetector'
 import './Hardware.css'
 
 function Hardware() {
   const [searchParams] = useSearchParams()
-  const tabParam = searchParams.get('tab')
-  const [activeTab, setActiveTab] = useState(tabParam || 'device')
   const user = useAuthStore((state) => state.user)
   const [hubs, setHubs] = useState([])
   const [devices, setDevices] = useState([])
+  const [isConnectingAll, setIsConnectingAll] = useState(false)
+  const [deviceConnectionStatuses, setDeviceConnectionStatuses] = useState({}) // 디바이스 연결 상태 { address: 'connected' | 'disconnected' }
   const [stats, setStats] = useState({
     totalHubs: 0,
     totalDevices: 0,
@@ -60,6 +59,7 @@ function Hardware() {
   const [scannedDevices, setScannedDevices] = useState([])
   const [isScanning, setIsScanning] = useState(false)
   const [devicesToRegister, setDevicesToRegister] = useState({})
+  const [selectedDevices, setSelectedDevices] = useState({}) // 선택된 디바이스 { deviceId: true/false }
   const [searchCommandReceived, setSearchCommandReceived] = useState(false) // 검색 명령 수신 확인
   const searchCommandTimeoutRef = useRef(null) // 검색 명령 타임아웃 참조
   const registrationProcessedRef = useRef(new Set()) // 이미 처리된 등록 완료 MAC 주소 추적
@@ -72,27 +72,13 @@ function Hardware() {
   const simulationIntervalRef = useRef(null)
   const errorDurationRefs = useRef({}) // { deviceId: timeoutRef }
 
-  useEffect(() => {
-    if (tabParam) {
-      setActiveTab(tabParam)
-    }
-  }, [tabParam])
-
   // 데이터 로드
   useEffect(() => {
     loadData()
   }, [])
 
-  // MQTT 연결 초기화
-  useEffect(() => {
-    // MQTT 브로커에 연결
-    mqttService.connect(MQTT_BROKER_URL)
-
-    // 컴포넌트 언마운트 시 연결 해제
-    return () => {
-      mqttService.disconnect()
-    }
-  }, [])
+  // MQTT는 백엔드에서만 사용하므로 프론트엔드에서 직접 연결하지 않음
+  // Socket.IO를 통해 백엔드와 통신
 
   // Socket.IO를 통한 허브 상태 실시간 업데이트
   useEffect(() => {
@@ -327,22 +313,93 @@ function Hardware() {
       }
 
       if (!Array.isArray(connectedDevices) || connectedDevices.length === 0) {
+        // 디바이스 전체 연결 중이면 성공 메시지 표시
+        if (isConnectingAll) {
+          setAlertModal({
+            isOpen: true,
+            title: '연결 완료',
+            message: '정상적으로 연결되었습니다.'
+          })
+          setIsConnectingAll(false)
+        }
         return
       }
 
+      // 디바이스 전체 연결 모드인 경우
+      if (isConnectingAll) {
+        try {
+          const existingDevices = await deviceService.getDevices()
+          const normalizeMac = (mac) => mac.replace(/[:-]/g, '').toUpperCase()
+          
+          // 연결된 디바이스 MAC 주소 정규화
+          const connectedMacSet = new Set(connectedDevices.map(mac => normalizeMac(mac)))
+          
+          // deviceConnectionStatuses 업데이트
+          const newConnectionStatuses = {}
+          existingDevices.forEach(device => {
+            const deviceMac = normalizeMac(device.address)
+            newConnectionStatuses[device.address] = connectedMacSet.has(deviceMac) ? 'connected' : 'disconnected'
+          })
+          setDeviceConnectionStatuses(newConnectionStatuses)
+          
+          // 각 디바이스의 상태 업데이트
+          for (const device of existingDevices) {
+            const deviceMac = normalizeMac(device.address)
+            const newStatus = connectedMacSet.has(deviceMac) ? 'connected' : 'disconnected'
+            
+            if (device.status !== newStatus) {
+              await deviceService.updateDevice(device.address, { status: newStatus })
+              console.log(`[Device Connect All] ${device.address} 상태 업데이트: ${device.status} -> ${newStatus}`)
+            }
+          }
+          
+          setAlertModal({
+            isOpen: true,
+            title: '연결 완료',
+            message: '정상적으로 연결되었습니다.'
+          })
+          
+          // 디바이스 목록 새로고침
+          await loadData()
+        } catch (error) {
+          console.error('[Device Connect All] 상태 업데이트 오류:', error)
+          setAlertModal({
+            isOpen: true,
+            title: '오류',
+            message: '디바이스 상태 업데이트에 실패했습니다.'
+          })
+        }
+        
+        setIsConnectingAll(false)
+        return
+      }
+
+      // 기존 디바이스 등록 모달 로직
       if (!deviceRegisterModal.isOpen) {
         handleOpenDeviceRegister()
       }
 
       try {
         const existingDevices = await deviceService.getDevices()
-        const nameMap = new Map(existingDevices.map(d => [d.address, d.name]))
+        console.log('[Device Register] DB에서 가져온 디바이스:', existingDevices)
+        
+        // MAC 주소를 정규화하여 매핑 (대소문자 무시, 구분자 통일)
+        const normalizeMac = (mac) => mac.replace(/[:-]/g, '').toUpperCase()
+        const nameMap = new Map(existingDevices.map(d => [normalizeMac(d.address), d.name]))
 
-        const devices = connectedDevices.map((mac, index) => ({
-          id: `${mac}-${index}`,
-          macAddress: mac,
-          name: nameMap.get(mac) || mac.slice(-5)
-        }))
+        const devices = connectedDevices.map((mac, index) => {
+          const normalizedMac = normalizeMac(mac)
+          const dbName = nameMap.get(normalizedMac)
+          const deviceName = dbName || 'tailing'
+          
+          console.log(`[Device Register] MAC: ${mac}, 정규화: ${normalizedMac}, DB 이름: ${dbName || '없음'}, 최종 이름: ${deviceName}`)
+          
+          return {
+            id: `${mac}-${index}`,
+            macAddress: mac,
+            name: deviceName
+          }
+        })
 
         setScannedDevices(devices)
         setIsScanning(false)
@@ -400,7 +457,7 @@ function Hardware() {
       Object.values(timeoutRefs).forEach(timeout => clearTimeout(timeout))
       Object.values(progressIntervals).forEach(interval => clearInterval(interval))
     }
-  }, [isConnected, on, off, deviceRegisterModal.isOpen, devices, simulatedErrors])
+  }, [isConnected, on, off, deviceRegisterModal.isOpen, devices, simulatedErrors, isConnectingAll])
 
   const loadData = async (skipLoading = false) => {
     // 디바이스 등록 모달이 열려있으면 로딩 상태 변경하지 않음
@@ -420,12 +477,39 @@ function Hardware() {
       setHubs(hubsData)
       setDevices(devicesData)
       
+      // 허브 온라인 상태 초기화 (updatedAt 기준으로 최근 60초 이내면 온라인)
+      const now = Date.now();
+      const hubStatusMap = {};
+      hubsData.forEach(hub => {
+        const lastSeen = hub.updatedAt ? new Date(hub.updatedAt).getTime() : 0;
+        const timeSinceLastSeen = now - lastSeen;
+        // 최근 60초 이내에 활동이 있으면 온라인
+        hubStatusMap[hub.address] = timeSinceLastSeen < 60000;
+      });
+      setHubStatuses(hubStatusMap);
+      
+      // 디바이스 연결 상태 초기화 (updatedAt 기준으로 최근 60초 이내면 연결됨)
+      const deviceStatusMap = {};
+      devicesData.forEach(device => {
+        const lastSeen = device.updatedAt ? new Date(device.updatedAt).getTime() : 0;
+        const timeSinceLastSeen = now - lastSeen;
+        // 최근 60초 이내에 활동이 있으면 연결됨
+        deviceStatusMap[device.address] = timeSinceLastSeen < 60000 ? 'connected' : 'disconnected';
+      });
+      setDeviceConnectionStatuses(deviceStatusMap);
+      
       // 통계 계산
       setStats({
         totalHubs: hubsData.length,
         totalDevices: devicesData.length,
-        connectedDevices: devicesData.filter(d => d.status === 'connected').length,
-        availableDevices: devicesData.filter(d => d.status === 'connected' && !d.connectedPatient).length
+        connectedDevices: devicesData.filter(d => {
+          const lastSeen = d.updatedAt ? new Date(d.updatedAt).getTime() : 0;
+          return (now - lastSeen) < 60000;
+        }).length,
+        availableDevices: devicesData.filter(d => {
+          const lastSeen = d.updatedAt ? new Date(d.updatedAt).getTime() : 0;
+          return (now - lastSeen) < 60000 && !d.connectedPatient;
+        }).length
       })
     } catch (error) {
       console.error('Failed to load data:', error)
@@ -1278,6 +1362,7 @@ function Hardware() {
     setScannedDevices([])
     setIsScanning(false)
     setDevicesToRegister({})
+    setSelectedDevices({})
   }
 
   const handleSwitchHubMode = () => {
@@ -1289,7 +1374,7 @@ function Hardware() {
     })
   }
 
-  // MQTT를 이용한 디바이스 검색 명령 전송 (connect:devices)
+  // Socket.IO를 이용한 디바이스 검색 명령 전송 (connect:devices)
   const handleScanDevices = async () => {
     if (!isConnected) {
       setAlertModal({
@@ -1324,7 +1409,7 @@ function Hardware() {
     if (searchCommandTimeoutRef.current) {
       clearTimeout(searchCommandTimeoutRef.current)
     }
-    // 허브에서 디바이스를 10초 동안 검색하므로, 여유를 두고 15초 타임아웃을 설정
+    // 허브에서 디바이스를 20초 동안 검색하므로, 여유를 두고 25초 타임아웃을 설정
     searchCommandTimeoutRef.current = setTimeout(() => {
       if (!searchCommandReceived) {
         setIsScanning(false)
@@ -1334,7 +1419,7 @@ function Hardware() {
           message: '허브로부터 디바이스 목록 응답을 받지 못했습니다. 허브가 전원이 켜져 있고 네트워크에 연결되어 있는지 확인해주세요.'
         })
       }
-    }, 15000)
+    }, 25000)
 
     try {
       const requestId = `connect_devices_${hubAddress}_${Date.now()}`
@@ -1343,11 +1428,11 @@ function Hardware() {
         deviceId: 'HUB',
         command: {
           action: 'connect_devices',
-          duration: 10000 // 10초 스캔
+          duration: 20000 // 20초 스캔
         },
         requestId
       })
-      console.log('[Device Search] MQTT connect_devices 명령 전송:', {
+      console.log('[Device Search] Socket.IO connect_devices 명령 전송:', {
         hubId: hubAddress,
         requestId
       })
@@ -1415,11 +1500,114 @@ function Hardware() {
     }
   }
 
-  const handleStartRegisterDevice = (deviceId) => {
-    setDevicesToRegister(prev => ({
+  // 등록된 디바이스용 LED 깜빡이기 함수
+  const handleBlinkRegisteredDevice = async (deviceAddress) => {
+    if (!isConnected) {
+      setAlertModal({
+        isOpen: true,
+        title: '연결 오류',
+        message: '서버와의 실시간 연결이 없습니다.'
+      })
+      return
+    }
+
+    // 허브 주소 결정
+    let hubAddress = detectedMacAddress
+    if (!hubAddress) {
+      if (!hubs || hubs.length === 0) {
+        setAlertModal({
+          isOpen: true,
+          title: '허브 없음',
+          message: '등록된 허브가 없습니다.'
+        })
+        return
+      }
+      hubAddress = hubs[0].address
+    }
+
+    try {
+      const requestId = `blink_${deviceAddress}_${Date.now()}`
+      emit('CONTROL_REQUEST', {
+        hubId: hubAddress,
+        deviceId: deviceAddress,
+        command: {
+          action: 'blink',
+          mac_address: deviceAddress
+        },
+        requestId
+      })
+      console.log('[Device Blink Registered] Socket.IO blink 명령 전송:', {
+        hubId: hubAddress,
+        device: deviceAddress,
+        requestId
+      })
+
+      setAlertModal({ 
+        isOpen: true, 
+        title: 'LED 깜빡임', 
+        message: `디바이스(${deviceAddress})의 LED 깜빡임 명령이 전송되었습니다.` 
+      })
+    } catch (error) {
+      console.error('[Device Blink Registered] 명령 전송 실패:', error)
+      setAlertModal({ 
+        isOpen: true, 
+        title: '오류', 
+        message: `LED 깜빡임 명령 전송에 실패했습니다: ${error.message}` 
+      })
+    }
+  }
+
+  const handleToggleDeviceSelection = (deviceId) => {
+    const isCurrentlySelected = selectedDevices[deviceId]
+    const device = scannedDevices.find(d => d.id === deviceId)
+    
+    setSelectedDevices(prev => ({
       ...prev,
-      [deviceId]: { name: '', isRegistering: true }
+      [deviceId]: !prev[deviceId]
     }))
+
+    // 체크 해제 시 devicesToRegister에서 제거
+    if (isCurrentlySelected) {
+      setDevicesToRegister(prev => {
+        const newState = { ...prev }
+        delete newState[deviceId]
+        return newState
+      })
+    } else {
+      // 체크 시 devicesToRegister에 추가
+      const defaultName = device?.name || 'tailing'
+      setDevicesToRegister(prev => ({
+        ...prev,
+        [deviceId]: { name: defaultName, isRegistering: true }
+      }))
+    }
+  }
+
+  const handleSelectAllDevices = () => {
+    const allSelected = scannedDevices.every(device => selectedDevices[device.id])
+    const newSelection = {}
+    const newDevicesToRegister = {}
+    
+    scannedDevices.forEach(device => {
+      const willBeSelected = !allSelected
+      newSelection[device.id] = willBeSelected
+      
+      if (willBeSelected) {
+        // 선택되면 등록 목록에 추가
+        const defaultName = device?.name || 'tailing'
+        newDevicesToRegister[device.id] = { name: defaultName, isRegistering: true }
+      }
+    })
+    
+    setSelectedDevices(newSelection)
+    
+    if (allSelected) {
+      // 전체 해제 시 모두 제거
+      setDevicesToRegister({})
+    } else {
+      // 전체 선택 시 모두 추가
+      setDevicesToRegister(newDevicesToRegister)
+    }
   }
 
   const handleDeviceRegisterNameChange = (deviceId, name) => {
@@ -1435,6 +1623,11 @@ function Hardware() {
       delete newState[deviceId]
       return newState
     })
+    // 체크박스도 해제
+    setSelectedDevices(prev => ({
+      ...prev,
+      [deviceId]: false
+    }))
   }
 
   const handleFinalRegister = async () => {
@@ -1443,7 +1636,10 @@ function Hardware() {
     console.log('[Device Register] detectedMacAddress:', detectedMacAddress)
     
     const devicesWithNames = Object.entries(devicesToRegister)
-      .filter(([_, data]) => data.name && data.name.trim() !== '')
+      .filter(([_, data]) => {
+        // null, undefined 체크 및 빈 문자열 체크
+        return data.name != null && data.name.trim() !== ''
+      })
     
     console.log('[Device Register] 이름이 입력된 디바이스:', devicesWithNames)
     
@@ -1451,7 +1647,7 @@ function Hardware() {
       setAlertModal({ 
         isOpen: true, 
         title: '등록 오류', 
-        message: '등록할 디바이스가 없습니다. 디바이스명을 입력해주세요.' 
+        message: '등록할 디바이스가 없거나 모든 디바이스명이 비어있습니다. 디바이스명을 입력해주세요.' 
       })
       return
     }
@@ -1645,6 +1841,70 @@ function Hardware() {
     setIsErrorSimulationActive(prev => !prev);
   };
 
+  // 디바이스 전체 연결 (검색 명령 전송)
+  const handleConnectAllDevices = async () => {
+    if (!isConnected) {
+      setAlertModal({
+        isOpen: true,
+        title: '연결 오류',
+        message: '서버와의 실시간 연결이 없습니다. 잠시 후 다시 시도해주세요.'
+      })
+      return
+    }
+
+    // 허브 주소 결정
+    let hubAddress = detectedMacAddress
+    if (!hubAddress) {
+      if (!hubs || hubs.length === 0) {
+        setAlertModal({
+          isOpen: true,
+          title: '허브 없음',
+          message: '등록된 허브가 없습니다. 먼저 허브를 등록해주세요.'
+        })
+        return
+      }
+      hubAddress = hubs[0].address
+      setDetectedMacAddress(hubAddress)
+    }
+
+    setIsConnectingAll(true)
+
+    try {
+      const requestId = `connect_all_${hubAddress}_${Date.now()}`
+      emit('CONTROL_REQUEST', {
+        hubId: hubAddress,
+        deviceId: 'HUB',
+        command: {
+          action: 'connect_devices',
+          duration: 20000
+        },
+        requestId
+      })
+      console.log('[Device Connect All] Socket.IO connect_devices 명령 전송:', {
+        hubId: hubAddress,
+        requestId
+      })
+
+      // 25초 후 타임아웃
+      setTimeout(() => {
+        setIsConnectingAll(false)
+      }, 25000)
+
+      // 25초 후 타임아웃
+      setTimeout(() => {
+        setIsConnectingAll(false)
+      }, 25000)
+    } catch (error) {
+      console.error('[Device Connect All] MQTT 명령 전송 실패:', error)
+      setAlertModal({
+        isOpen: true,
+        title: '연결 오류',
+        message: `디바이스 연결 명령 전송에 실패했습니다: ${error.message}`
+      })
+      setIsConnectingAll(false)
+    }
+  };
+
   if (loading) {
     return (
       <div className="hardware-page">
@@ -1685,23 +1945,9 @@ function Hardware() {
           </div>
         </section>
 
-        <div className="tabs">
-          <button 
-            className={activeTab === 'hub' ? 'tab active' : 'tab'}
-            onClick={() => setActiveTab('hub')}
-          >
-            허브 관리
-          </button>
-          <button 
-            className={activeTab === 'device' ? 'tab active' : 'tab'}
-            onClick={() => setActiveTab('device')}
-          >
-            디바이스 관리
-          </button>
-        </div>
-
-        {/* 허브 관리 */}
-        {activeTab === 'hub' && (
+        {/* 허브 & 디바이스 관리 2열 레이아웃 */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginTop: '2rem' }}>
+          {/* 왼쪽: 허브 관리 */}
           <div className="hub-section">
             <div className="section-header">
               <h2>허브 목록</h2>
@@ -1786,32 +2032,18 @@ function Hardware() {
               )}
             </div>
           </div>
-        )}
 
-        {/* 디바이스 관리 */}
-        {activeTab === 'device' && (
+          {/* 오른쪽: 디바이스 관리 */}
           <div className="device-section">
             <div className="section-header">
               <h2>디바이스 목록</h2>
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                <div className="device-stats">
-                  <span>연결된 디바이스: {devices.filter(d => d.status === 'connected').length}개</span>
-                </div>
                 <button 
-                  className={isErrorSimulationActive ? 'btn-danger' : 'btn-secondary'}
-                  onClick={handleToggleErrorSimulation}
-                  style={{ 
-                    backgroundColor: isErrorSimulationActive ? '#e74c3c' : '#95a5a6',
-                    color: 'white',
-                    padding: '0.5rem 1rem',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontSize: '0.9rem',
-                    fontWeight: '500'
-                  }}
+                  className="btn-secondary"
+                  onClick={handleConnectAllDevices}
+                  disabled={isConnectingAll}
                 >
-                  {isErrorSimulationActive ? '⏸ 오류 시뮬레이션 중지' : '▶ 오류 시뮬레이션 시작'}
+                  {isConnectingAll ? '연결 중...' : '디바이스 전체 연결'}
                 </button>
                 <button className="btn-primary" onClick={handleOpenDeviceRegister}>디바이스 등록</button>
               </div>
@@ -1841,8 +2073,8 @@ function Hardware() {
                       </div>
                       <div className="detail-item">
                         <span className="label">상태:</span>
-                        <span className={device.status === 'connected' ? 'status-connected' : 'status-disconnected'}>
-                          {device.status === 'connected' ? '연결됨' : '연결 안됨'}
+                        <span className={deviceConnectionStatuses[device.address] === 'connected' ? 'status-connected' : 'status-disconnected'}>
+                          {deviceConnectionStatuses[device.address] === 'connected' ? '연결됨' : '연결 안됨'}
                         </span>
                       </div>
                       <div className="detail-item">
@@ -1852,6 +2084,14 @@ function Hardware() {
                     </div>
                   </div>
                   <div className="device-actions">
+                    <button 
+                      className="btn-secondary"
+                      onClick={() => handleBlinkRegisteredDevice(device.address)}
+                      disabled={deviceConnectionStatuses[device.address] !== 'connected'}
+                      style={{ opacity: deviceConnectionStatuses[device.address] !== 'connected' ? 0.5 : 1 }}
+                    >
+                      LED 깜빡이기
+                    </button>
                     <button 
                       className="btn-secondary"
                       onClick={() => {
@@ -1878,7 +2118,7 @@ function Hardware() {
               )}
             </div>
           </div>
-        )}
+        </div>
 
         {/* 사용 가이드 */}
         <section className="guide-section">
@@ -2085,57 +2325,71 @@ function Hardware() {
 
                     {scannedDevices.length > 0 && (
                       <div className="scanned-devices-list">
-                        <h4>스캔된 디바이스 목록</h4>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                          <h4 style={{ margin: 0 }}>스캔된 디바이스 목록</h4>
+                          <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <button 
+                              className="btn-secondary"
+                              onClick={handleSelectAllDevices}
+                              style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
+                            >
+                              {scannedDevices.every(device => selectedDevices[device.id]) ? '전체 해제' : '전체 선택'}
+                            </button>
+                          </div>
+                        </div>
                         {scannedDevices.map(device => {
                           const deviceData = devicesToRegister[device.id]
                           const isRegistering = deviceData?.isRegistering
-                          const deviceName = deviceData?.name || ''
+                          const isSelected = selectedDevices[device.id]
+                          // 등록 중일 때는 입력된 이름을 우선, 아니면 기본 이름 표시
+                          const deviceName = isRegistering 
+                            ? (deviceData?.name !== undefined ? deviceData.name : device.name || 'tailing')
+                            : (device.name || 'tailing')
                           
                           return (
-                            <div key={device.id} className="scanned-device-item">
-                              <div className="scanned-device-info">
-                                <span className="scanned-device-mac">{device.macAddress}</span>
-                                {isRegistering && deviceName && (
-                                  <span className="scanned-device-name-display">이름: {deviceName}</span>
-                                )}
+                            <div key={device.id} className="scanned-device-item" style={{ minHeight: '80px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1 }}>
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected || false}
+                                  onChange={() => handleToggleDeviceSelection(device.id)}
+                                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                                />
+                                <div className="scanned-device-info" style={{ flex: 1 }}>
+                                  {isRegistering ? (
+                                    <div className="device-name-input-section">
+                                      <input
+                                        type="text"
+                                        value={deviceName}
+                                        onChange={(e) => {
+                                          const value = e.target.value
+                                          if (value.length <= 12) {
+                                            handleDeviceRegisterNameChange(device.id, value)
+                                          }
+                                        }}
+                                        placeholder="디바이스명을 입력하세요"
+                                        className="form-input device-name-input"
+                                        maxLength={12}
+                                      />
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <span className="scanned-device-name">{deviceName || 'tailing'}</span>
+                                      <span className="scanned-device-mac">{device.macAddress}</span>
+                                    </>
+                                  )}
+                                </div>
                               </div>
                               <div className="scanned-device-actions">
-                                {!isRegistering ? (
-                                  <>
-                                    <button 
-                                      className="btn-secondary blink-led-btn"
-                                      onClick={() => handleBlinkLED(device.id)}
-                                    >
-                                      LED 깜빡이기
-                                    </button>
-                                    <button 
-                                      className="btn-primary start-register-btn"
-                                      onClick={() => handleStartRegisterDevice(device.id)}
-                                    >
-                                      등록하기
-                                    </button>
-                                  </>
+                                {isRegistering ? (
+                                  <span style={{ fontSize: '0.85rem', color: '#666' }}>이름을 수정하세요</span>
                                 ) : (
-                                  <div className="device-name-input-section">
-                                    <input
-                                      type="text"
-                                      value={deviceName}
-                                      onChange={(e) => handleDeviceRegisterNameChange(device.id, e.target.value)}
-                                      placeholder="디바이스명을 입력하세요"
-                                      className="form-input device-name-input"
-                                  onKeyPress={(e) => {
-                                    if (e.key === 'Enter' && deviceName.trim()) {
-                                      // Enter 키로도 등록 가능하지만, 최종등록하기 버튼을 사용하도록 유도
-                                    }
-                                  }}
-                                    />
-                                    <button 
-                                      className="btn-secondary cancel-register-btn"
-                                      onClick={() => handleCancelRegisterDevice(device.id)}
-                                    >
-                                      취소
-                                    </button>
-                                  </div>
+                                  <button 
+                                    className="btn-secondary blink-led-btn"
+                                    onClick={() => handleBlinkLED(device.id)}
+                                  >
+                                    LED 깜빡이기
+                                  </button>
                                 )}
                               </div>
                             </div>
@@ -2147,12 +2401,12 @@ function Hardware() {
                     {Object.keys(devicesToRegister).length > 0 && (
                   <div className="final-register-section" style={{ marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid #e0e0e0' }}>
                     <p style={{ marginBottom: '0.5rem', fontSize: '0.9rem', color: '#666' }}>
-                      등록할 디바이스: {Object.keys(devicesToRegister).filter(id => devicesToRegister[id].name.trim()).length}개
+                      등록할 디바이스: {Object.keys(devicesToRegister).filter(id => devicesToRegister[id].name != null && devicesToRegister[id].name.trim()).length}개
                     </p>
                         <button 
                           className="btn-primary final-register-btn"
                           onClick={handleFinalRegister}
-                      disabled={Object.keys(devicesToRegister).filter(id => devicesToRegister[id].name.trim()).length === 0}
+                      disabled={Object.keys(devicesToRegister).filter(id => devicesToRegister[id].name != null && devicesToRegister[id].name.trim()).length === 0}
                       style={{ 
                         width: '100%',
                         padding: '0.75rem',
@@ -2160,9 +2414,9 @@ function Hardware() {
                         fontWeight: '600'
                       }}
                         >
-                      최종등록하기 ({Object.keys(devicesToRegister).filter(id => devicesToRegister[id].name.trim()).length}개)
+                      등록하기 ({Object.keys(devicesToRegister).filter(id => devicesToRegister[id].name != null && devicesToRegister[id].name.trim()).length}개)
                         </button>
-                    {Object.keys(devicesToRegister).filter(id => !devicesToRegister[id].name.trim()).length > 0 && (
+                    {Object.keys(devicesToRegister).filter(id => !devicesToRegister[id].name || !devicesToRegister[id].name.trim()).length > 0 && (
                       <p style={{ marginTop: '0.5rem', fontSize: '0.85rem', color: '#e74c3c' }}>
                         ⚠️ 이름이 입력되지 않은 디바이스가 있습니다. 이름을 입력해주세요.
                       </p>

@@ -142,9 +142,28 @@ class MQTTService {
    * @param {Object|string} message - 수신된 메시지
    * @param {string} topic - 메시지가 수신된 토픽
    */
-  handleTelemetry(message, topic) {
+  async handleTelemetry(message, topic) {
     const receiveStartTime = Date.now(); // 성능 측정 시작 (MQTT 수신 시간)
     const { hubId, deviceId } = this.extractHubDeviceId(topic);
+    
+    // 허브와 디바이스의 마지막 활동 시간 업데이트 (온라인 상태 표시용)
+    try {
+      const db = require('../models');
+      
+      // 허브 마지막 활동 시간 업데이트
+      const hub = await db.Hub.findByPk(hubId);
+      if (hub) {
+        await hub.update({ updatedAt: new Date() });
+      }
+      
+      // 디바이스 마지막 활동 시간 업데이트
+      const device = await db.Device.findByPk(deviceId);
+      if (device) {
+        await device.update({ updatedAt: new Date() });
+      }
+    } catch (error) {
+      console.error(`[MQTT Service] Error updating last seen for hub ${hubId} device ${deviceId}:`, error);
+    }
     
     let telemetryData;
     try {

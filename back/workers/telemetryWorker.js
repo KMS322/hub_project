@@ -1,5 +1,5 @@
 const db = require('../models');
-const CSVWriter = require('../utils/csvWriter');
+const csvWriter = require('../utils/csvWriter'); // 싱글톤 인스턴스
 const { processData: processHeartRate } = require('../utils/heartRateProcessor');
 
 /**
@@ -17,7 +17,7 @@ class TelemetryWorker {
     this.broadcastBuffer = new Map(); // 브로드캐스트 버퍼 (디바이스별)
     this.broadcastTimer = null;
     this.processTimer = null;
-    this.csvWriter = new CSVWriter(options.csvDir || 'data/csv'); // CSV Writer
+    this.csvWriter = csvWriter; // 싱글톤 CSV Writer 인스턴스 사용
   }
 
   /**
@@ -205,128 +205,34 @@ class TelemetryWorker {
   }
 
   /**
-   * CSV 파일에 저장 (원본 데이터만 저장)
+   * CSV 파일에 저장 (허브에서 받은 250개 배치 데이터)
    * 
-   * 중요: CSV에는 수신된 원본 데이터 그대로 저장한다.
-   * 어떠한 필터링, 보정, 안정화, 계산 결과도 CSV에 덮어쓰지 않는다.
+   * 데이터 형식:
+   * {
+   *   device_mac_address: "AA:BB:CC:DD:EE",
+   *   sampling_rate: 50,
+   *   spo2: 98,
+   *   hr: 75,
+   *   temp: 38.5,
+   *   data: ["123456,654321,123456", ...], // 250개
+   *   start_time: "HH:mm:ss:SSS"
+   * }
    * 
    * @param {Array} batch - 저장할 데이터 배치
    */
-  saveToCSV(batch) {
-    const csvRecords = [];
-
-    for (const item of batch) {
-      const { hubId, deviceId, data } = item;
-      
-      // 원본 데이터 구조 확인
-      // data.data는 "ir,red,green" 형식의 문자열 배열
-      // data.sampling_rate, data.spo2, data.hr, data.temp, data.start_time
-      
-      if (data.data && Array.isArray(data.data)) {
-        // 원시 PPG 데이터가 있는 경우
-        const samplingRate = data.sampling_rate || 20;
-        const startTime = data.start_time || (data.timestamp || Date.now());
-        const intervalMs = 1000 / samplingRate; // 각 샘플 간격 (ms)
+  async saveToCSV(batch) {
+    try {
+      for (const item of batch) {
+        const { hubId, deviceId, data } = item;
         
-        // 각 원시 샘플을 CSV 행으로 변환
-        for (let i = 0; i < data.data.length; i++) {
-          const dataStr = data.data[i];
-          if (!dataStr || typeof dataStr !== 'string') continue;
-          
-          const values = dataStr.split(',');
-          if (values.length !== 3) continue;
-          
-          const ir = values[0].trim();
-          const red = values[1].trim();
-          const green = values[2].trim();
-          
-          // 시간 계산: start_time + (i * intervalMs)
-          const currentTimeMs = startTime + (i * intervalMs);
-          const currentTime = new Date(currentTimeMs);
-          const timeStr = `${String(currentTime.getHours()).padStart(2, '0')}:${String(currentTime.getMinutes()).padStart(2, '0')}:${String(currentTime.getSeconds()).padStart(2, '0')}:${String(currentTime.getMilliseconds()).padStart(3, '0')}`;
-          
-          // 마지막 행인지 확인 (hr, spo2, temp는 마지막 행에만)
-          const isLastRow = i === data.data.length - 1;
-          
-          csvRecords.push({
-            time: timeStr,
-            ir: ir,
-            red: red,
-            green: green,
-            hr: isLastRow ? (data.hr || null) : null, // 장치에서 전달된 원본 hr
-            spo2: isLastRow ? (data.spo2 || null) : null, // 장치에서 전달된 원본 spo2
-            temp: isLastRow ? (data.temp || null) : null // 장치에서 전달된 원본 temp
-          });
+        // 허브에서 보낸 250개 배치 데이터인지 확인
+        if (data.device_mac_address && data.data && Array.isArray(data.data) && data.data.length > 0) {
+          // CSV Writer에 배치 데이터 전달
+          await this.csvWriter.writeBatch(data);
         }
-      } else if (data.dataArr && Array.isArray(data.dataArr)) {
-        // dataArr 형식인 경우 (기존 형식 호환)
-        const timestampValue = data.timestamp || (item.timestamp instanceof Date ? item.timestamp.getTime() : Date.now());
-        const time = new Date(timestampValue);
-        const timeStr = `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}:${String(time.getSeconds()).padStart(2, '0')}:${String(time.getMilliseconds()).padStart(3, '0')}`;
-        
-        for (const sample of data.dataArr) {
-          csvRecords.push({
-            time: timeStr,
-            ir: sample.ir || null,
-            red: sample.red || null,
-            green: sample.green || null,
-            hr: sample.hr || null, // 원본 값
-            spo2: sample.spo2 || null, // 원본 값
-            temp: sample.temp || null // 원본 값
-          });
-        }
-      } else {
-        // 단일 샘플인 경우
-        const timestampValue = data.timestamp || (item.timestamp instanceof Date ? item.timestamp.getTime() : Date.now());
-        const time = new Date(timestampValue);
-        const timeStr = `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}:${String(time.getSeconds()).padStart(2, '0')}:${String(time.getMilliseconds()).padStart(3, '0')}`;
-        
-        csvRecords.push({
-          time: timeStr,
-          ir: data.ir || null,
-          red: data.red || null,
-          green: data.green || null,
-          hr: data.hr || null, // 원본 값
-          spo2: data.spo2 || null, // 원본 값
-          temp: data.temp || null // 원본 값
-        });
       }
-    }
-
-    // CSV에 배치 저장 (디바이스별로 그룹화하여 저장)
-    const deviceGroups = new Map();
-    
-    // 각 아이템의 레코드를 디바이스별로 그룹화
-    let recordIdx = 0;
-    for (const item of batch) {
-      const { deviceId, data } = item;
-      
-      // 아이템의 레코드 개수 계산
-      let itemRecordCount = 0;
-      if (data.data && Array.isArray(data.data)) {
-        itemRecordCount = data.data.length;
-      } else if (data.dataArr && Array.isArray(data.dataArr)) {
-        itemRecordCount = data.dataArr.length;
-      } else {
-        itemRecordCount = 1;
-      }
-      
-      // 해당 디바이스의 레코드 추출
-      if (!deviceGroups.has(deviceId)) {
-        deviceGroups.set(deviceId, []);
-      }
-      
-      const deviceRecords = csvRecords.slice(recordIdx, recordIdx + itemRecordCount);
-      deviceGroups.get(deviceId).push(...deviceRecords);
-      
-      recordIdx += itemRecordCount;
-    }
-    
-    // 각 디바이스별로 CSV 저장
-    for (const [deviceId, records] of deviceGroups.entries()) {
-      if (records.length > 0) {
-        this.csvWriter.appendBatch(records, deviceId);
-      }
+    } catch (error) {
+      console.error('[Telemetry Worker] CSV 저장 오류:', error);
     }
   }
 
@@ -373,8 +279,8 @@ class TelemetryWorker {
                 red: null,
                 green: null,
                 hr: hrResult.hr, // 안정화된 HR
-                spo2: hrResult.spo2,
-                temp: hrResult.temp,
+                spo2: data.spo2 || hrResult.spo2 || null, // 원본 SpO2 우선 사용
+                temp: data.temp || hrResult.temp || null, // 원본 Temp 우선 사용
                 battery: data.battery || null
               }]
             };
@@ -444,7 +350,7 @@ class TelemetryWorker {
   }
 
   /**
-   * 버퍼된 데이터를 WebSocket으로 브로드캐스트
+   * 버퍼된 데이터를 Socket.IO로 브로드캐스트
    */
   broadcastBuffered() {
     if (!this.io || this.broadcastBuffer.size === 0) {
@@ -481,7 +387,7 @@ class TelemetryWorker {
       const publishStartTime = latestData.publishStartTime;
       const totalProcessingTime = publishStartTime ? Date.now() - publishStartTime : null;
 
-      // WebSocket으로 전송
+      // Socket.IO로 전송
       this.io.emit('TELEMETRY', {
         type: 'sensor_data',
         hubId,
@@ -506,6 +412,47 @@ class TelemetryWorker {
       const broadcastTime = Date.now() - broadcastStartTime;
       console.log(`[Telemetry Worker] 📡 Broadcasted ${broadcastCount} devices to frontend (${broadcastTime}ms)`);
     }
+  }
+
+  /**
+   * 최신 Telemetry 데이터 조회 (HTTP API용)
+   * @param {string} deviceId - 디바이스 ID (선택사항)
+   * @returns {Object} 최신 데이터
+   */
+  getLatestTelemetry(deviceId = null) {
+    const result = {};
+    
+    for (const [key, dataArray] of this.broadcastBuffer.entries()) {
+      const [hubId, devId] = key.split(':');
+      
+      if (deviceId && devId !== deviceId) {
+        continue;
+      }
+      
+      if (dataArray.length > 0) {
+        const latestData = dataArray[dataArray.length - 1];
+        
+        // Downsampling: dataArr가 있으면 일부만 전송
+        let telemetryData = latestData;
+        if (latestData.dataArr && Array.isArray(latestData.dataArr)) {
+          const step = Math.max(1, Math.floor(latestData.dataArr.length / 10));
+          telemetryData = {
+            ...latestData,
+            dataArr: latestData.dataArr.filter((_, i) => i % step === 0)
+          };
+        }
+        
+        result[devId] = {
+          type: 'sensor_data',
+          hubId,
+          deviceId: devId,
+          data: telemetryData,
+          timestamp: new Date().toISOString()
+        };
+      }
+    }
+    
+    return deviceId ? result[deviceId] || null : result;
   }
 
   /**

@@ -15,12 +15,14 @@ const petRoutes = require("./routes/pet");
 const recordsRoutes = require("./routes/records");
 const mqttTestRoutes = require("./routes/mqtt-test");
 const checkRoutes = require("./routes/check");
+const measurementRoutes = require("./routes/measurement");
 const initializeDatabase = require("./seeders/init");
 const MQTTService = require("./mqtt/service");
 const TelemetryWorker = require("./workers/telemetryWorker");
 
 const server = http.createServer(app);
 
+// Socket.IO 초기화
 const io = new Server(server, {
   cors: {
     origin: true, // 모든 origin 허용 (요청 origin 그대로 반환)
@@ -38,8 +40,8 @@ const io = new Server(server, {
 });
 
 app.use(cors());
-app.use(express.json({ limit: '10mb' })); // 요청 크기 제한 추가
-app.use(express.urlencoded({ extended: true, limit: '10mb' })); // 요청 크기 제한 추가
+app.use(express.json({ limit: '30mb' })); // 요청 크기 제한 추가
+app.use(express.urlencoded({ extended: true, limit: '30mb' })); // 요청 크기 제한 추가
 
 app.set("io", io);
 
@@ -51,6 +53,7 @@ app.use("/device", deviceRoutes);
 app.use("/pet", petRoutes);
 app.use("/records", recordsRoutes);
 app.use("/mqtt-test", mqttTestRoutes);
+app.use("/api/measurement", measurementRoutes);
 // check 라우트에 Socket.IO 인스턴스 전달
 checkRoutes.setIOInstance(io);
 app.use("/check", checkRoutes);
@@ -59,14 +62,14 @@ app.use("/check", checkRoutes);
 const telemetryQueue = [];
 app.set("telemetryQueue", telemetryQueue);
 
-// Telemetry Worker 초기화
+// Telemetry Worker 초기화 (Socket.IO로 데이터 전송)
 const telemetryWorker = new TelemetryWorker(io, telemetryQueue, {
   batchSize: 100,
   processInterval: 50, // 50ms마다 처리
   broadcastInterval: 100 // 100ms마다 브로드캐스트 (10Hz)
 });
 
-// MQTT 서비스 초기화 (Telemetry 큐 전달)
+// MQTT 서비스 초기화 (Telemetry 큐 전달, Socket.IO는 이벤트 전송용)
 const mqttService = new MQTTService(io, telemetryQueue);
 mqttService.initialize();
 app.set("mqtt", mqttService);
@@ -75,6 +78,7 @@ app.set("telemetryWorker", telemetryWorker);
 // Socket.IO에 MQTT 서비스 참조 저장
 io.mqttService = mqttService;
 
+// Socket.IO 핸들러 설정
 const socketHandler = require("./socket");
 socketHandler(io);
 
@@ -98,7 +102,7 @@ db.sequelize
       console.log(`   - 허브 상태는 🔌 아이콘으로 표시됩니다`);
       console.log(`   - 명령 응답은 📨 아이콘으로 표시됩니다`);
       console.log(`   - 메시지 발행은 📤 아이콘으로 표시됩니다`);
-      console.log(`\n💡 팁: MQTT 모니터 서버(http://localhost:3001)에서도 확인 가능합니다`);
+      console.log(`\n💡 팁: Socket.IO를 통해 실시간 데이터를 전송합니다`);
       console.log(`${'='.repeat(60)}\n`);
       
       // Telemetry Worker 시작

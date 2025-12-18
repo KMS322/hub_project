@@ -1,7 +1,8 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const db = require('../models');
-const mqttClient = require('../mqtt/client');
+const db = require("../models");
+const mqttClient = require("../mqtt/client");
+const csvWriter = require("../utils/csvWriter");
 
 // Socket.IO 인스턴스를 가져오기 위한 함수
 let ioInstance = null;
@@ -15,7 +16,7 @@ const subscribedHubs = new Set();
 
 // 로깅 헬퍼 (production 모드에서 불필요한 로그 제거)
 const log = (message, ...args) => {
-  if (process.env.NODE_ENV !== 'production' || process.env.DEBUG === 'true') {
+  if (process.env.NODE_ENV !== "production" || process.env.DEBUG === "true") {
     console.log(message, ...args);
   }
 };
@@ -26,17 +27,17 @@ const log = (message, ...args) => {
  * body: { mac_address, user_email }
  * 인증 없이 허브에서 직접 호출하는 엔드포인트
  */
-router.post('/hub', async (req, res) => {
+router.post("/hub", async (req, res) => {
   try {
     const { mac_address, user_email } = req.body;
 
     log(`[Hub Check] mac_address: ${mac_address}, user_email: ${user_email}`);
-    
+
     // 필수 필드 검증
     if (!mac_address || !user_email) {
       return res.status(400).json({
         success: false,
-        message: 'mac_address와 user_email은 필수입니다.'
+        message: "mac_address와 user_email은 필수입니다.",
       });
     }
 
@@ -45,7 +46,7 @@ router.post('/hub', async (req, res) => {
     if (!macPattern.test(mac_address)) {
       return res.status(400).json({
         success: false,
-        message: '올바른 MAC 주소 형식이 아닙니다. (예: AA:BB:CC:DD:EE:01)'
+        message: "올바른 MAC 주소 형식이 아닙니다. (예: AA:BB:CC:DD:EE:01)",
       });
     }
 
@@ -54,20 +55,22 @@ router.post('/hub', async (req, res) => {
     if (!emailPattern.test(user_email)) {
       return res.status(400).json({
         success: false,
-        message: '올바른 이메일 형식이 아닙니다.'
+        message: "올바른 이메일 형식이 아닙니다.",
       });
     }
 
     // 병렬 처리: 사용자 확인과 허브 조회를 동시에 수행
     const [user, hub] = await Promise.all([
-      db.User.findByPk(user_email, { attributes: ['email'] }),
-      db.Hub.findByPk(mac_address, { attributes: ['address', 'user_email', 'name', 'is_change'] })
+      db.User.findByPk(user_email, { attributes: ["email"] }),
+      db.Hub.findByPk(mac_address, {
+        attributes: ["address", "user_email", "name", "is_change"],
+      }),
     ]);
 
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: '등록되지 않은 사용자입니다.'
+        message: "등록되지 않은 사용자입니다.",
       });
     }
 
@@ -79,14 +82,18 @@ router.post('/hub', async (req, res) => {
         await hub.save();
         log(`[Hub Check] ✅ Hub ${mac_address} updated for user ${user_email}`);
       }
+      // 마지막 활동 시간 업데이트 (온라인 상태 표시용)
+      await hub.update({ updatedAt: new Date() });
     } else {
       await db.Hub.create({
         address: mac_address,
         name: `허브 ${mac_address}`,
         user_email: user_email,
-        is_change: false
+        is_change: false,
       });
-      log(`[Hub Check] ✅ New hub ${mac_address} registered for user ${user_email}`);
+      log(
+        `[Hub Check] ✅ New hub ${mac_address} registered for user ${user_email}`
+      );
     }
 
     // MQTT 토픽 구독 (이미 구독된 경우 스킵)
@@ -95,67 +102,188 @@ router.post('/hub', async (req, res) => {
 
     if (!subscribedHubs.has(mac_address)) {
       // send 토픽 구독 (허브 → 백엔드로 이벤트 전달)
-      mqttClient.subscribe(sendTopic, (message, topic) => {
-        log(`[Hub Check] 📥 Message received from ${topic}`);
-        try {
-          const messageStr = Buffer.isBuffer(message) ? message.toString('utf8') : 
-                            typeof message === 'string' ? message : JSON.stringify(message);
-          const data = JSON.parse(messageStr);
-          log(`[Hub Check] Send topic data:`, JSON.stringify(data, null, 2));
+      mqttClient.subscribe(
+        sendTopic,
+        async (message, topic) => {
+          log(`[Hub Check] 📥 Message received from ${topic}`);
+          try {
+            const messageStr = Buffer.isBuffer(message)
+              ? message.toString("utf8")
+              : typeof message === "string"
+              ? message
+              : JSON.stringify(message);
+            const data = JSON.parse(messageStr);
+            log(`[Hub Check] Send topic data:`, JSON.stringify(data, null, 2));
 
-          // 허브에서 연결된 디바이스 목록을 보내온 경우
-          if (data && Array.isArray(data.connected_devices) && ioInstance) {
-            ioInstance.emit('CONNECTED_DEVICES', {
-              hubAddress: mac_address,
-              connected_devices: data.connected_devices,
-              timestamp: new Date().toISOString(),
-            });
+            // 허브에서 측정 데이터를 보내온 경우 (device_mac_address, sampling_rate, data 등 포함)
+            if (data && data.device_mac_address && Array.isArray(data.data)) {
+              // 디바이스 MAC 주소로 펫 정보와 user_email 조회
+              try {
+                const device = await db.Device.findOne({
+                  where: { address: data.device_mac_address },
+                  include: [{
+                    model: db.Hub,
+                    as: 'Hub',
+                    attributes: ['address', 'user_email']
+                  }, {
+                    model: db.Pet,
+                    as: 'Pet',
+                    attributes: ['id', 'name', 'user_email']
+                  }]
+                });
+
+                if (device && device.Hub && device.Hub.user_email) {
+                  const userEmail = device.Hub.user_email;
+                  const petName = device.Pet?.name || 'Unknown';
+                  
+                  // CSV 세션이 없으면 시작
+                  if (!csvWriter.hasActiveSession(data.device_mac_address)) {
+                    const startTime = data.start_time || '000000000';
+                    csvWriter.startSession(data.device_mac_address, userEmail, petName, startTime);
+                    log(`[Hub Check] Started CSV session for ${data.device_mac_address}`);
+                  }
+                  
+                  // CSV에 데이터 저장
+                  await csvWriter.writeBatch(data);
+
+                  // 실시간 모니터링을 위한 최소 Telemetry 데이터 Socket.IO 브로드캐스트
+                  if (ioInstance) {
+                    const telemetryPayload = {
+                      type: 'sensor_data',
+                      hubId: mac_address,
+                      deviceId: data.device_mac_address,
+                      data: {
+                        hr: data.hr || 0,
+                        spo2: data.spo2 || 0,
+                        temp: data.temp || 0,
+                        battery: data.battery || 0,
+                        // Dashboard / Monitoring 이 사용하는 dataArr 형식 맞추기
+                        dataArr: [{
+                          hr: data.hr || 0,
+                          spo2: data.spo2 || 0,
+                          temp: data.temp || 0,
+                          battery: data.battery || 0
+                        }],
+                        timestamp: Date.now()
+                      },
+                      timestamp: new Date().toISOString()
+                    };
+
+                    ioInstance.emit('TELEMETRY', telemetryPayload);
+                  }
+                } else {
+                  log(`[Hub Check] Device ${data.device_mac_address} not found or not connected to pet`);
+                }
+              } catch (error) {
+                console.error(`[Hub Check] Error processing telemetry data:`, error);
+              }
+            }
+
+              // 허브에서 연결된 디바이스 목록을 보내온 경우
+            if (data && Array.isArray(data.connected_devices) && ioInstance) {
+              // 디바이스 정보를 DB에 저장 (이미 존재하는 경우 업데이트)
+              data.connected_devices.forEach(async (deviceMac) => {
+                try {
+                  const [device] = await db.Device.findOrCreate({
+                    where: { address: deviceMac, hub_address: mac_address },
+                    defaults: {
+                      address: deviceMac,
+                      hub_address: mac_address,
+                      name: deviceMac.slice(-5), // tailing
+                      user_email: null // 나중에 연결
+                    }
+                  });
+                  
+                  if (device.hub_address !== mac_address) {
+                    device.hub_address = mac_address;
+                    await device.save();
+                  }
+                  
+                  // 마지막 활동 시간 업데이트 (온라인 상태 표시용)
+                  await device.update({ updatedAt: new Date() });
+                } catch (error) {
+                  console.error(`[Hub Check] Error saving device ${deviceMac}:`, error);
+                }
+              });
+              
+              // Socket.IO로 프론트엔드에 전송
+              ioInstance.emit("CONNECTED_DEVICES", {
+                hubAddress: mac_address,
+                connected_devices: data.connected_devices,
+                timestamp: new Date().toISOString(),
+              });
+            }
+          } catch (e) {
+            log(
+              `[Hub Check] Send topic raw message:`,
+              Buffer.isBuffer(message) ? message.toString("utf8") : message
+            );
           }
-        } catch (e) {
-          log(`[Hub Check] Send topic raw message:`, Buffer.isBuffer(message) ? message.toString('utf8') : message);
-        }
-      }, 1);
+        },
+        1
+      );
 
       // receive 토픽 구독
-      mqttClient.subscribe(receiveTopic, (message, topic) => {
-        log(`[Hub Check] 📥 Message received from ${topic}`);
-        try {
-          const messageStr = Buffer.isBuffer(message) ? message.toString('utf8') : 
-                            typeof message === 'string' ? message : JSON.stringify(message);
-          const data = JSON.parse(messageStr);
-          log(`[Hub Check] Receive topic data:`, JSON.stringify(data, null, 2));
-        } catch (e) {
-          log(`[Hub Check] Receive topic raw message:`, Buffer.isBuffer(message) ? message.toString('utf8') : message);
-        }
-      }, 1);
+      mqttClient.subscribe(
+        receiveTopic,
+        (message, topic) => {
+          log(`[Hub Check] 📥 Message received from ${topic}`);
+          try {
+            const messageStr = Buffer.isBuffer(message)
+              ? message.toString("utf8")
+              : typeof message === "string"
+              ? message
+              : JSON.stringify(message);
+            const data = JSON.parse(messageStr);
+            log(
+              `[Hub Check] Receive topic data:`,
+              JSON.stringify(data, null, 2)
+            );
+          } catch (e) {
+            log(
+              `[Hub Check] Receive topic raw message:`,
+              Buffer.isBuffer(message) ? message.toString("utf8") : message
+            );
+          }
+        },
+        1
+      );
 
       subscribedHubs.add(mac_address);
-      log(`[Hub Check] ✅ Subscribed to MQTT topics: ${sendTopic}, ${receiveTopic}`);
+      log(
+        `[Hub Check] ✅ Subscribed to MQTT topics: ${sendTopic}, ${receiveTopic}`
+      );
     }
 
     // Socket.IO를 통해 허브 활성화 이벤트 전송
     if (ioInstance) {
-      ioInstance.emit('HUB_ACTIVITY', {
+      ioInstance.emit("HUB_ACTIVITY", {
         hubAddress: mac_address,
         userEmail: user_email,
-        status: 'online',
+        status: "online",
         timestamp: new Date().toISOString(),
-        message: '허브가 활성화되었습니다.'
+        message: "허브가 활성화되었습니다.",
       });
     }
 
-    // 등록 완료 응답
-    res.status(200).send(
-      "mqtt server ready"
-    );
+    const lastConnectDeviceList = await db.Device.findAll({
+      where: { hub_address: mac_address },
+      attributes: ["address"],
+    });
+
+    const addresses = lastConnectDeviceList.map((device) => device.address);
+
+    const message =
+      addresses.length > 0
+        ? `mqtt server ready:${addresses.join(", ")}`
+        : "mqtt server ready";
+
+    res.status(200).send(message);
   } catch (error) {
-    console.error('[Hub Check] Error:', error);
-    res.status(500).send(
-      "mqtt server fail"
-    );
+    console.error("[Hub Check] Error:", error);
+    res.status(500).send("mqtt server fail");
   }
 });
 
 module.exports = router;
 module.exports.setIOInstance = setIOInstance;
-

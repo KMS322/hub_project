@@ -14,7 +14,7 @@ router.get('/', verifyToken, async (req, res) => {
       where: {
         user_email: req.user.email
       },
-      attributes: ['address', 'name', 'user_email', 'is_change', 'createdAt'], // 필요한 필드만 조회
+      attributes: ['address', 'name', 'user_email', 'is_change', 'createdAt', 'updatedAt'], // 필요한 필드만 조회
       include: [{
         model: db.Device,
         as: 'Devices',
@@ -38,6 +38,7 @@ router.get('/', verifyToken, async (req, res) => {
         user_email: hub.user_email,
         is_change: hub.is_change,
         connectedDevices: hub.Devices?.length || 0,
+        updatedAt: hub.updatedAt, // 마지막 활동 시간
         devices: hub.Devices?.map(device => ({
           id: device.address,
           address: device.address,
@@ -305,6 +306,156 @@ router.delete('/:hubAddress', verifyToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: '허브 삭제 중 오류가 발생했습니다.',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 허브 제어 명령 전송 (Socket.IO 대체)
+ * POST /hub/:hubAddress/control
+ * body: { deviceId, command }
+ */
+router.post('/:hubAddress/control', verifyToken, async (req, res) => {
+  try {
+    const { hubAddress } = req.params;
+    const { deviceId, command } = req.body;
+
+    if (!deviceId || !command) {
+      return res.status(400).json({
+        success: false,
+        message: 'deviceId와 command는 필수입니다.'
+      });
+    }
+
+    // 허브 소유권 확인
+    const hub = await db.Hub.findOne({
+      where: {
+        address: hubAddress,
+        user_email: req.user.email
+      }
+    });
+
+    if (!hub) {
+      return res.status(404).json({
+        success: false,
+        message: '허브를 찾을 수 없거나 접근 권한이 없습니다.'
+      });
+    }
+
+    const mqttService = req.app.get('mqtt');
+    if (!mqttService || !mqttService.isConnected()) {
+      return res.status(503).json({
+        success: false,
+        message: 'MQTT 서비스가 연결되지 않았습니다.'
+      });
+    }
+
+    // connect:devices → hub/{hubAddress}/receive 에 문자열로 전송
+    if (command.action === 'connect_devices') {
+      const topic = `hub/${hubAddress}/receive`;
+      const payload = 'connect:devices';
+      const success = mqttService.publish(topic, payload, { qos: 1, retain: false });
+
+      if (!success) {
+        return res.status(500).json({
+          success: false,
+          message: 'MQTT publish 실패(connect:devices)'
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: '디바이스 스캔 명령이 전송되었습니다.',
+        data: { command }
+      });
+    }
+
+    // blink:device_mac_address → hub/{hubAddress}/receive 에 문자열로 전송
+    if (command.action === 'blink' && command.mac_address) {
+      const topic = `hub/${hubAddress}/receive`;
+      const payload = `blink:${command.mac_address}`;
+      const success = mqttService.publish(topic, payload, { qos: 1, retain: false });
+
+      if (!success) {
+        return res.status(500).json({
+          success: false,
+          message: 'MQTT publish 실패(blink)'
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: 'LED 깜빡임 명령이 전송되었습니다.',
+        data: { command }
+      });
+    }
+
+    // start_measurement: startdevice:device_mac_address
+    if (command.action === 'start_measurement') {
+      const topic = `hub/${hubAddress}/receive`;
+      const payload = command.raw_command || `startdevice:${deviceId}`;
+      const success = mqttService.publish(topic, payload, { qos: 1, retain: false });
+
+      if (!success) {
+        return res.status(500).json({
+          success: false,
+          message: 'MQTT publish 실패(start_measurement)'
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: '측정 시작 명령이 전송되었습니다.',
+        data: { command }
+      });
+    }
+
+    // stop_measurement: stopdevice:device_mac_address
+    if (command.action === 'stop_measurement') {
+      const topic = `hub/${hubAddress}/receive`;
+      const payload = command.raw_command || `stopdevice:${deviceId}`;
+      const success = mqttService.publish(topic, payload, { qos: 1, retain: false });
+
+      if (!success) {
+        return res.status(500).json({
+          success: false,
+          message: 'MQTT publish 실패(stop_measurement)'
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: '측정 정지 명령이 전송되었습니다.',
+        data: { command }
+      });
+    }
+
+    // 그 외 일반 MQTT 명령인 경우
+    try {
+      const response = await mqttService.sendCommand(
+        hubAddress,
+        deviceId,
+        command,
+        2000 // 2초 타임아웃
+      );
+
+      return res.json({
+        success: true,
+        message: '명령이 전송되었습니다.',
+        data: response
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message: error.message || '명령 전송 중 오류가 발생했습니다.'
+      });
+    }
+  } catch (error) {
+    console.error('[Hub API] Control Error:', error);
+    res.status(500).json({
+      success: false,
+      message: '명령 처리 중 오류가 발생했습니다.',
       error: error.message
     });
   }
