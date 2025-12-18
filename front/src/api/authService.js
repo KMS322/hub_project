@@ -11,11 +11,15 @@ const authService = {
    * @returns {Promise<{user: Object, token: string}>}
    */
   login: async (email, password) => {
-    const response = await axiosInstance.post('/api/auth/login', {
+    const response = await axiosInstance.post('/auth/login', {
       email,
       password
     });
-    return response.data;
+    // 응답 형식: { success: true, message: "...", data: { user: {...}, token: "..." } }
+    if (response.data.success && response.data.data) {
+      return response.data.data;
+    }
+    throw new Error(response.data.message || '로그인에 실패했습니다.');
   },
 
   /**
@@ -24,8 +28,12 @@ const authService = {
    * @returns {Promise<{user: Object, token: string}>}
    */
   register: async (userData) => {
-    const response = await axiosInstance.post('/api/auth/register', userData);
-    return response.data;
+    const response = await axiosInstance.post('/auth/register', userData);
+    // 응답 형식: { success: true, message: "...", data: { user: {...}, token: "..." } }
+    if (response.data.success && response.data.data) {
+      return response.data.data;
+    }
+    throw new Error(response.data.message || '회원가입에 실패했습니다.');
   },
 
   /**
@@ -33,7 +41,7 @@ const authService = {
    * @returns {Promise<void>}
    */
   logout: async () => {
-    const response = await axiosInstance.post('/api/auth/logout');
+    const response = await axiosInstance.post('/auth/logout');
     return response.data;
   },
 
@@ -42,40 +50,7 @@ const authService = {
    * @returns {Promise<{user: Object}>}
    */
   getMe: async () => {
-    const response = await axiosInstance.get('/api/auth/me');
-    return response.data;
-  },
-
-  /**
-   * 사용자 정보 수정
-   * @param {Object} userData - 수정할 사용자 데이터
-   * @returns {Promise<{user: Object}>}
-   */
-  updateProfile: async (userData) => {
-    const response = await axiosInstance.put('/api/auth/profile', userData);
-    return response.data;
-  },
-
-  /**
-   * 회원 탈퇴
-   * @returns {Promise<void>}
-   */
-  deleteAccount: async () => {
-    const response = await axiosInstance.delete('/api/auth/account');
-    return response.data;
-  },
-
-  /**
-   * 비밀번호 변경
-   * @param {string} currentPassword - 현재 비밀번호
-   * @param {string} newPassword - 새 비밀번호
-   * @returns {Promise<void>}
-   */
-  changePassword: async (currentPassword, newPassword) => {
-    const response = await axiosInstance.put('/api/auth/password', {
-      currentPassword,
-      newPassword
-    });
+    const response = await axiosInstance.get('/auth/me');
     return response.data;
   }
 };
