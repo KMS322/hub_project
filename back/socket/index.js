@@ -212,6 +212,37 @@ module.exports = (io) => {
           return;
         }
 
+        // state:hub 명령 처리 (허브 상태 및 연결된 디바이스 조회)
+        // command.raw_command가 "state:hub"인 경우 또는 action이 'check_hub_state'인 경우
+        if (command.raw_command === 'state:hub' || command.action === 'check_hub_state') {
+          const topic = `hub/${hubId}/receive`;
+          const payload = 'state:hub';
+          console.log(`[Socket] 📤 Sending MQTT state:hub to ${topic}`);
+          const success = mqttService.publish(topic, payload, { qos: 1, retain: false });
+
+          if (!success) {
+            socket.emit("CONTROL_RESULT", {
+              requestId: requestId || `req_${Date.now()}`,
+              hubId,
+              deviceId,
+              success: false,
+              error: 'MQTT publish 실패(state:hub)',
+              timestamp: new Date().toISOString(),
+            });
+          } else {
+            // 성공적으로 전송했지만 응답은 CONNECTED_DEVICES 이벤트로 받음
+            socket.emit("CONTROL_RESULT", {
+              requestId: requestId || `req_${Date.now()}`,
+              hubId,
+              deviceId,
+              success: true,
+              data: { command, message: '상태 확인 명령이 전송되었습니다. 응답을 기다리는 중...' },
+              timestamp: new Date().toISOString(),
+            });
+          }
+          return;
+        }
+
         // 그 외 일반 MQTT 명령인 경우 기존 sendCommand 로 처리
         console.log(`[Socket] 📤 Sending MQTT command to hub ${hubId} device ${deviceId}:`, command);
         try {

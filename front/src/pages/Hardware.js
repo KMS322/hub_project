@@ -77,6 +77,36 @@ function Hardware() {
     loadData()
   }, [])
 
+  // 페이지 접속 시마다 허브 상태 체크
+  useEffect(() => {
+    if (!isConnected || hubs.length === 0) return;
+
+    // 모든 허브에 대해 상태 체크
+      const checkHubStates = () => {
+        hubs.forEach(hub => {
+          const requestId = `state_check_${hub.address}_${Date.now()}`;
+          emit('CONTROL_REQUEST', {
+            hubId: hub.address,
+            deviceId: 'HUB',
+            command: {
+              raw_command: 'state:hub'
+            },
+            requestId
+          });
+        });
+      };
+
+    // 즉시 한 번 실행
+    checkHubStates();
+
+    // 30초마다 상태 체크
+    const interval = setInterval(checkHubStates, 30000);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [isConnected, hubs, emit])
+
   // MQTT는 백엔드에서만 사용하므로 프론트엔드에서 직접 연결하지 않음
   // Socket.IO를 통해 백엔드와 통신
 
@@ -312,6 +342,22 @@ function Hardware() {
         }))
       }
 
+      // 연결된 디바이스 상태 업데이트
+      if (Array.isArray(connectedDevices) && connectedDevices.length > 0) {
+        const normalizeMac = (mac) => mac.replace(/[:-]/g, '').toUpperCase()
+        const connectedMacSet = new Set(connectedDevices.map(mac => normalizeMac(mac)))
+        
+        // 모든 디바이스 상태 업데이트
+        setDeviceConnectionStatuses(prev => {
+          const newStatuses = { ...prev }
+          devices.forEach(device => {
+            const deviceMac = normalizeMac(device.address)
+            newStatuses[device.address] = connectedMacSet.has(deviceMac) ? 'connected' : 'disconnected'
+          })
+          return newStatuses
+        })
+      }
+
       if (!Array.isArray(connectedDevices) || connectedDevices.length === 0) {
         // 디바이스 전체 연결 중이면 성공 메시지 표시
         if (isConnectingAll) {
@@ -322,6 +368,14 @@ function Hardware() {
           })
           setIsConnectingAll(false)
         }
+        // 연결된 디바이스가 없으면 모든 디바이스를 disconnected로 표시
+        setDeviceConnectionStatuses(prev => {
+          const newStatuses = { ...prev }
+          devices.forEach(device => {
+            newStatuses[device.address] = 'disconnected'
+          })
+          return newStatuses
+        })
         return
       }
 
