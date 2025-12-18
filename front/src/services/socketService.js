@@ -27,7 +27,18 @@ class SocketService {
       this.disconnect();
     }
 
-    this.socket = io(serverUrl, {
+    // API URL에 /api 같은 path가 붙어있으면 Socket.IO는 루트(origin)로만 연결해야 함
+    // 예: VITE_API_URL = http://localhost:5000/api 인 경우 → http://localhost:5000 으로 변경
+    let socketUrl = serverUrl;
+    try {
+      const urlObj = new URL(serverUrl);
+      socketUrl = urlObj.origin; // 프로토콜 + 호스트 + 포트만 사용
+    } catch (e) {
+      // serverUrl이 절대 URL이 아니면 그대로 사용
+      console.warn('[Socket] Invalid URL format for serverUrl, using as is:', serverUrl);
+    }
+
+    this.socket = io(socketUrl, {
       auth: {
         token: token
       },
