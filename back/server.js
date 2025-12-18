@@ -13,6 +13,7 @@ const hubRoutes = require("./routes/hub");
 const deviceRoutes = require("./routes/device");
 const petRoutes = require("./routes/pet");
 const recordsRoutes = require("./routes/records");
+const csvRoutes = require("./routes/csv");
 const mqttTestRoutes = require("./routes/mqtt-test");
 const checkRoutes = require("./routes/check");
 const measurementRoutes = require("./routes/measurement");
@@ -52,6 +53,7 @@ app.use("/api/hub", hubRoutes);
 app.use("/api/device", deviceRoutes);
 app.use("/api/pet", petRoutes);
 app.use("/api/records", recordsRoutes);
+app.use("/api/csv", csvRoutes);
 app.use("/api/mqtt-test", mqttTestRoutes);
 app.use("/api/measurement", measurementRoutes);
 // check 라우트에 Socket.IO 인스턴스 전달

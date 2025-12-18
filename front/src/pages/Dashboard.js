@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header";
 import HardwareAlertBar from "../components/HardwareAlertBar";
@@ -27,6 +27,7 @@ function Dashboard() {
   const [deviceConnectionStatuses, setDeviceConnectionStatuses] = useState({}); // 디바이스 연결 상태
   const [hubStatuses, setHubStatuses] = useState({}); // 허브 온라인 상태
   const [measurementStates, setMeasurementStates] = useState({}); // 디바이스별 측정 상태 { deviceAddress: true/false }
+  const [hubTimeoutAlerts, setHubTimeoutAlerts] = useState({}); // 허브별 타임아웃 알림 { hubAddress: true/false }
 
   // 데이터 로드
   useEffect(() => {
@@ -38,21 +39,35 @@ function Dashboard() {
     if (!isConnected) return;
 
     const handleTelemetry = (data) => {
+      console.log('[Dashboard] Received TELEMETRY:', data);
       if (data.type === "sensor_data" && data.deviceId) {
+        // 텔레메트리가 오면 해당 디바이스는 측정 중으로 간주
+        setMeasurementStates(prev => ({
+          ...prev,
+          [data.deviceId]: true,
+        }));
+
         // 디바이스의 현재 데이터 업데이트
+        // 허브에서 hr / spo2 값이 바뀌어서 오기 때문에,
+        // 여기서는 "원본 값"을 그대로 저장하고,
+        // 렌더링 시에만 spo2를 심박수, hr을 산포도로 사용한다.
         setConnectedDevices((prev) =>
           prev.map((device) => {
             if (device.address === data.deviceId) {
               const latest =
                 data.data?.dataArr?.[data.data.dataArr.length - 1] || data.data;
+
+              const rawHr = latest.hr || data.data?.hr || 0;
+              const rawSpo2 = latest.spo2 || data.data?.spo2 || 0;
+
               return {
                 ...device,
                 currentData: {
-                  heartRate: latest.hr || device.currentData?.heartRate || 0,
-                  spo2: latest.spo2 || device.currentData?.spo2 || 0,
+                  heartRate: rawHr || device.currentData?.heartRate || 0, // 원본 hr
+                  spo2: rawSpo2 || device.currentData?.spo2 || 0,         // 원본 spo2
                   temperature:
-                    latest.temp || device.currentData?.temperature || 0,
-                  battery: latest.battery || device.currentData?.battery || 0,
+                    latest.temp || data.data?.temp || device.currentData?.temperature || 0,
+                  battery: latest.battery || data.data?.battery || device.currentData?.battery || 0,
                 },
               };
             }
@@ -64,14 +79,27 @@ function Dashboard() {
 
     // 연결된 디바이스 목록 수신 (state:hub 응답)
     const handleConnectedDevices = (payload) => {
+      console.log('[Dashboard] Received CONNECTED_DEVICES:', payload);
       const hubAddress = payload.hubAddress;
       const connectedDevices = payload.connected_devices || [];
 
       if (hubAddress) {
+        // 허브가 응답했으므로 온라인으로 표시
         setHubStatuses(prev => ({
           ...prev,
           [hubAddress]: true
         }));
+
+        // 타임아웃 정리 및 알림 제거
+        if (hubTimeoutRefs.current[hubAddress]) {
+          clearTimeout(hubTimeoutRefs.current[hubAddress]);
+          delete hubTimeoutRefs.current[hubAddress];
+        }
+        setHubTimeoutAlerts(prev => {
+          const updated = { ...prev };
+          delete updated[hubAddress];
+          return updated;
+        });
       }
 
       // 연결된 디바이스 상태 업데이트
@@ -80,8 +108,11 @@ function Dashboard() {
 
       setDeviceConnectionStatuses(prev => {
         const newStatuses = { ...prev };
-        connectedDevices.forEach(device => {
-          const deviceMac = normalizeMac(device);
+        // 모든 디바이스에 대해 상태 업데이트
+        connectedDevices.forEach(deviceMac => {
+          const normalizedMac = normalizeMac(deviceMac);
+          // 정규화된 MAC과 원본 MAC 모두 업데이트
+          newStatuses[normalizedMac] = 'connected';
           newStatuses[deviceMac] = 'connected';
         });
         return newStatuses;
@@ -117,17 +148,44 @@ function Dashboard() {
     };
   }, [isConnected, on, off]);
 
-  // 페이지 접속 시 허브 상태 체크
+  // 페이지 접속 시 허브 상태 체크 (한 번만)
+  const hasCheckedRef = useRef(false);
+  const hubTimeoutRefs = useRef({}); // 허브별 타임아웃 참조
+
   useEffect(() => {
-    if (!isConnected) return;
+    if (!isConnected || hasCheckedRef.current) return;
 
     const checkHubStates = async () => {
       try {
         const hubs = await hubService.getHubs();
+        if (hubs.length === 0) return;
+
         hubs.forEach(hub => {
-          const requestId = `state_check_${hub.address}_${Date.now()}`;
+          const hubAddress = hub.address;
+          const requestId = `state_check_${hubAddress}_${Date.now()}`;
+          
+          // 기존 타임아웃 정리
+          if (hubTimeoutRefs.current[hubAddress]) {
+            clearTimeout(hubTimeoutRefs.current[hubAddress]);
+          }
+
+          // 20초 타임아웃 설정
+          hubTimeoutRefs.current[hubAddress] = setTimeout(() => {
+            // 응답이 없으면 허브를 오프라인으로 표시
+            setHubStatuses(prev => ({
+              ...prev,
+              [hubAddress]: false
+            }));
+            // 타임아웃 알림 표시
+            setHubTimeoutAlerts(prev => ({
+              ...prev,
+              [hubAddress]: true
+            }));
+            console.log(`[Dashboard] Hub ${hubAddress} timeout - no response`);
+          }, 20000);
+
           emit('CONTROL_REQUEST', {
-            hubId: hub.address,
+            hubId: hubAddress,
             deviceId: 'HUB',
             command: {
               raw_command: 'state:hub'
@@ -135,6 +193,8 @@ function Dashboard() {
             requestId
           });
         });
+
+        hasCheckedRef.current = true;
       } catch (error) {
         console.error('[Dashboard] Failed to check hub states:', error);
       }
@@ -143,13 +203,19 @@ function Dashboard() {
     // 즉시 한 번 실행
     checkHubStates();
 
-    // 30초마다 상태 체크
-    const interval = setInterval(checkHubStates, 30000);
-
     return () => {
-      clearInterval(interval);
+      // 타임아웃 정리
+      Object.values(hubTimeoutRefs.current).forEach(timeout => clearTimeout(timeout));
+      hubTimeoutRefs.current = {};
     };
   }, [isConnected, emit]);
+
+  // 페이지를 떠날 때 플래그 리셋
+  useEffect(() => {
+    return () => {
+      hasCheckedRef.current = false;
+    };
+  }, []);
 
   // 하드웨어 오류 감지 및 알림 업데이트
   useEffect(() => {
@@ -176,10 +242,11 @@ function Dashboard() {
     // 디바이스 연결 상태 확인
     const normalizeMac = (mac) => mac.replace(/[:-]/g, '').toUpperCase();
     const deviceMac = normalizeMac(device.address);
-    const isConnected = deviceConnectionStatuses[deviceMac] === 'connected' || 
-                       deviceConnectionStatuses[device.address] === 'connected';
+    const isDeviceConnected =
+      deviceConnectionStatuses[deviceMac] === 'connected' ||
+      deviceConnectionStatuses[device.address] === 'connected';
     
-    if (!isConnected) {
+    if (!isDeviceConnected) {
       alert('디바이스가 연결되어 있지 않습니다. 디바이스를 켜주세요.');
       return;
     }
@@ -457,6 +524,24 @@ function Dashboard() {
         onDismiss={handleDismissAlert}
       />
       <div className="dashboard-container">
+        {/* 허브 타임아웃 알림 */}
+        {Object.keys(hubTimeoutAlerts).length > 0 && (
+          <div style={{
+            padding: '15px',
+            marginBottom: '20px',
+            backgroundColor: '#fff3cd',
+            border: '1px solid #ffc107',
+            borderRadius: '4px',
+            textAlign: 'center'
+          }}>
+            <p style={{ margin: '0', fontSize: '16px', fontWeight: 'bold' }}>
+              ⚠️ 허브를 켜주세요
+            </p>
+            <p style={{ margin: '5px 0 0 0', fontSize: '14px' }}>
+              일부 허브로부터 응답을 받지 못했습니다. 허브의 전원이 켜져 있는지 확인해주세요.
+            </p>
+          </div>
+        )}
         {/* 현황 섹션 */}
         <section className="monitoring-section">
           <h2>현황</h2>

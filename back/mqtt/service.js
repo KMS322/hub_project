@@ -305,6 +305,45 @@ class MQTTService {
         });
         console.log(`[MQTT Service] ✅ MQTT_READY event emitted to clients`);
       }
+
+      return;
+    }
+
+    // state:hub 응답 형식: device:["ec:81:f7:f3:54:6f", ...]
+    if (messageStr.includes('device:[')) {
+      try {
+        const deviceMatch = messageStr.match(/device:\s*\[(.*?)\]/);
+        if (deviceMatch) {
+          const listStr = deviceMatch[1];
+          const macList =
+            listStr.match(/"([^"]+)"/g)?.map((m) => m.replace(/"/g, '')) || [];
+
+          console.log(
+            `[MQTT Service] 🔗 Parsed connected device list from hub ${hubId}:`,
+            macList,
+          );
+
+          if (this.io && macList.length > 0) {
+            this.io.emit('CONNECTED_DEVICES', {
+              hubAddress: hubId,
+              connected_devices: macList,
+              timestamp: new Date().toISOString(),
+            });
+            console.log(
+              `[MQTT Service] ✅ CONNECTED_DEVICES emitted for hub ${hubId}`,
+            );
+          }
+        } else {
+          console.warn(
+            `[MQTT Service] ⚠️ device:[...] pattern found but no list parsed: ${messageStr}`,
+          );
+        }
+      } catch (e) {
+        console.error(
+          `[MQTT Service] ❌ Failed to parse device list from hub ${hubId}:`,
+          e.message,
+        );
+      }
     }
   }
 

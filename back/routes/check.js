@@ -112,7 +112,33 @@ router.post("/hub", async (req, res) => {
               : typeof message === "string"
               ? message
               : JSON.stringify(message);
-            const data = JSON.parse(messageStr);
+            
+            // device:["mac_address"] 형식 처리
+            let data;
+            if (messageStr.includes('device:[')) {
+              // device:["mac1", "mac2"] 형식 파싱
+              try {
+                const deviceMatch = messageStr.match(/device:\s*\[(.*?)\]/);
+                if (deviceMatch) {
+                  const deviceListStr = deviceMatch[1];
+                  // 따옴표로 둘러싸인 MAC 주소 추출
+                  const macAddresses = deviceListStr.match(/"([^"]+)"/g)?.map(m => m.replace(/"/g, '')) || [];
+                  data = {
+                    connected_devices: macAddresses
+                  };
+                  log(`[Hub Check] Parsed device list:`, macAddresses);
+                } else {
+                  // JSON 파싱 시도
+                  data = JSON.parse(messageStr);
+                }
+              } catch (e) {
+                log(`[Hub Check] Failed to parse device list, trying JSON:`, e.message);
+                data = JSON.parse(messageStr);
+              }
+            } else {
+              // 일반 JSON 파싱
+              data = JSON.parse(messageStr);
+            }
             log(`[Hub Check] Send topic data:`, JSON.stringify(data, null, 2));
 
             // 허브에서 측정 데이터를 보내온 경우 (device_mac_address, sampling_rate, data 등 포함)

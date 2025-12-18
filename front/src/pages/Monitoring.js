@@ -70,19 +70,6 @@ function Monitoring() {
           setDeviceInfo(device);
           deviceInfoRef.current = device; // ref에도 저장
           console.log('[Monitoring] Loaded device info:', device);
-          
-          // 허브 상태 체크
-          if (device.hub_address && isConnected) {
-            const requestId = `state_check_${device.hub_address}_${Date.now()}`;
-            emit('CONTROL_REQUEST', {
-              hubId: device.hub_address,
-              deviceId: 'HUB',
-              command: {
-                raw_command: 'state:hub'
-              },
-              requestId
-            });
-          }
         } else {
           setDeviceConnectionStatus('disconnected');
         }
@@ -93,39 +80,37 @@ function Monitoring() {
     };
 
     loadDeviceInfo();
-  }, [patientId, isConnected, emit]); // patientId가 변경될 때만 실행
+  }, [patientId]); // patientId가 변경될 때만 실행
 
-  // 페이지 접속 시 주기적으로 허브 상태 체크
+  // 페이지 접속 시 허브 상태를 한 번만 체크
+  const hasHubStateCheckedRef = useRef(false);
   useEffect(() => {
-    if (!isConnected || !deviceInfo?.hub_address) return;
+    if (!isConnected || !deviceInfo?.hub_address || hasHubStateCheckedRef.current) return;
 
-    const checkHubState = () => {
-      const requestId = `state_check_${deviceInfo.hub_address}_${Date.now()}`;
-      emit('CONTROL_REQUEST', {
-        hubId: deviceInfo.hub_address,
-        deviceId: 'HUB',
-        command: {
-          raw_command: 'state:hub'
-        },
-        requestId
-      });
-    };
+    const requestId = `state_check_${deviceInfo.hub_address}_${Date.now()}`;
+    emit('CONTROL_REQUEST', {
+      hubId: deviceInfo.hub_address,
+      deviceId: 'HUB',
+      command: {
+        raw_command: 'state:hub'
+      },
+      requestId
+    });
 
-    // 즉시 한 번 실행
-    checkHubState();
-
-    // 30초마다 상태 체크
-    const interval = setInterval(checkHubState, 30000);
-
-    return () => {
-      clearInterval(interval);
-    };
+    hasHubStateCheckedRef.current = true;
   }, [isConnected, deviceInfo?.hub_address, emit]);
 
-  // Socket.IO 이벤트 리스너 설정
+  // Socket.IO 이벤트 리스너 설정 (연결 당 한 번만)
+  const listenersRegisteredRef = useRef(false);
   useEffect(() => {
     if (!isConnected) {
       console.log('[Monitoring] Socket not connected yet');
+      listenersRegisteredRef.current = false;
+      return;
+    }
+
+    if (listenersRegisteredRef.current) {
+      // 이미 리스너가 등록되어 있으면 다시 등록하지 않음
       return;
     }
 
@@ -136,6 +121,9 @@ function Monitoring() {
       console.log('[Monitoring] Received TELEMETRY:', data);
       
       if (data.type === 'sensor_data' && data.deviceId) {
+        // 텔레메트리가 오면 해당 디바이스는 연결/측정 중으로 간주
+        setDeviceConnectionStatus('connected');
+        setIsMeasurementRunning(true);
         // 디바이스 매칭 확인 (ref 사용으로 dependency 문제 해결)
         const currentDeviceInfo = deviceInfoRef.current;
         if (currentDeviceInfo && currentDeviceInfo.address !== data.deviceId) {
@@ -213,67 +201,78 @@ function Monitoring() {
             const timeString = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}:${String(milliseconds).padStart(3, '0')}`;
             
             // 허브에서 나오는 데이터: spo2와 hr이 바뀌어 있음
-            // 신호처리된 HR 우선 사용, 없으면 sample.hr 사용
-            const heartRate = data.data.processedHR !== undefined && data.data.processedHR !== null 
-              ? data.data.processedHR 
-              : (sample.hr || data.data.hr || 0);
+            // 원본 값 별도 변수로 분리
+            const rawHr = sample.hr || data.data.hr || 0;
+            const rawSpo2 = (sample.spo2 !== null && sample.spo2 !== undefined)
+              ? sample.spo2
+              : (data.data.spo2 || 0);
             
-            const spo2 = sample.spo2 !== null && sample.spo2 !== undefined ? sample.spo2 : (data.data.spo2 || 0);
-            
+            // 화면 요구사항: spo2를 심박수에, hr을 산포도에 표시
+            const heartRateDisplay = rawSpo2; // 심박수 그래프/숫자에 spo2 값 표시
+            const spo2Display = rawHr;        // 산포도 그래프/숫자에 hr 값 표시
+              
             return {
               timestamp: sampleTime,
               elapsedSeconds: elapsedSecondsFromStart,
               time: timeString,
               ir: sample.ir || 0,
-              heartRate: heartRate,
-              spo2: spo2,
+              heartRate: heartRateDisplay,
+              spo2: spo2Display,
               temperature: sample.temp !== null && sample.temp !== undefined ? sample.temp : (data.data.temp || 0),
               battery: sample.battery || 0
             };
           });
 
-          // 최신 데이터로 현재 값 업데이트
+          // 최신 데이터로 현재 값 및 경고/오류 상태 업데이트
           if (newData.length > 0) {
             const latest = newData[newData.length - 1];
-          setCurrentValues(prev => ({
-            heartRate: latest.heartRate,
-            spo2: latest.spo2,
-            temperature: latest.temperature,
-            battery: latest.battery !== 0 ? latest.battery : prev.battery
-          }));
-          
-          // 산포도가 9인지 체크 (2번 이상 연속으로 나오면 경고)
-          if (latest.spo2 === 9) {
-            spo2NineCountRef.current += 1;
-            if (spo2NineCountRef.current >= 2) {
-              // 펫 이름 가져오기
-              const petName = petInfoRef.current?.name || '강아지';
-              alert(`현재 연결된 ${petName}가 많이 움직이고 있어 정확한 측정이 어렵습니다.`);
-              spo2NineCountRef.current = 0; // 알림 후 리셋
-            }
-          } else {
-            // 산포도가 9가 아니면 카운터 리셋
-            spo2NineCountRef.current = 0;
-          }
 
-          // 시뮬레이션된 오류가 있으면 그것을 우선 사용, 없으면 실제 데이터에서 감지
-          // 신호처리된 HR이 있으면 그것을 사용
-          const hrForErrorDetection = data.data.processedHR !== undefined && data.data.processedHR !== null
-            ? data.data.processedHR
-            : latest.heartRate;
-          const error = simulatedError || detectHardwareError(hrForErrorDetection);
-          if (error) {
-            setHardwareAlerts([{
-              id: `alert-${data.deviceId}-${error.code}`,
-              deviceId: data.deviceId,
-              deviceName: deviceInfo?.name || data.deviceId,
-              deviceAddress: data.deviceId,
-              ...error,
-              timestamp: Date.now()
-            }]);
-          } else {
-            setHardwareAlerts([]);
-          }
+            setCurrentValues(prev => ({
+              heartRate: latest.heartRate,  // 화면상의 심박수(실제 spo2)
+              spo2: latest.spo2,            // 화면상의 산포도(실제 hr)
+              temperature: latest.temperature,
+              battery: latest.battery !== 0 ? latest.battery : prev.battery
+            }));
+
+            // 최신 샘플의 실제 값 재계산 (경고/오류 판단용)
+            const lastSample = data.data.dataArr[data.data.dataArr.length - 1] || {};
+            const lastRawHr = lastSample.hr || data.data.hr || 0;
+            const lastRawSpo2 = (lastSample.spo2 !== null && lastSample.spo2 !== undefined)
+              ? lastSample.spo2
+              : (data.data.spo2 || 0);
+            
+            // SpO2 경고는 "실제 spo2(lastRawSpo2)" 기준으로 계산
+            if (lastRawSpo2 === 9) {
+              spo2NineCountRef.current += 1;
+              if (spo2NineCountRef.current >= 2) {
+                // 펫 이름 가져오기
+                const petName = petInfoRef.current?.name || '강아지';
+                alert(`현재 연결된 ${petName}가 많이 움직이고 있어 정확한 측정이 어렵습니다.`);
+                spo2NineCountRef.current = 0; // 알림 후 리셋
+              }
+            } else {
+              // 산포도가 9가 아니면 카운터 리셋
+              spo2NineCountRef.current = 0;
+            }
+
+            // 시뮬레이션된 오류가 있으면 그것을 우선 사용, 없으면 실제 데이터에서 감지
+            // 오류 감지는 실제 HR(lastRawHr 또는 processedHR) 기준으로 수행
+            const hrForErrorDetection = data.data.processedHR !== undefined && data.data.processedHR !== null
+              ? data.data.processedHR
+              : lastRawHr;
+            const error = simulatedError || detectHardwareError(hrForErrorDetection);
+            if (error) {
+              setHardwareAlerts([{
+                id: `alert-${data.deviceId}-${error.code}`,
+                deviceId: data.deviceId,
+                deviceName: deviceInfo?.name || data.deviceId,
+                deviceAddress: data.deviceId,
+                ...error,
+                timestamp: Date.now()
+              }]);
+            } else {
+              setHardwareAlerts([]);
+            }
           }
 
           // 각 샘플을 개별 데이터 포인트로 차트에 추가 (오른쪽에서 왼쪽으로 밀어주는 느낌)
@@ -291,11 +290,15 @@ function Monitoring() {
           }
         } else {
           // 단일 샘플인 경우 또는 신호처리된 데이터
-          const heartRate = data.data?.processedHR !== undefined && data.data?.processedHR !== null
-            ? data.data.processedHR
-            : (data.data?.hr || 0);
+          const rawHr = data.data?.hr || 0;
+          const rawSpo2 = data.data?.spo2 || 0;
           
-          const spo2 = data.data?.spo2 || 0;
+          // 화면 요구사항: spo2를 심박수에, hr을 산포도에 표시
+          const heartRateDisplay = (data.data?.processedHR !== undefined && data.data?.processedHR !== null)
+            ? data.data.processedHR   // 신호처리 HR이 있으면 산포도 대신 여기서만 사용
+            : rawSpo2;                // 그렇지 않으면 spo2를 심박수에
+          
+          const spo2Display = rawHr;   // 산포도에는 hr 값 표시
           
           // start_time이 있으면 파싱, 없으면 현재 시간 사용
           const parseStartTime = (startTimeStr) => {
@@ -348,21 +351,21 @@ function Monitoring() {
             elapsedSeconds: elapsedSeconds,
             time: timeString,
             ir: data.data?.ir || 0,
-            heartRate: heartRate,
-            spo2: spo2,
+            heartRate: heartRateDisplay,
+            spo2: spo2Display,
             temperature: data.data?.temp || 0,
             battery: data.data?.battery || 0
           };
 
           setCurrentValues(prev => ({
-            heartRate: sample.heartRate,
-            spo2: sample.spo2,
+            heartRate: sample.heartRate, // 화면상의 심박수(실제 spo2 또는 processedHR)
+            spo2: sample.spo2,           // 화면상의 산포도(실제 hr)
             temperature: sample.temperature,
             battery: sample.battery !== 0 ? sample.battery : prev.battery
           }));
           
-          // 산포도가 9인지 체크 (2번 이상 연속으로 나오면 경고)
-          if (sample.spo2 === 9) {
+          // SpO2 경고는 "실제 spo2(rawSpo2)" 기준으로 계산
+          if (rawSpo2 === 9) {
             spo2NineCountRef.current += 1;
             if (spo2NineCountRef.current >= 2) {
               // 펫 이름 가져오기
@@ -376,7 +379,11 @@ function Monitoring() {
           }
 
           // 시뮬레이션된 오류가 있으면 그것을 우선 사용, 없으면 실제 데이터에서 감지
-          const error = simulatedError || detectHardwareError(sample.heartRate);
+          // 오류 감지는 실제 HR(rawHr 또는 processedHR) 기준
+          const hrForError = (data.data?.processedHR !== undefined && data.data?.processedHR !== null)
+            ? data.data.processedHR
+            : rawHr;
+          const error = simulatedError || detectHardwareError(hrForError);
           if (error) {
             setHardwareAlerts([{
               id: `alert-${data.deviceId}-${error.code}`,
@@ -488,6 +495,8 @@ function Monitoring() {
     on('MQTT_READY', handleMqttReady);
     on('CONNECTED_DEVICES', handleConnectedDevices);
 
+    listenersRegisteredRef.current = true;
+
     // 정리 함수
     return () => {
       off('TELEMETRY', handleTelemetry);
@@ -495,6 +504,7 @@ function Monitoring() {
       off('CONTROL_RESULT', handleControlResult);
       off('MQTT_READY', handleMqttReady);
       off('CONNECTED_DEVICES', handleConnectedDevices);
+      listenersRegisteredRef.current = false;
     };
   }, [isConnected, patientId, on, off, simulatedError]); // deviceInfo 제거
 
