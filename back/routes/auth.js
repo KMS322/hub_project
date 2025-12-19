@@ -96,9 +96,22 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    const user = await db.User.findOne({
-      where: { email },
-    });
+    let user;
+    try {
+      user = await db.User.findOne({
+        where: { email },
+      });
+    } catch (error) {
+      // 데이터베이스 테이블이 없는 경우
+      if (error.name === 'SequelizeDatabaseError' && error.parent?.code === 'ER_NO_SUCH_TABLE') {
+        console.error(`[Auth] Database table not found: ${error.parent?.sqlMessage}`);
+        return res.status(500).json({
+          success: false,
+          message: "데이터베이스 테이블이 존재하지 않습니다. 데이터베이스를 초기화해주세요.",
+        });
+      }
+      throw error;
+    }
 
     if (!user) {
       return res.status(401).json({

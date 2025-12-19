@@ -33,6 +33,7 @@ module.exports = (sequelize, DataTypes) => {
       },
     },
     {
+      tableName: "Users", // 명시적으로 테이블 이름 지정
       charset: "utf8mb4",
       collate: "utf8mb4_bin",
     }

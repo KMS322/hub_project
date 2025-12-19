@@ -60,12 +60,25 @@ router.post("/hub", async (req, res) => {
     }
 
     // 병렬 처리: 사용자 확인과 허브 조회를 동시에 수행
-    const [user, hub] = await Promise.all([
-      db.User.findByPk(user_email, { attributes: ["email"] }),
-      db.Hub.findByPk(mac_address, {
-        attributes: ["address", "user_email", "name", "is_change"],
-      }),
-    ]);
+    let user, hub;
+    try {
+      [user, hub] = await Promise.all([
+        db.User.findByPk(user_email, { attributes: ["email"] }),
+        db.Hub.findByPk(mac_address, {
+          attributes: ["address", "user_email", "name", "is_change"],
+        }),
+      ]);
+    } catch (error) {
+      // 데이터베이스 테이블이 없는 경우
+      if (error.name === 'SequelizeDatabaseError' && error.parent?.code === 'ER_NO_SUCH_TABLE') {
+        console.error(`[Hub Check] Database table not found: ${error.parent?.sqlMessage}`);
+        return res.status(500).json({
+          success: false,
+          message: "데이터베이스 테이블이 존재하지 않습니다. 데이터베이스를 초기화해주세요.",
+        });
+      }
+      throw error;
+    }
 
     if (!user) {
       return res.status(404).json({

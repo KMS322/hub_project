@@ -36,7 +36,7 @@ function AppContent() {
 
         if (hubs.length === 0) {
           // Hub가 없으면
-          setNoticeModal({
+          setConfirmModal({
             isOpen: true,
             title: '허브 등록 필요',
             message: '허브를 등록해주세요.',
@@ -48,7 +48,7 @@ function AppContent() {
 
         if (devices.length === 0) {
           // Hub는 있지만 Device가 없으면
-          setNoticeModal({
+          setConfirmModal({
             isOpen: true,
             title: '디바이스 등록 필요',
             message: '디바이스를 등록해주세요.',

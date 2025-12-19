@@ -85,9 +85,20 @@ const socketHandler = require("./socket");
 socketHandler(io);
 
 db.sequelize
-  .sync({ alter: false })
+  .sync({ alter: false, force: false })
   .then(async () => {
     console.log("Database connected successfully");
+    
+    // 테이블이 없으면 생성 시도
+    try {
+      await db.sequelize.query('SELECT 1 FROM Users LIMIT 1').catch(async () => {
+        console.log("⚠️  Users table not found, creating tables...");
+        await db.sequelize.sync({ force: false, alter: true });
+        console.log("✅ Tables created successfully");
+      });
+    } catch (error) {
+      console.error("❌ Error checking/creating tables:", error.message);
+    }
 
     // 개발 모드에서만 더미 데이터 초기화
     if (process.env.NODE_ENV === "development") {
