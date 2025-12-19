@@ -378,6 +378,7 @@ function Hardware() {
 
       // 현재는 blink 등의 단순 명령에 대해서만 성공 여부 확인용으로 사용
       // connect_devices 결과는 CONNECTED_DEVICES 이벤트에서 처리
+      // state:hub 결과는 CONNECTED_DEVICES 이벤트에서 처리
     }
 
     // 허브에서 MQTT send 토픽으로 전달하는 연결된 디바이스 목록 처리

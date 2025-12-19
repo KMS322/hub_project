@@ -59,15 +59,19 @@ class MQTTService {
     console.log(`[MQTT Service] ✅ Subscribed to test/# for ESP32 communication testing`);
 
     // 모든 허브 메시지 구독 (디버깅용, 개발 모드에서만)
-    // 명령 토픽(/command/)은 제외 - 자신이 발행한 메시지를 받지 않도록
+    // 명령 토픽(/command/)과 receive 토픽은 제외 - 자신이 발행한 메시지를 받지 않도록
     if (process.env.NODE_ENV === 'development') {
       mqttClient.subscribe('hub/#', (message, topic) => {
         // 명령 토픽은 제외 (자신이 발행한 메시지)
         if (topic.includes('/command/')) {
           return; // 명령 토픽은 무시
         }
+        // receive 토픽도 제외 (백엔드가 허브에 명령을 보내는 토픽)
+        if (topic.includes('/receive')) {
+          return; // receive 토픽은 무시
+        }
         // 이미 처리된 토픽은 로그만 남기고 중복 처리 방지
-        if (!topic.includes('/status') && !topic.includes('/telemetry') && !topic.includes('/response')) {
+        if (!topic.includes('/status') && !topic.includes('/telemetry') && !topic.includes('/response') && !topic.includes('/send')) {
           console.log(`[MQTT Service] Received from ${topic}`);
         }
       }, 0);
