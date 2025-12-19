@@ -39,10 +39,10 @@ function Dashboard() {
     if (!isConnected) return;
 
     const handleTelemetry = (data) => {
-      console.log('[Dashboard] Received TELEMETRY:', data);
+      console.log("[Dashboard] Received TELEMETRY:", data);
       if (data.type === "sensor_data" && data.deviceId) {
         // 텔레메트리가 오면 해당 디바이스는 측정 중으로 간주
-        setMeasurementStates(prev => ({
+        setMeasurementStates((prev) => ({
           ...prev,
           [data.deviceId]: true,
         }));
@@ -53,24 +53,31 @@ function Dashboard() {
         // 렌더링 시에만 spo2를 심박수, hr을 산포도로 사용한다.
         setConnectedDevices((prev) =>
           prev.map((device) => {
-          if (device.address === data.deviceId) {
+            if (device.address === data.deviceId) {
               const latest =
                 data.data?.dataArr?.[data.data.dataArr.length - 1] || data.data;
 
               const rawHr = latest.hr || data.data?.hr || 0;
               const rawSpo2 = latest.spo2 || data.data?.spo2 || 0;
 
-            return {
-              ...device,
-              currentData: {
+              return {
+                ...device,
+                currentData: {
                   heartRate: rawHr || device.currentData?.heartRate || 0, // 원본 hr
-                  spo2: rawSpo2 || device.currentData?.spo2 || 0,         // 원본 spo2
+                  spo2: rawSpo2 || device.currentData?.spo2 || 0, // 원본 spo2
                   temperature:
-                    latest.temp || data.data?.temp || device.currentData?.temperature || 0,
-                  battery: latest.battery || data.data?.battery || device.currentData?.battery || 0,
+                    latest.temp ||
+                    data.data?.temp ||
+                    device.currentData?.temperature ||
+                    0,
+                  battery:
+                    latest.battery ||
+                    data.data?.battery ||
+                    device.currentData?.battery ||
+                    0,
                 },
               };
-          }
+            }
             return device;
           })
         );
@@ -79,15 +86,15 @@ function Dashboard() {
 
     // 연결된 디바이스 목록 수신 (state:hub 응답)
     const handleConnectedDevices = (payload) => {
-      console.log('[Dashboard] Received CONNECTED_DEVICES:', payload);
+      console.log("[Dashboard] Received CONNECTED_DEVICES:", payload);
       const hubAddress = payload.hubAddress;
       const connectedDeviceMacs = payload.connected_devices || [];
 
       if (hubAddress) {
         // 허브가 응답했으므로 온라인으로 표시
-        setHubStatuses(prev => ({
+        setHubStatuses((prev) => ({
           ...prev,
-          [hubAddress]: true
+          [hubAddress]: true,
         }));
 
         // 타임아웃 정리 및 알림 제거
@@ -95,7 +102,7 @@ function Dashboard() {
           clearTimeout(hubTimeoutRefs.current[hubAddress]);
           delete hubTimeoutRefs.current[hubAddress];
         }
-        setHubTimeoutAlerts(prev => {
+        setHubTimeoutAlerts((prev) => {
           const updated = { ...prev };
           delete updated[hubAddress];
           return updated;
@@ -103,30 +110,36 @@ function Dashboard() {
       }
 
       // 연결된 디바이스 상태 업데이트
-      const normalizeMac = (mac) => mac.replace(/[:-]/g, '').toUpperCase();
-      const connectedMacSet = new Set(connectedDeviceMacs.map(mac => normalizeMac(mac)));
+      const normalizeMac = (mac) => mac.replace(/[:-]/g, "").toUpperCase();
+      const connectedMacSet = new Set(
+        connectedDeviceMacs.map((mac) => normalizeMac(mac))
+      );
 
-      setDeviceConnectionStatuses(prev => {
+      setDeviceConnectionStatuses((prev) => {
         const newStatuses = { ...prev };
-        
+
         // 연결된 디바이스 MAC 주소들을 모두 'connected'로 표시
-        connectedDeviceMacs.forEach(deviceMac => {
+        connectedDeviceMacs.forEach((deviceMac) => {
           const normalizedMac = normalizeMac(deviceMac);
           // 정규화된 MAC과 원본 MAC 모두 업데이트
-          newStatuses[normalizedMac] = 'connected';
-          newStatuses[deviceMac] = 'connected';
+          newStatuses[normalizedMac] = "connected";
+          newStatuses[deviceMac] = "connected";
         });
-        
+
         // 현재 페이지의 모든 디바이스에 대해 연결 상태 확인 및 업데이트
         // (연결 목록에 없으면 disconnected로 표시)
-        connectedDevices.forEach(device => {
+        connectedDevices.forEach((device) => {
           const deviceAddress = device.address;
           const normalizedMac = normalizeMac(deviceAddress);
           const isConnected = connectedMacSet.has(normalizedMac);
-          newStatuses[normalizedMac] = isConnected ? 'connected' : 'disconnected';
-          newStatuses[deviceAddress] = isConnected ? 'connected' : 'disconnected';
+          newStatuses[normalizedMac] = isConnected
+            ? "connected"
+            : "disconnected";
+          newStatuses[deviceAddress] = isConnected
+            ? "connected"
+            : "disconnected";
         });
-        
+
         return newStatuses;
       });
     };
@@ -135,15 +148,15 @@ function Dashboard() {
     const handleControlResult = (data) => {
       if (data.success && data.deviceId) {
         const command = data.data?.command || data.command || {};
-        if (command.action === 'start_measurement') {
-          setMeasurementStates(prev => ({
+        if (command.action === "start_measurement") {
+          setMeasurementStates((prev) => ({
             ...prev,
-            [data.deviceId]: true
+            [data.deviceId]: true,
           }));
-        } else if (command.action === 'stop_measurement') {
-          setMeasurementStates(prev => ({
+        } else if (command.action === "stop_measurement") {
+          setMeasurementStates((prev) => ({
             ...prev,
-            [data.deviceId]: false
+            [data.deviceId]: false,
           }));
         }
       }
@@ -172,10 +185,10 @@ function Dashboard() {
         const hubs = await hubService.getHubs();
         if (hubs.length === 0) return;
 
-        hubs.forEach(hub => {
+        hubs.forEach((hub) => {
           const hubAddress = hub.address;
           const requestId = `state_check_${hubAddress}_${Date.now()}`;
-          
+
           // 기존 타임아웃 정리
           if (hubTimeoutRefs.current[hubAddress]) {
             clearTimeout(hubTimeoutRefs.current[hubAddress]);
@@ -184,31 +197,31 @@ function Dashboard() {
           // 20초 타임아웃 설정
           hubTimeoutRefs.current[hubAddress] = setTimeout(() => {
             // 응답이 없으면 허브를 오프라인으로 표시
-            setHubStatuses(prev => ({
+            setHubStatuses((prev) => ({
               ...prev,
-              [hubAddress]: false
+              [hubAddress]: false,
             }));
             // 타임아웃 알림 표시
-            setHubTimeoutAlerts(prev => ({
+            setHubTimeoutAlerts((prev) => ({
               ...prev,
-              [hubAddress]: true
+              [hubAddress]: true,
             }));
             console.log(`[Dashboard] Hub ${hubAddress} timeout - no response`);
           }, 20000);
 
-          emit('CONTROL_REQUEST', {
+          emit("CONTROL_REQUEST", {
             hubId: hubAddress,
-            deviceId: 'HUB',
+            deviceId: "HUB",
             command: {
-              raw_command: 'state:hub'
+              raw_command: "state:hub",
             },
-            requestId
+            requestId,
           });
         });
 
         hasCheckedRef.current = true;
       } catch (error) {
-        console.error('[Dashboard] Failed to check hub states:', error);
+        console.error("[Dashboard] Failed to check hub states:", error);
       }
     };
 
@@ -217,7 +230,9 @@ function Dashboard() {
 
     return () => {
       // 타임아웃 정리
-      Object.values(hubTimeoutRefs.current).forEach(timeout => clearTimeout(timeout));
+      Object.values(hubTimeoutRefs.current).forEach((timeout) =>
+        clearTimeout(timeout)
+      );
       hubTimeoutRefs.current = {};
     };
   }, [isConnected, emit]);
@@ -242,134 +257,150 @@ function Dashboard() {
   // 측정 시작
   const handleStartMeasurement = async (device) => {
     if (!isConnected) {
-      alert('서버와의 연결이 없습니다.');
+      alert("서버와의 연결이 없습니다.");
       return;
     }
 
     if (!device.hub_address) {
-      alert('디바이스의 허브 정보를 찾을 수 없습니다.');
+      alert("디바이스의 허브 정보를 찾을 수 없습니다.");
       return;
     }
 
     // 디바이스 연결 상태 확인
-    const normalizeMac = (mac) => mac.replace(/[:-]/g, '').toUpperCase();
+    const normalizeMac = (mac) => mac.replace(/[:-]/g, "").toUpperCase();
     const deviceMac = normalizeMac(device.address);
     const isDeviceConnected =
-      deviceConnectionStatuses[deviceMac] === 'connected' ||
-      deviceConnectionStatuses[device.address] === 'connected';
-    
+      deviceConnectionStatuses[deviceMac] === "connected" ||
+      deviceConnectionStatuses[device.address] === "connected";
+
     if (!isDeviceConnected) {
-      alert('디바이스가 연결되어 있지 않습니다. 디바이스를 켜주세요.');
+      alert("디바이스가 연결되어 있지 않습니다. 디바이스를 켜주세요.");
       return;
     }
 
     const requestId = `start_${device.address}_${Date.now()}`;
     const measurementCommand = `start:${device.address}`;
 
-    console.log('[Dashboard] 📤 Sending start measurement command:', {
+    console.log("[Dashboard] 📤 Sending start measurement command:", {
       hubId: device.hub_address,
       deviceId: device.address,
-      command: measurementCommand
+      command: measurementCommand,
     });
 
     // CSV 세션 시작
     try {
       const now = new Date();
-      const startTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}:${String(now.getMilliseconds()).padStart(3, '0')}`;
-      
-      const response = await fetch('http://localhost:5000/api/measurement/start', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          deviceAddress: device.address,
-          userEmail: 'test@example.com', // TODO: 실제 사용자 이메일로 변경
-          petName: device.connectedPatient?.name || '테스트펫',
-          startTime
-        })
-      });
+      const startTime = `${String(now.getHours()).padStart(2, "0")}:${String(
+        now.getMinutes()
+      ).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}:${String(
+        now.getMilliseconds()
+      ).padStart(3, "0")}`;
+
+      const response = await fetch(
+        "http://localhost:5000/api/measurement/start",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            deviceAddress: device.address,
+            userEmail: "test@example.com", // TODO: 실제 사용자 이메일로 변경
+            petName: device.connectedPatient?.name || "테스트펫",
+            startTime,
+          }),
+        }
+      );
       const result = await response.json();
       if (!result.success) {
-        console.error('[Dashboard] Failed to start CSV session:', result.message);
+        console.error(
+          "[Dashboard] Failed to start CSV session:",
+          result.message
+        );
       }
     } catch (error) {
-      console.error('[Dashboard] Error starting CSV session:', error);
+      console.error("[Dashboard] Error starting CSV session:", error);
     }
 
     // Socket.IO로 제어 명령 전송
-    emit('CONTROL_REQUEST', {
+    emit("CONTROL_REQUEST", {
       hubId: device.hub_address,
       deviceId: device.address,
       command: {
-        action: 'start_measurement',
-        raw_command: measurementCommand
+        action: "start_measurement",
+        raw_command: measurementCommand,
       },
-      requestId
+      requestId,
     });
 
     // 측정 상태 즉시 업데이트 (응답 대기 전)
-    setMeasurementStates(prev => ({
+    setMeasurementStates((prev) => ({
       ...prev,
-      [device.address]: true
+      [device.address]: true,
     }));
   };
 
   // 측정 정지
   const handleStopMeasurement = async (device) => {
     if (!isConnected) {
-      alert('서버와의 연결이 없습니다.');
+      alert("서버와의 연결이 없습니다.");
       return;
     }
 
     if (!device.hub_address) {
-      alert('디바이스의 허브 정보를 찾을 수 없습니다.');
+      alert("디바이스의 허브 정보를 찾을 수 없습니다.");
       return;
     }
 
     const requestId = `stop_${device.address}_${Date.now()}`;
     const measurementCommand = `stop:${device.address}`;
 
-    console.log('[Dashboard] 📤 Sending stop measurement command:', {
+    console.log("[Dashboard] 📤 Sending stop measurement command:", {
       hubId: device.hub_address,
       deviceId: device.address,
-      command: measurementCommand
+      command: measurementCommand,
     });
 
     // CSV 세션 종료
     try {
-      const response = await fetch('http://localhost:5000/api/measurement/stop', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          deviceAddress: device.address
-        })
-      });
+      const response = await fetch(
+        "http://localhost:5000/api/measurement/stop",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            deviceAddress: device.address,
+          }),
+        }
+      );
       const result = await response.json();
       if (!result.success) {
-        console.error('[Dashboard] Failed to stop CSV session:', result.message);
+        console.error(
+          "[Dashboard] Failed to stop CSV session:",
+          result.message
+        );
       }
     } catch (error) {
-      console.error('[Dashboard] Error stopping CSV session:', error);
+      console.error("[Dashboard] Error stopping CSV session:", error);
     }
 
     // Socket.IO로 제어 명령 전송
-    emit('CONTROL_REQUEST', {
+    emit("CONTROL_REQUEST", {
       hubId: device.hub_address,
       deviceId: device.address,
       command: {
-        action: 'stop_measurement',
-        raw_command: measurementCommand
+        action: "stop_measurement",
+        raw_command: measurementCommand,
       },
-      requestId
+      requestId,
     });
 
     // 측정 상태 즉시 업데이트 (응답 대기 전)
-    setMeasurementStates(prev => ({
+    setMeasurementStates((prev) => ({
       ...prev,
-      [device.address]: false
+      [device.address]: false,
     }));
   };
 
@@ -389,8 +420,9 @@ function Dashboard() {
         // Hub가 없으면
         setConfirmModal({
           isOpen: true,
-          title: "허브 등록 필요",
-          message: "허브를 등록해주세요. 허브 관리 페이지로 이동하시겠습니까?",
+          title: "허브 등록",
+          message:
+            "허브 등록을 위하여, 하드웨어 관리 페이지로 이동하시겠습니까?",
           onConfirm: () => {
             setConfirmModal({
               isOpen: false,
@@ -409,9 +441,9 @@ function Dashboard() {
         // Hub는 있지만 Device가 없으면
         setConfirmModal({
           isOpen: true,
-          title: "디바이스 등록 필요",
+          title: "디바이스 등록",
           message:
-            "디바이스를 등록해주세요. 디바이스 관리 페이지로 이동하시겠습니까?",
+            "디바이스 등록을 위하여, 하드웨어 관리 페이지로 이동하시겠습니까?",
           onConfirm: () => {
             setConfirmModal({
               isOpen: false,
@@ -425,7 +457,7 @@ function Dashboard() {
         setLoading(false);
         return;
       }
-      
+
       // 환자 목록 조회
       const pets = await petService.getPets();
 
@@ -447,13 +479,13 @@ function Dashboard() {
             status: device.status,
             connectedPatient: patient
               ? {
-              id: patient.id,
-              name: patient.name,
-              species: patient.species,
-              breed: patient.breed,
-              weight: patient.weight,
-              gender: patient.gender,
-              doctor: patient.veterinarian,
+                  id: patient.id,
+                  name: patient.name,
+                  species: patient.species,
+                  breed: patient.breed,
+                  weight: patient.weight,
+                  gender: patient.gender,
+                  doctor: patient.veterinarian,
                   diagnosis: patient.diagnosis,
                 }
               : null,
@@ -470,8 +502,8 @@ function Dashboard() {
 
       // 디바이스 연결 상태 초기화 (모두 disconnected로 시작, 이후 CONNECTED_DEVICES 이벤트로 업데이트)
       const initialStatuses = {};
-      devicesWithPatients.forEach(device => {
-        initialStatuses[device.address] = 'disconnected';
+      devicesWithPatients.forEach((device) => {
+        initialStatuses[device.address] = "disconnected";
       });
       setDeviceConnectionStatuses(initialStatuses);
     } catch (err) {
@@ -538,19 +570,22 @@ function Dashboard() {
       <div className="dashboard-container">
         {/* 허브 타임아웃 알림 */}
         {Object.keys(hubTimeoutAlerts).length > 0 && (
-          <div style={{
-            padding: '15px',
-            marginBottom: '20px',
-            backgroundColor: '#fff3cd',
-            border: '1px solid #ffc107',
-            borderRadius: '4px',
-            textAlign: 'center'
-          }}>
-            <p style={{ margin: '0', fontSize: '16px', fontWeight: 'bold' }}>
+          <div
+            style={{
+              padding: "15px",
+              marginBottom: "20px",
+              backgroundColor: "#fff3cd",
+              border: "1px solid #ffc107",
+              borderRadius: "4px",
+              textAlign: "center",
+            }}
+          >
+            <p style={{ margin: "0", fontSize: "16px", fontWeight: "bold" }}>
               ⚠️ 허브를 켜주세요
             </p>
-            <p style={{ margin: '5px 0 0 0', fontSize: '14px' }}>
-              일부 허브로부터 응답을 받지 못했습니다. 허브의 전원이 켜져 있는지 확인해주세요.
+            <p style={{ margin: "5px 0 0 0", fontSize: "14px" }}>
+              일부 허브로부터 응답을 받지 못했습니다. 허브의 전원이 켜져 있는지
+              확인해주세요.
             </p>
           </div>
         )}
@@ -592,7 +627,7 @@ function Dashboard() {
                               <span className="info-text">
                                 진단명: {patient.diagnosis}
                               </span>
-                              <button 
+                              <button
                                 className="more-btn"
                                 onClick={() => handleShowMore(patient.id)}
                               >
@@ -605,18 +640,23 @@ function Dashboard() {
                       <div className="header-right">
                         <span className="device-name">{device.name}</span>
                         {(() => {
-                          const normalizeMac = (mac) => mac.replace(/[:-]/g, '').toUpperCase();
+                          const normalizeMac = (mac) =>
+                            mac.replace(/[:-]/g, "").toUpperCase();
                           const deviceMac = normalizeMac(device.address);
-                          const isDeviceConnected = deviceConnectionStatuses[deviceMac] === 'connected' || 
-                                                   deviceConnectionStatuses[device.address] === 'connected';
-                          const isMeasuring = measurementStates[device.address] === true;
+                          const isDeviceConnected =
+                            deviceConnectionStatuses[deviceMac] ===
+                              "connected" ||
+                            deviceConnectionStatuses[device.address] ===
+                              "connected";
+                          const isMeasuring =
+                            measurementStates[device.address] === true;
 
                           if (!isDeviceConnected) {
                             return (
                               <button
                                 className="monitor-btn"
                                 disabled
-                                style={{ opacity: 0.5, cursor: 'not-allowed' }}
+                                style={{ opacity: 0.5, cursor: "not-allowed" }}
                                 title="디바이스가 연결되어 있지 않습니다"
                               >
                                 디바이스 미연결
@@ -643,13 +683,13 @@ function Dashboard() {
                                   측정 시작
                                 </button>
                               )}
-                        <button 
-                          className="monitor-btn"
-                          onClick={() => handleMonitor(patient?.id)}
+                              <button
+                                className="monitor-btn"
+                                onClick={() => handleMonitor(patient?.id)}
                                 disabled={!isDeviceConnected}
-                        >
-                          모니터링하기
-                        </button>
+                              >
+                                모니터링하기
+                              </button>
                             </>
                           );
                         })()}
@@ -694,9 +734,7 @@ function Dashboard() {
       {/* 환자 상세 정보 모달 */}
       {selectedPatient && (
         <div className="modal-overlay">
-          <div
-            className="modal-content patient-detail-modal"
-          >
+          <div className="modal-content patient-detail-modal">
             <div className="modal-header">
               <h3>환자 상세 정보</h3>
               <button onClick={handleCloseModal} className="close-btn">

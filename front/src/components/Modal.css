@@ -46,11 +46,20 @@
 }
 
 .modal-footer {
+  width: 100%;
+  height: 100%;
   padding: 1rem 1.5rem;
   border-top: 1px solid #e0e0e0;
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   gap: 0.5rem;
+}
+
+.modal-btn-container {
+  justify-content: center !important;
+}
+.modal-btn-container .btn-primary {
+  width: 10%;
 }
 
 .btn-primary {
@@ -82,4 +91,3 @@
 .btn-secondary:hover {
   background-color: #7f8c8d;
 }
-

@@ -1,12 +1,12 @@
-import './Modal.css'
+import "./Modal.css";
 
 function ConfirmModal({ isOpen, onClose, onConfirm, title, message }) {
-  if (!isOpen) return null
+  if (!isOpen) return null;
 
   const handleConfirm = () => {
-    onConfirm()
-    onClose()
-  }
+    onConfirm();
+    onClose();
+  };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -17,14 +17,15 @@ function ConfirmModal({ isOpen, onClose, onConfirm, title, message }) {
         <div className="modal-body">
           <p>{message}</p>
         </div>
-        <div className="modal-footer">
-          <button onClick={onClose} className="btn-secondary">거절</button>
-          <button onClick={handleConfirm} className="btn-primary">동의</button>
+        <div className="modal-footer modal-btn-container">
+          {/* <button onClick={onClose} className="btn-secondary">거절</button> */}
+          <button onClick={handleConfirm} className="btn-primary">
+            동의
+          </button>
         </div>
       </div>
     </div>
-  )
+  );
 }
 
-export default ConfirmModal
-
+export default ConfirmModal;

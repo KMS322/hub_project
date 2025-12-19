@@ -938,6 +938,17 @@ function Hardware() {
     }
   };
 
+  // 포트 이름을 사용자 친화적으로 변경하는 함수
+  const getPortDisplayName = (portInfo) => {
+    // COM 포트 번호 추출 (Windows 환경에서만 가능)
+    // Web Serial API는 포트 이름을 직접 제공하지 않으므로
+    // Vendor/Product ID로 식별
+    if (portInfo?.usbVendorId !== undefined) {
+      return "Tailing 허브 보드";
+    }
+    return "알 수 없는 장치";
+  };
+
   // 이전에 권한이 부여된 포트 자동 연결 시도
   const tryAutoConnect = async () => {
     if (!navigator.serial) return null;
@@ -1030,8 +1041,8 @@ function Hardware() {
       const portInfoData = port.getInfo?.();
       if (portInfoData) {
         setPortInfo(portInfoData);
-        const portInfoStr = JSON.stringify(portInfoData);
-        appendLog(`선택한 포트 정보: ${portInfoStr}`);
+        const displayName = getPortDisplayName(portInfoData);
+        appendLog(`선택한 포트: ${displayName}`);
 
         // 블루투스 포트 감지 시 경고
         if (
@@ -1046,7 +1057,7 @@ function Hardware() {
           );
         } else {
           appendLog(
-            `✓ USB 포트 확인됨 (Vendor: 0x${portInfoData.usbVendorId?.toString(
+            `✓ ${displayName} 확인됨 (Vendor: 0x${portInfoData.usbVendorId?.toString(
               16
             )}, Product: 0x${portInfoData.usbProductId?.toString(16)})`
           );
@@ -2648,8 +2659,8 @@ function Hardware() {
                 {registrationStep === 1 && (
                   <>
                     <p className="hub-register-instruction">
-                      USB 선으로 허브를 연결한 후, 아래 버튼을 클릭하여 USB
-                      포트를 선택하세요.
+                      USB 선과 허브를 연결한 뒤, 하단 “USB 포트 연결” 버튼을
+                      클릭하세요.
                     </p>
 
                     <div className="search-section">
