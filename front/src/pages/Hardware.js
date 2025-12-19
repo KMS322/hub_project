@@ -451,14 +451,6 @@ function Hardware() {
           // 연결된 디바이스 MAC 주소 정규화
           const connectedMacSet = new Set(connectedDevices.map(mac => normalizeMac(mac)))
           
-          // deviceConnectionStatuses 업데이트
-          const newConnectionStatuses = {}
-          existingDevices.forEach(device => {
-            const deviceMac = normalizeMac(device.address)
-            newConnectionStatuses[device.address] = connectedMacSet.has(deviceMac) ? 'connected' : 'disconnected'
-          })
-          setDeviceConnectionStatuses(newConnectionStatuses)
-          
           // 각 디바이스의 상태 업데이트
           for (const device of existingDevices) {
             const deviceMac = normalizeMac(device.address)
@@ -470,14 +462,29 @@ function Hardware() {
             }
           }
           
+          // 디바이스 목록 새로고침
+          await loadData()
+          
+          // loadData() 완료 후 deviceConnectionStatuses 다시 업데이트 (loadData가 상태를 초기화할 수 있으므로)
+          const updatedDevices = await deviceService.getDevices()
+          const newConnectionStatuses = {}
+          updatedDevices.forEach(device => {
+            const deviceMac = normalizeMac(device.address)
+            const isConnected = connectedMacSet.has(deviceMac)
+            newConnectionStatuses[device.address] = isConnected ? 'connected' : 'disconnected'
+            // 정규화된 MAC도 저장
+            newConnectionStatuses[deviceMac] = isConnected ? 'connected' : 'disconnected'
+          })
+          setDeviceConnectionStatuses(prev => ({
+            ...prev,
+            ...newConnectionStatuses
+          }))
+          
           setAlertModal({
             isOpen: true,
             title: '연결 완료',
             message: '정상적으로 연결되었습니다.'
           })
-          
-          // 디바이스 목록 새로고침
-          await loadData()
         } catch (error) {
           console.error('[Device Connect All] 상태 업데이트 오류:', error)
           setAlertModal({

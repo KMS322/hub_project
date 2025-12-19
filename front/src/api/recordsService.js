@@ -6,7 +6,7 @@ import { API_URL } from '../constants';
  */
 const recordsService = {
   /**
-   * 기록 목록 조회
+   * 기록 목록 조회 (레거시 - 사용 안 함)
    * @param {Object} filters - 필터 { deviceAddress, startDate, endDate }
    * @returns {Promise<Array>}
    */
@@ -18,6 +18,76 @@ const recordsService = {
 
     const response = await axiosInstance.get(`/records?${params.toString()}`);
     return response.data.data || [];
+  },
+
+  /**
+   * CSV 파일 목록 조회 (전체)
+   * @returns {Promise<Array>}
+   */
+  getCsvFiles: async () => {
+    const response = await axiosInstance.get('/csv/all');
+    return response.data.files || [];
+  },
+
+  /**
+   * 디바이스별 CSV 파일 목록 조회
+   * @param {string} deviceAddress - 디바이스 MAC 주소
+   * @returns {Promise<Array>}
+   */
+  getCsvFilesByDevice: async (deviceAddress) => {
+    const response = await axiosInstance.get(`/csv/device/${deviceAddress}`);
+    return response.data.files || [];
+  },
+
+  /**
+   * 환자별 CSV 파일 목록 조회
+   * @param {string} petName - 환자(펫) 이름
+   * @returns {Promise<Array>}
+   */
+  getCsvFilesByPet: async (petName) => {
+    const response = await axiosInstance.get(`/csv/pet/${petName}`);
+    return response.data.files || [];
+  },
+
+  /**
+   * CSV 파일 다운로드 (새 API)
+   * @param {string} relativePath - 상대 경로 (API에서 받은 relativePath)
+   * @returns {Promise<void>}
+   */
+  downloadCsvFile: async (relativePath) => {
+    const token = localStorage.getItem('auth-storage');
+    let authToken = '';
+    
+    if (token) {
+      try {
+        const { state } = JSON.parse(token);
+        authToken = state?.token || '';
+      } catch (e) {
+        console.error('Failed to parse token:', e);
+      }
+    }
+
+    const url = `${API_URL}/csv/download?path=${encodeURIComponent(relativePath)}`;
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${authToken}`
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error('파일 다운로드 실패');
+    }
+
+    const blob = await response.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    const filename = relativePath.split('/').pop() || 'download.csv';
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(downloadUrl);
   },
 
   /**
