@@ -32,9 +32,14 @@ class SocketService {
     try {
       const urlObj = new URL(serverUrl);
       socketUrl = urlObj.origin; // 예: http://localhost:5000/api -> http://localhost:5000
-      console.log(`[Socket] Connecting to ${socketUrl} (original: ${serverUrl})`);
+      console.log(
+        `[Socket] Connecting to ${socketUrl} (original: ${serverUrl})`
+      );
     } catch (e) {
-      console.warn("[Socket] Invalid URL format for serverUrl, using as is:", serverUrl);
+      console.warn(
+        "[Socket] Invalid URL format for serverUrl, using as is:",
+        serverUrl
+      );
       socketUrl = serverUrl;
     }
 
