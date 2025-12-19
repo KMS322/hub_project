@@ -8,7 +8,8 @@ const csvWriter = require('../utils/csvWriter');
 
 // 공통: 사용자별 CSV 루트 경로
 function getUserCsvRoot(userEmail) {
-  const safeEmail = csvWriter.sanitize(userEmail);
+  // 이메일은 그대로 사용 (sanitize하지 않음)
+  const safeEmail = csvWriter.sanitizeForPath(userEmail);
   return path.join(process.cwd(), csvWriter.baseDir, safeEmail);
 }
 
@@ -46,7 +47,8 @@ router.get('/device/:deviceAddress', verifyToken, async (req, res) => {
       return res.json({ success: true, files: [] });
     }
 
-    const safeDevice = csvWriter.sanitize(deviceAddress);
+    // MAC 주소의 :를 _로 변환 (Windows 호환)
+    const safeDevice = deviceAddress.replace(/:/g, '_');
     const dates = fs.readdirSync(root);
     const results = [];
 
@@ -105,7 +107,7 @@ router.get('/pet/:petName', verifyToken, async (req, res) => {
       return res.json({ success: true, files: [] });
     }
 
-    const safePet = csvWriter.sanitize(petName);
+    const safePet = csvWriter.sanitizeForPath(petName);
     const dates = fs.readdirSync(root);
     const results = [];
 

@@ -53,16 +53,16 @@ function Dashboard() {
         // 렌더링 시에만 spo2를 심박수, hr을 산포도로 사용한다.
         setConnectedDevices((prev) =>
           prev.map((device) => {
-            if (device.address === data.deviceId) {
+          if (device.address === data.deviceId) {
               const latest =
                 data.data?.dataArr?.[data.data.dataArr.length - 1] || data.data;
 
               const rawHr = latest.hr || data.data?.hr || 0;
               const rawSpo2 = latest.spo2 || data.data?.spo2 || 0;
 
-              return {
-                ...device,
-                currentData: {
+            return {
+              ...device,
+              currentData: {
                   heartRate: rawHr || device.currentData?.heartRate || 0, // 원본 hr
                   spo2: rawSpo2 || device.currentData?.spo2 || 0,         // 원본 spo2
                   temperature:
@@ -70,7 +70,7 @@ function Dashboard() {
                   battery: latest.battery || data.data?.battery || device.currentData?.battery || 0,
                 },
               };
-            }
+          }
             return device;
           })
         );
@@ -81,7 +81,7 @@ function Dashboard() {
     const handleConnectedDevices = (payload) => {
       console.log('[Dashboard] Received CONNECTED_DEVICES:', payload);
       const hubAddress = payload.hubAddress;
-      const connectedDevices = payload.connected_devices || [];
+      const connectedDeviceMacs = payload.connected_devices || [];
 
       if (hubAddress) {
         // 허브가 응답했으므로 온라인으로 표시
@@ -104,17 +104,29 @@ function Dashboard() {
 
       // 연결된 디바이스 상태 업데이트
       const normalizeMac = (mac) => mac.replace(/[:-]/g, '').toUpperCase();
-      const connectedMacSet = new Set(connectedDevices.map(mac => normalizeMac(mac)));
+      const connectedMacSet = new Set(connectedDeviceMacs.map(mac => normalizeMac(mac)));
 
       setDeviceConnectionStatuses(prev => {
         const newStatuses = { ...prev };
-        // 모든 디바이스에 대해 상태 업데이트
-        connectedDevices.forEach(deviceMac => {
+        
+        // 연결된 디바이스 MAC 주소들을 모두 'connected'로 표시
+        connectedDeviceMacs.forEach(deviceMac => {
           const normalizedMac = normalizeMac(deviceMac);
           // 정규화된 MAC과 원본 MAC 모두 업데이트
           newStatuses[normalizedMac] = 'connected';
           newStatuses[deviceMac] = 'connected';
         });
+        
+        // 현재 페이지의 모든 디바이스에 대해 연결 상태 확인 및 업데이트
+        // (연결 목록에 없으면 disconnected로 표시)
+        connectedDevices.forEach(device => {
+          const deviceAddress = device.address;
+          const normalizedMac = normalizeMac(deviceAddress);
+          const isConnected = connectedMacSet.has(normalizedMac);
+          newStatuses[normalizedMac] = isConnected ? 'connected' : 'disconnected';
+          newStatuses[deviceAddress] = isConnected ? 'connected' : 'disconnected';
+        });
+        
         return newStatuses;
       });
     };
@@ -146,7 +158,7 @@ function Dashboard() {
       off("CONNECTED_DEVICES", handleConnectedDevices);
       off("CONTROL_RESULT", handleControlResult);
     };
-  }, [isConnected, on, off]);
+  }, [isConnected, on, off, connectedDevices]);
 
   // 페이지 접속 시 허브 상태 체크 (한 번만)
   const hasCheckedRef = useRef(false);
@@ -413,7 +425,7 @@ function Dashboard() {
         setLoading(false);
         return;
       }
-
+      
       // 환자 목록 조회
       const pets = await petService.getPets();
 
@@ -435,13 +447,13 @@ function Dashboard() {
             status: device.status,
             connectedPatient: patient
               ? {
-                  id: patient.id,
-                  name: patient.name,
-                  species: patient.species,
-                  breed: patient.breed,
-                  weight: patient.weight,
-                  gender: patient.gender,
-                  doctor: patient.veterinarian,
+              id: patient.id,
+              name: patient.name,
+              species: patient.species,
+              breed: patient.breed,
+              weight: patient.weight,
+              gender: patient.gender,
+              doctor: patient.veterinarian,
                   diagnosis: patient.diagnosis,
                 }
               : null,
@@ -580,7 +592,7 @@ function Dashboard() {
                               <span className="info-text">
                                 진단명: {patient.diagnosis}
                               </span>
-                              <button
+                              <button 
                                 className="more-btn"
                                 onClick={() => handleShowMore(patient.id)}
                               >
@@ -631,13 +643,13 @@ function Dashboard() {
                                   측정 시작
                                 </button>
                               )}
-                              <button
-                                className="monitor-btn"
-                                onClick={() => handleMonitor(patient?.id)}
+                        <button 
+                          className="monitor-btn"
+                          onClick={() => handleMonitor(patient?.id)}
                                 disabled={!isDeviceConnected}
-                              >
-                                모니터링하기
-                              </button>
+                        >
+                          모니터링하기
+                        </button>
                             </>
                           );
                         })()}

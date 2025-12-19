@@ -16,6 +16,7 @@ class MQTTService {
     this.pendingCommands = new Map(); // requestId 기반 명령 대기 목록
     this.hubCallbacks = new Map(); // 허브별 콜백 저장
     this.batteryCache = new Map(); // 디바이스별 마지막 배터리 값 저장
+    this.temperatureCache = new Map(); // 디바이스별 마지막 온도 값 저장
   }
 
   /**
@@ -232,6 +233,22 @@ class MQTTService {
               console.log(`[MQTT Service] Updated battery cache for ${data.device_mac_address}: ${currentBattery}%`);
             }
 
+            // 온도 값 처리: 0이 아닐 때만 캐시 업데이트
+            const currentTemp = data.temp || 0;
+            let tempToUse = currentTemp;
+            
+            if (currentTemp === 0) {
+              // 0이면 캐시된 값 사용
+              if (this.temperatureCache.has(data.device_mac_address)) {
+                tempToUse = this.temperatureCache.get(data.device_mac_address);
+                console.log(`[MQTT Service] Using cached temperature value for ${data.device_mac_address}: ${tempToUse}°C`);
+              }
+            } else {
+              // 0이 아니면 캐시 업데이트
+              this.temperatureCache.set(data.device_mac_address, currentTemp);
+              console.log(`[MQTT Service] Updated temperature cache for ${data.device_mac_address}: ${currentTemp}°C`);
+            }
+
             // start_time을 밀리초로 변환 (HHmmssSSS 형식)
             const parseStartTime = (startTimeStr) => {
               if (!startTimeStr || startTimeStr.length < 9) return Date.now();
@@ -258,7 +275,7 @@ class MQTTService {
               return {
                 hr: data.hr || 0,
                 spo2: data.spo2 || 0,
-                temp: data.temp || 0,
+                temp: tempToUse, // 캐시된 온도 값 사용
                 battery: batteryToUse, // 캐시된 배터리 값 사용
                 timestamp: sampleTime,
                 index: index
@@ -272,7 +289,7 @@ class MQTTService {
               data: {
                 hr: data.hr || 0,
                 spo2: data.spo2 || 0,
-                temp: data.temp || 0,
+                temp: tempToUse, // 캐시된 온도 값 사용
                 battery: batteryToUse, // 캐시된 배터리 값 사용
                 start_time: data.start_time,
                 sampling_rate: samplingRate,
