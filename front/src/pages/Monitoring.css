@@ -207,6 +207,7 @@
   border-radius: 8px;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
   margin-bottom: 2rem;
+  height: 40rem;
 }
 
 .chart-tabs {
@@ -277,7 +278,7 @@
 
 .chart-svg {
   width: 100%;
-  height: calc(100% - 40px);
+  height: calc(100% - 0px);
 }
 
 .chart-labels {

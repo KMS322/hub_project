@@ -32,7 +32,7 @@ router.post("/hub", async (req, res) => {
     const { mac_address, user_email } = req.body;
 
     log(`[Hub Check] mac_address: ${mac_address}, user_email: ${user_email}`);
-
+    
     // 필수 필드 검증
     if (!mac_address || !user_email) {
       return res.status(400).json({
@@ -105,15 +105,41 @@ router.post("/hub", async (req, res) => {
       mqttClient.subscribe(
         sendTopic,
         async (message, topic) => {
-          log(`[Hub Check] 📥 Message received from ${topic}`);
-          try {
+        log(`[Hub Check] 📥 Message received from ${topic}`);
+        try {
             const messageStr = Buffer.isBuffer(message)
               ? message.toString("utf8")
               : typeof message === "string"
               ? message
               : JSON.stringify(message);
-            const data = JSON.parse(messageStr);
-            log(`[Hub Check] Send topic data:`, JSON.stringify(data, null, 2));
+            
+            // device:["mac_address"] 형식 처리
+            let data;
+            if (messageStr.includes('device:[')) {
+              // device:["mac1", "mac2"] 형식 파싱
+              try {
+                const deviceMatch = messageStr.match(/device:\s*\[(.*?)\]/);
+                if (deviceMatch) {
+                  const deviceListStr = deviceMatch[1];
+                  // 따옴표로 둘러싸인 MAC 주소 추출
+                  const macAddresses = deviceListStr.match(/"([^"]+)"/g)?.map(m => m.replace(/"/g, '')) || [];
+                  data = {
+                    connected_devices: macAddresses
+                  };
+                  log(`[Hub Check] Parsed device list:`, macAddresses);
+                } else {
+                  // JSON 파싱 시도
+                  data = JSON.parse(messageStr);
+                }
+              } catch (e) {
+                log(`[Hub Check] Failed to parse device list, trying JSON:`, e.message);
+                data = JSON.parse(messageStr);
+              }
+            } else {
+              // 일반 JSON 파싱
+              data = JSON.parse(messageStr);
+            }
+          log(`[Hub Check] Send topic data:`, JSON.stringify(data, null, 2));
 
             // 허브에서 측정 데이터를 보내온 경우 (device_mac_address, sampling_rate, data 등 포함)
             if (data && data.device_mac_address && Array.isArray(data.data)) {
@@ -174,6 +200,27 @@ router.post("/hub", async (req, res) => {
                     log(`[Hub Check] Updated battery cache for ${data.device_mac_address}: ${currentBattery}%`);
                   }
 
+                  // 온도 캐시 (전역 변수로 관리)
+                  if (!global.temperatureCache) {
+                    global.temperatureCache = new Map();
+                  }
+                  
+                  // 온도 값 처리: 0이 아닐 때만 캐시 업데이트
+                  const currentTemp = data.temp || 0;
+                  let tempToUse = currentTemp;
+                  
+                  if (currentTemp === 0) {
+                    // 0이면 캐시된 값 사용
+                    if (global.temperatureCache.has(data.device_mac_address)) {
+                      tempToUse = global.temperatureCache.get(data.device_mac_address);
+                      log(`[Hub Check] Using cached temperature value for ${data.device_mac_address}: ${tempToUse}°C`);
+                    }
+                  } else {
+                    // 0이 아니면 캐시 업데이트
+                    global.temperatureCache.set(data.device_mac_address, currentTemp);
+                    log(`[Hub Check] Updated temperature cache for ${data.device_mac_address}: ${currentTemp}°C`);
+                  }
+
                   // start_time을 밀리초로 변환 (HHmmssSSS 형식)
                   const parseStartTime = (startTimeStr) => {
                     if (!startTimeStr || startTimeStr.length < 9) return Date.now();
@@ -185,7 +232,7 @@ router.post("/hub", async (req, res) => {
                       const today = new Date();
                       today.setHours(hours, minutes, seconds, milliseconds);
                       return today.getTime();
-                    } catch (e) {
+        } catch (e) {
                       return Date.now();
                     }
                   };
@@ -200,7 +247,7 @@ router.post("/hub", async (req, res) => {
                     return {
                       hr: data.hr || 0,
                       spo2: data.spo2 || 0,
-                      temp: data.temp || 0,
+                      temp: tempToUse, // 캐시된 온도 값 사용
                       battery: batteryToUse, // 캐시된 배터리 값 사용
                       timestamp: sampleTime,
                       index: index
@@ -214,7 +261,7 @@ router.post("/hub", async (req, res) => {
                     data: {
                       hr: data.hr || 0,
                       spo2: data.spo2 || 0,
-                      temp: data.temp || 0,
+                      temp: tempToUse, // 캐시된 온도 값 사용
                       battery: batteryToUse, // 캐시된 배터리 값 사용
                       start_time: data.start_time,
                       sampling_rate: samplingRate,
@@ -272,7 +319,7 @@ router.post("/hub", async (req, res) => {
               `[Hub Check] Send topic raw message:`,
               Buffer.isBuffer(message) ? message.toString("utf8") : message
             );
-          }
+        }
         },
         1
       );
@@ -281,24 +328,24 @@ router.post("/hub", async (req, res) => {
       mqttClient.subscribe(
         receiveTopic,
         (message, topic) => {
-          log(`[Hub Check] 📥 Message received from ${topic}`);
-          try {
+        log(`[Hub Check] 📥 Message received from ${topic}`);
+        try {
             const messageStr = Buffer.isBuffer(message)
               ? message.toString("utf8")
               : typeof message === "string"
               ? message
               : JSON.stringify(message);
-            const data = JSON.parse(messageStr);
+          const data = JSON.parse(messageStr);
             log(
               `[Hub Check] Receive topic data:`,
               JSON.stringify(data, null, 2)
             );
-          } catch (e) {
+        } catch (e) {
             log(
               `[Hub Check] Receive topic raw message:`,
               Buffer.isBuffer(message) ? message.toString("utf8") : message
             );
-          }
+        }
         },
         1
       );

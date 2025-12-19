@@ -20,10 +20,19 @@ class CSVWriter {
    * ========================= */
 
   sanitize(value) {
+    // 경로에 사용할 수 없는 문자만 제거 (Windows: < > : " | ? * \)
+    // 이메일, MAC 주소, 시간은 그대로 유지
     return String(value)
-      .replace(/:/g, '_')          // ❌ Windows 폴더 불가
-      .replace(/@/g, '_at_')       // 이메일 안전화
-      .replace(/[^\w\-가-힣]/g, ''); // 기타 특수문자 제거
+      .replace(/[<>:"|?*\\]/g, '_')  // Windows 파일 시스템에서 금지된 문자만 제거
+      .replace(/\s+/g, '_');          // 공백은 언더스코어로 변환
+  }
+
+  // 이메일, MAC 주소, 시간은 sanitize하지 않고 그대로 사용
+  sanitizeForPath(value) {
+    // 경로에 사용할 수 없는 문자만 제거
+    return String(value)
+      .replace(/[<>:"|?*\\]/g, '_')
+      .replace(/\s+/g, '_');
   }
 
   ensureDirectoryExists() {
@@ -39,11 +48,22 @@ class CSVWriter {
     const now = new Date();
     const date = now.toISOString().split('T')[0];
 
-    const safeEmail = this.sanitize(userEmail);
-    const safeDevice = this.sanitize(deviceAddress);
-    const safePet = this.sanitize(petName);
+    // Windows에서는 폴더명과 파일명에 : 사용 불가하므로 _로 변환
+    // 이메일은 @와 .을 그대로 유지 (폴더명에 사용 가능)
+    const safeEmail = this.sanitizeForPath(userEmail);
+    // MAC 주소의 :를 _로 변환 (예: ec:81:f7:f3:54:6f -> ec_81_f7_f3_54_6f)
+    const safeDevice = deviceAddress.replace(/:/g, '_');
+    const safePet = this.sanitizeForPath(petName);
 
-    const safeTime = this.sanitize(startTime);
+    // 시간 형식 변환: HHmmssSSS -> HH_mm_ss_SSS (Windows 호환)
+    let safeTime = startTime;
+    if (startTime && !startTime.includes(':') && !startTime.includes('_') && startTime.length === 9) {
+      // HHmmssSSS 형식을 HH_mm_ss_SSS로 변환
+      safeTime = `${startTime.slice(0, 2)}_${startTime.slice(2, 4)}_${startTime.slice(4, 6)}_${startTime.slice(6, 9)}`;
+    } else if (startTime && startTime.includes(':')) {
+      // HH:mm:ss:SSS 형식을 HH_mm_ss_SSS로 변환
+      safeTime = startTime.replace(/:/g, '_');
+    }
 
     const dirPath = path.join(
       process.cwd(),
@@ -57,6 +77,7 @@ class CSVWriter {
     // 🔥 핵심: 중간 경로 포함 전부 생성
     fs.mkdirSync(dirPath, { recursive: true });
 
+    // 파일명: device_mac_address-HH_mm_ss_SSS.csv (Windows 호환)
     const filePath = path.join(
       dirPath,
       `${safeDevice}-${safeTime}.csv`
@@ -118,6 +139,9 @@ class CSVWriter {
 
     let buffer = '';
 
+    // dataArr가 있으면 각 샘플의 hr, spo2, temp를 사용
+    const hasDataArr = payload.dataArr && Array.isArray(payload.dataArr) && payload.dataArr.length > 0;
+
     for (let i = 0; i < payload.data.length; i++) {
       const [ir, red, green] = payload.data[i].split(',');
 
@@ -125,9 +149,22 @@ class CSVWriter {
       const time = new Date(baseMs + elapsedMs);
       const timeStr = this.formatTime(time);
 
-      const hr = i === 0 ? payload.spo2 ?? '' : '';
-      const spo2 = i === 0 ? payload.hr ?? '' : '';
-      const temp = i === 0 ? payload.temp ?? '' : '';
+      // dataArr가 있으면 각 샘플의 값을 사용, 없으면 첫 번째 샘플에만 값 사용
+      let hr = '';
+      let spo2 = '';
+      let temp = '';
+      
+      if (hasDataArr && payload.dataArr[i]) {
+        // dataArr의 각 샘플에서 값 가져오기 (hr과 spo2가 바뀌어 있음)
+        hr = payload.dataArr[i].spo2 !== undefined && payload.dataArr[i].spo2 !== null ? payload.dataArr[i].spo2 : '';
+        spo2 = payload.dataArr[i].hr !== undefined && payload.dataArr[i].hr !== null ? payload.dataArr[i].hr : '';
+        temp = payload.dataArr[i].temp !== undefined && payload.dataArr[i].temp !== null ? payload.dataArr[i].temp : '';
+      } else if (i === 0) {
+        // 첫 번째 샘플에만 전체 값 사용 (hr과 spo2가 바뀌어 있음)
+        hr = payload.spo2 !== undefined && payload.spo2 !== null ? payload.spo2 : '';
+        spo2 = payload.hr !== undefined && payload.hr !== null ? payload.hr : '';
+        temp = payload.temp !== undefined && payload.temp !== null ? payload.temp : '';
+      }
 
       buffer += `${timeStr},${ir},${red},${green},${hr},${spo2},${temp}\n`;
       counter.total++;

@@ -102,12 +102,17 @@
   font-weight: 600;
   color: #2c3e50;
   border-bottom: 2px solid #e0e0e0;
+  white-space: nowrap;
 }
 
 .records-table td {
   padding: 1rem;
   border-bottom: 1px solid #e0e0e0;
   color: #666;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
 }
 
 .records-table tbody tr:hover {

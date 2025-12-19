@@ -25,17 +25,73 @@ function Records() {
   const loadData = async () => {
     try {
       setLoading(true)
-      const [recordsData, patientsData, devicesData] = await Promise.all([
-        recordsService.getRecords(),
+      const [csvFilesData, patientsData, devicesData] = await Promise.all([
+        recordsService.getCsvFiles(),
         petService.getPets(),
         deviceService.getDevices()
       ])
+      
+      // CSV 파일 데이터를 Records 형식으로 변환
+      const recordsData = csvFilesData.map((file, index) => {
+        // 파일명에서 시작 시간 추출 (예: e1_fa_51_49_1a_9a-000527074.csv)
+        const timeMatch = file.filename.match(/-(\d{9})\.csv$/)
+        const startTimeStr = timeMatch ? timeMatch[1] : null
+        let startTime = null
+        if (startTimeStr) {
+          try {
+            const hours = parseInt(startTimeStr.substring(0, 2))
+            const minutes = parseInt(startTimeStr.substring(2, 4))
+            const seconds = parseInt(startTimeStr.substring(4, 6))
+            const milliseconds = parseInt(startTimeStr.substring(6, 9))
+            const today = new Date()
+            today.setHours(hours, minutes, seconds, milliseconds)
+            startTime = today.toISOString()
+          } catch (e) {
+            console.warn('Failed to parse start time:', e)
+          }
+        }
+        
+        // 디바이스 이름 찾기
+        const device = devicesData.find(d => {
+          const normalizeMac = (mac) => mac.replace(/[:-]/g, '_').toLowerCase()
+          return normalizeMac(d.address) === normalizeMac(file.device)
+        })
+        const deviceName = device?.name || file.device
+        
+        // 환자 이름 찾기
+        const patient = patientsData.find(p => p.name === file.pet)
+        const patientName = patient?.name || file.pet
+        
+        // 파일 크기 포맷팅
+        const formatFileSize = (bytes) => {
+          if (bytes < 1024) return `${bytes} B`
+          if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`
+          return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+        }
+        
+        return {
+          id: index + 1,
+          fileName: file.filename,
+          relativePath: file.relativePath,
+          date: file.date,
+          deviceAddress: file.device,
+          deviceName: deviceName,
+          patientName: patientName,
+          startTime: startTime,
+          endTime: file.mtime ? new Date(file.mtime).toISOString() : null,
+          fileSize: formatFileSize(file.size),
+          recordCount: '-', // CSV 파일에서 레코드 수를 읽어야 함 (나중에 구현 가능)
+          size: file.size,
+          mtime: file.mtime
+        }
+      })
       
       setRecords(recordsData)
       setPatients(patientsData)
       setDevices(devicesData)
     } catch (error) {
       console.error('Failed to load data:', error)
+      alert('CSV 파일 목록을 불러오는데 실패했습니다: ' + (error.message || '알 수 없는 오류'))
     } finally {
       setLoading(false)
     }
@@ -57,20 +113,13 @@ function Records() {
       const patient = patients.find(p => p.id === parseInt(selectedPatient))
       if (patient) {
         filteredRecords = filteredRecords.filter(record => 
-          record.deviceAddress === patient.device_address
+          record.patientName === patient.name
         )
       }
     }
     if (patientSearch) {
-      const matchingPatients = patients.filter(p =>
-        p.name.toLowerCase().includes(patientSearch.toLowerCase())
-      )
-      const matchingDeviceAddresses = matchingPatients
-        .filter(p => p.device_address)
-        .map(p => p.device_address)
-      
       filteredRecords = filteredRecords.filter(record =>
-        matchingDeviceAddresses.includes(record.deviceAddress)
+        record.patientName && record.patientName.toLowerCase().includes(patientSearch.toLowerCase())
       )
     }
   }
@@ -86,11 +135,17 @@ function Records() {
   const sortedRecords = filteredRecords.sort((a, b) => {
     let comparison = 0
     if (sortBy === 'date') {
-      comparison = new Date(a.date) - new Date(b.date)
+      // 날짜가 같으면 mtime으로 정렬
+      const dateComparison = a.date.localeCompare(b.date)
+      if (dateComparison === 0 && a.mtime && b.mtime) {
+        comparison = new Date(a.mtime) - new Date(b.mtime)
+      } else {
+        comparison = dateComparison
+      }
     } else if (sortBy === 'patient') {
-      comparison = a.deviceName.localeCompare(b.deviceName)
+      comparison = (a.patientName || '').localeCompare(b.patientName || '')
     } else if (sortBy === 'device') {
-      comparison = a.deviceName.localeCompare(b.deviceName)
+      comparison = (a.deviceName || '').localeCompare(b.deviceName || '')
     }
     return -comparison // 최신순 (desc)
   })
@@ -111,9 +166,14 @@ function Records() {
     }
   }
 
-  const handleDownload = async (fileName) => {
+  const handleDownload = async (record) => {
     try {
-      await recordsService.downloadFile(fileName)
+      if (record.relativePath) {
+        await recordsService.downloadCsvFile(record.relativePath)
+      } else {
+        // 레거시 지원
+        await recordsService.downloadFile(record.fileName)
+      }
     } catch (error) {
       alert('다운로드 실패: ' + (error.message || '알 수 없는 오류'))
     }
@@ -124,7 +184,12 @@ function Records() {
       for (const recordId of selectedRecords) {
         const record = sortedRecords.find(r => r.id === recordId)
         if (record) {
-          await recordsService.downloadFile(record.fileName)
+          if (record.relativePath) {
+            await recordsService.downloadCsvFile(record.relativePath)
+          } else {
+            // 레거시 지원
+            await recordsService.downloadFile(record.fileName)
+          }
         }
       }
       setSelectedRecords([])
@@ -279,10 +344,8 @@ function Records() {
                     />
                   </td>
                   <td>{record.fileName}</td>
-                  <td>
-                    {patients.find(p => p.device_address === record.deviceAddress)?.name || '-'}
-                  </td>
-                  <td>{record.deviceName}</td>
+                  <td>{record.patientName || '-'}</td>
+                  <td>{record.deviceName || record.deviceAddress}</td>
                   <td>{record.startTime ? new Date(record.startTime).toLocaleString('ko-KR') : '-'}</td>
                   <td>{record.endTime ? new Date(record.endTime).toLocaleString('ko-KR') : '-'}</td>
                   <td>{record.fileSize}</td>
@@ -291,7 +354,7 @@ function Records() {
                     <div className="action-buttons">
                       <button 
                         className="btn-download"
-                        onClick={() => handleDownload(record.fileName)}
+                        onClick={() => handleDownload(record)}
                       >
                         다운로드
                       </button>

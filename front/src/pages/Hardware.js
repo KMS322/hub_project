@@ -90,6 +90,7 @@ function Hardware() {
 
   // 페이지 접속 시 한 번만 허브 상태 체크
   const hasCheckedRef = useRef(false);
+  const hubTimeoutRefs = useRef({}); // 허브별 타임아웃 참조
 
   useEffect(() => {
     // 이미 체크했거나 연결되지 않았거나 허브가 없으면 리턴
@@ -97,9 +98,26 @@ function Hardware() {
 
     // 모든 허브에 대해 상태 체크 (한 번만 실행)
     hubs.forEach((hub) => {
-      const requestId = `state_check_${hub.address}_${Date.now()}`;
+      const hubAddress = hub.address;
+      const requestId = `state_check_${hubAddress}_${Date.now()}`;
+
+      // 기존 타임아웃 정리
+      if (hubTimeoutRefs.current[hubAddress]) {
+        clearTimeout(hubTimeoutRefs.current[hubAddress]);
+      }
+
+      // 20초 타임아웃 설정
+      hubTimeoutRefs.current[hubAddress] = setTimeout(() => {
+        // 응답이 없으면 허브를 오프라인으로 표시
+        setHubStatuses((prev) => ({
+          ...prev,
+          [hubAddress]: false,
+        }));
+        console.log(`[Hardware] Hub ${hubAddress} timeout - no response`);
+      }, 20000);
+
       emit("CONTROL_REQUEST", {
-        hubId: hub.address,
+        hubId: hubAddress,
         deviceId: "HUB",
         command: {
           raw_command: "state:hub",
@@ -116,6 +134,11 @@ function Hardware() {
   useEffect(() => {
     return () => {
       hasCheckedRef.current = false;
+      // 타임아웃 정리
+      Object.values(hubTimeoutRefs.current).forEach((timeout) =>
+        clearTimeout(timeout)
+      );
+      hubTimeoutRefs.current = {};
     };
   }, []);
 
@@ -226,7 +249,7 @@ function Hardware() {
       }
     };
 
-    // Telemetry 데이터 수신 시 허브가 온라인임을 표시
+    // Telemetry 데이터 수신 시 허브/디바이스 상태 업데이트
     const handleTelemetry = (data) => {
       // 디바이스 등록 모달이 열려있으면 상태 업데이트만
       if (deviceRegisterModal.isOpen) {
@@ -266,6 +289,18 @@ function Hardware() {
 
       // 하드웨어 오류 감지
       if (data.type === "sensor_data" && data.deviceId) {
+        // 텔레메트리가 오면 해당 디바이스를 연결됨으로 표시
+        setDeviceConnectionStatuses((prev) => {
+          const normalizeMac = (mac) => mac.replace(/[:-]/g, "").toUpperCase();
+          const deviceId = data.deviceId;
+          const normalized = normalizeMac(deviceId);
+          return {
+            ...prev,
+            [deviceId]: "connected",
+            [normalized]: "connected",
+          };
+        });
+
         const latest =
           data.data?.dataArr?.[data.data.dataArr.length - 1] || data.data;
         const heartRate = latest?.hr || latest?.heartRate || 0;
@@ -327,8 +362,26 @@ function Hardware() {
       }
     };
 
-    // CONTROL_RESULT 수신 (명령 실행 결과 - blink 등)
+    // CONTROL_RESULT 수신 (명령 실행 결과 - blink, state:hub 등)
     const handleControlResult = async (data) => {
+      const isStateCheck = data.requestId?.startsWith("state_check_");
+
+      // state:hub 에 대한 CONTROL_RESULT 는 허브에 명령이 전달되었다는 ACK 이므로
+      // 타임아웃만 해제하고 별도 로그는 남기지 않음
+      if (isStateCheck && data.hubId) {
+        const hubAddress = data.hubId;
+        if (hubTimeoutRefs.current[hubAddress]) {
+          clearTimeout(hubTimeoutRefs.current[hubAddress]);
+          delete hubTimeoutRefs.current[hubAddress];
+        }
+        // 허브를 온라인으로 표시
+        setHubStatuses((prev) => ({
+          ...prev,
+          [hubAddress]: true,
+        }));
+        return;
+      }
+
       console.log("[Hardware] Received CONTROL_RESULT:", data);
 
       // 허브가 응답을 보냈으면 온라인으로 표시
@@ -345,6 +398,7 @@ function Hardware() {
 
       // 현재는 blink 등의 단순 명령에 대해서만 성공 여부 확인용으로 사용
       // connect_devices 결과는 CONNECTED_DEVICES 이벤트에서 처리
+      // state:hub 결과는 CONNECTED_DEVICES 이벤트에서 처리
     };
 
     // 허브에서 MQTT send 토픽으로 전달하는 연결된 디바이스 목록 처리
@@ -355,10 +409,17 @@ function Hardware() {
       const connectedDevices = payload.connected_devices;
 
       if (hubAddress) {
+        // 허브가 응답했으므로 온라인으로 표시
         setHubStatuses((prev) => ({
           ...prev,
           [hubAddress]: true,
         }));
+
+        // 타임아웃 정리
+        if (hubTimeoutRefs.current[hubAddress]) {
+          clearTimeout(hubTimeoutRefs.current[hubAddress]);
+          delete hubTimeoutRefs.current[hubAddress];
+        }
       }
 
       // 연결된 디바이스 상태 업데이트
@@ -373,9 +434,15 @@ function Hardware() {
           const newStatuses = { ...prev };
           devices.forEach((device) => {
             const deviceMac = normalizeMac(device.address);
-            newStatuses[device.address] = connectedMacSet.has(deviceMac)
+            // 정규화된 MAC과 원본 MAC 모두 확인
+            const isConnected =
+              connectedMacSet.has(deviceMac) ||
+              connectedMacSet.has(normalizeMac(device.address));
+            newStatuses[device.address] = isConnected
               ? "connected"
               : "disconnected";
+            // 정규화된 MAC도 저장
+            newStatuses[deviceMac] = isConnected ? "connected" : "disconnected";
           });
           return newStatuses;
         });
@@ -413,18 +480,6 @@ function Hardware() {
             connectedDevices.map((mac) => normalizeMac(mac))
           );
 
-          // deviceConnectionStatuses 업데이트
-          const newConnectionStatuses = {};
-          existingDevices.forEach((device) => {
-            const deviceMac = normalizeMac(device.address);
-            newConnectionStatuses[device.address] = connectedMacSet.has(
-              deviceMac
-            )
-              ? "connected"
-              : "disconnected";
-          });
-          setDeviceConnectionStatuses(newConnectionStatuses);
-
           // 각 디바이스의 상태 업데이트
           for (const device of existingDevices) {
             const deviceMac = normalizeMac(device.address);
@@ -442,14 +497,33 @@ function Hardware() {
             }
           }
 
+          // 디바이스 목록 새로고침
+          await loadData();
+
+          // loadData() 완료 후 deviceConnectionStatuses 다시 업데이트 (loadData가 상태를 초기화할 수 있으므로)
+          const updatedDevices = await deviceService.getDevices();
+          const newConnectionStatuses = {};
+          updatedDevices.forEach((device) => {
+            const deviceMac = normalizeMac(device.address);
+            const isConnected = connectedMacSet.has(deviceMac);
+            newConnectionStatuses[device.address] = isConnected
+              ? "connected"
+              : "disconnected";
+            // 정규화된 MAC도 저장
+            newConnectionStatuses[deviceMac] = isConnected
+              ? "connected"
+              : "disconnected";
+          });
+          setDeviceConnectionStatuses((prev) => ({
+            ...prev,
+            ...newConnectionStatuses,
+          }));
+
           setAlertModal({
             isOpen: true,
             title: "연결 완료",
             message: "정상적으로 연결되었습니다.",
           });
-
-          // 디바이스 목록 새로고침
-          await loadData();
         } catch (error) {
           console.error("[Device Connect All] 상태 업데이트 오류:", error);
           setAlertModal({
@@ -463,7 +537,12 @@ function Hardware() {
         return;
       }
 
-      // 기존 디바이스 등록 모달 로직
+      // 디바이스 등록 스캔이 아닐 때는 여기서 종료 (페이지 초기 state:hub, connect_all 등)
+      if (!isScanning) {
+        return;
+      }
+
+      // 기존 디바이스 등록 모달 로직 (디바이스 검색 후에만)
       if (!deviceRegisterModal.isOpen) {
         handleOpenDeviceRegister();
       }

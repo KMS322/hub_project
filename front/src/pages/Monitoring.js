@@ -13,19 +13,13 @@ function Monitoring() {
   const { patientId } = useParams()
   const navigate = useNavigate()
   const { isConnected, on, emit, off } = useSocket()
-  const [activeTab, setActiveTab] = useState('heartRate') // ir, heartRate, spo2, temperature
-  const [chartData, setChartData] = useState([])
-  const [selectedPatient, setSelectedPatient] = useState(null)
-  const [petInfo, setPetInfo] = useState(null) // 펫 정보 저장
-  const [currentValues, setCurrentValues] = useState({
-    heartRate: 0,
-    spo2: 0,
-    temperature: 0,
-    battery: 0
-  })
+  
+  // UI 상태
+  const [activeTab, setActiveTab] = useState('heartRate')
   const [deviceInfo, setDeviceInfo] = useState(null)
-  const deviceInfoRef = useRef(null) // 디바이스 정보 참조용
-  const petInfoRef = useRef(null) // 펫 정보 참조용
+  const [petInfo, setPetInfo] = useState(null)
+  const [deviceConnectionStatus, setDeviceConnectionStatus] = useState('unknown')
+  const [hubStatus, setHubStatus] = useState(false)
   const [isMeasurementRunning, setIsMeasurementRunning] = useState(false)
   const [hardwareAlerts, setHardwareAlerts] = useState([])
   const [signalProcessingStatus, setSignalProcessingStatus] = useState({
@@ -36,609 +30,533 @@ function Monitoring() {
     status: 'idle',
     message: '신호처리 대기 중'
   })
-  const [isErrorSimulationActive, setIsErrorSimulationActive] = useState(false)
-  const [simulatedError, setSimulatedError] = useState(null) // null 또는 { code, type, message }
-  const chartDataRef = useRef([])
-  const simulationIntervalRef = useRef(null)
-  const errorDurationRef = useRef(null)
-  const measurementStartTimeRef = useRef(null) // 측정 시작 시간 저장
-  const spo2NineCountRef = useRef(0) // 산포도 9가 연속으로 나온 횟수
-  const [deviceConnectionStatus, setDeviceConnectionStatus] = useState('unknown') // 디바이스 연결 상태
-  const [hubStatus, setHubStatus] = useState(false) // 허브 온라인 상태
-
-  // 초기 디바이스 정보 로드 (한 번만 실행)
+  
+  // 차트 데이터 (최대 10개)
+  const [chartData, setChartData] = useState([])
+  
+  // 현재 측정값
+  const [currentValues, setCurrentValues] = useState({
+    heartRate: 0,
+    spo2: 0,
+    temperature: 0,
+    battery: 0
+  })
+  
+  // Ref로 관리 (렌더링과 무관)
+  const deviceInfoRef = useRef(null)
+  const petInfoRef = useRef(null)
+  const measurementStartTimeRef = useRef(null)
+  const spo2NineCountRef = useRef(0)
+  const hasHubStateCheckedRef = useRef(false)
+  const listenersRegisteredRef = useRef(false)
+  
+  // localStorage 키 생성 (환자/디바이스 단위 분리)
+  const getStorageKey = (suffix) => {
+    const deviceAddress = deviceInfoRef.current?.address || 'unknown'
+    return `monitoring_${deviceAddress}_${suffix}`
+  }
+  
+  // localStorage에서 데이터 복구
+  const restoreFromStorage = () => {
+    if (!deviceInfoRef.current) return
+    
+    try {
+      const chartKey = getStorageKey('chartData')
+      const valuesKey = getStorageKey('currentValues')
+      const startTimeKey = getStorageKey('startTime')
+      const runningKey = getStorageKey('isRunning')
+      
+      const savedChartData = localStorage.getItem(chartKey)
+      const savedValues = localStorage.getItem(valuesKey)
+      const savedStartTime = localStorage.getItem(startTimeKey)
+      const savedRunning = localStorage.getItem(runningKey)
+      
+      if (savedChartData) {
+        const parsed = JSON.parse(savedChartData)
+        // 최대 10개만 유지
+        const limited = parsed.slice(-10)
+        setChartData(limited)
+      }
+      
+      if (savedValues) {
+        setCurrentValues(JSON.parse(savedValues))
+      }
+      
+      if (savedStartTime) {
+        measurementStartTimeRef.current = parseInt(savedStartTime, 10)
+      }
+      
+      if (savedRunning === 'true') {
+        setIsMeasurementRunning(true)
+      }
+    } catch (error) {
+      console.error('[Monitoring] Failed to restore from storage:', error)
+    }
+  }
+  
+  // localStorage에 데이터 저장
+  const saveToStorage = () => {
+    if (!deviceInfoRef.current) return
+    
+    try {
+      const chartKey = getStorageKey('chartData')
+      const valuesKey = getStorageKey('currentValues')
+      const startTimeKey = getStorageKey('startTime')
+      const runningKey = getStorageKey('isRunning')
+      
+      // 차트 데이터 저장 (최대 10개만)
+      const dataToSave = chartData.slice(-10)
+      localStorage.setItem(chartKey, JSON.stringify(dataToSave))
+      
+      // 현재값 저장
+      localStorage.setItem(valuesKey, JSON.stringify(currentValues))
+      
+      // 측정 시작 시간 저장
+      if (measurementStartTimeRef.current) {
+        localStorage.setItem(startTimeKey, String(measurementStartTimeRef.current))
+      }
+      
+      // 측정 상태 저장
+      localStorage.setItem(runningKey, String(isMeasurementRunning))
+    } catch (error) {
+      console.error('[Monitoring] Failed to save to storage:', error)
+    }
+  }
+  
+  // 차트 데이터 추가 함수 (최대 10개 유지)
+  const addChartData = (newDataPoints) => {
+    if (!Array.isArray(newDataPoints) || newDataPoints.length === 0) return
+    
+    setChartData(prev => {
+      // 기존 데이터와 새 데이터 합치기
+      const updated = [...prev, ...newDataPoints]
+      // 최대 10개만 유지 (가장 오래된 것 제거, 오른쪽이 최신)
+      const limited = updated.slice(-10)
+      
+      // 디버깅: 차트 데이터 상태 확인
+      console.log('[Monitoring] Chart data updated:', {
+        prevCount: prev.length,
+        newCount: newDataPoints.length,
+        totalCount: updated.length,
+        limitedCount: limited.length,
+        values: limited.map(d => ({ 
+          heartRate: d.heartRate, 
+          spo2: d.spo2, 
+          timestamp: d.timestamp 
+        }))
+      })
+      
+      return limited
+    })
+  }
+  
+  // 차트 데이터 초기화
+  const resetChartData = () => {
+    setChartData([])
+    setCurrentValues({
+      heartRate: 0,
+      spo2: 0,
+      temperature: 0,
+      battery: 0
+    })
+    measurementStartTimeRef.current = null
+    spo2NineCountRef.current = 0
+    
+    // localStorage 초기화
+    if (deviceInfoRef.current) {
+      const chartKey = getStorageKey('chartData')
+      const valuesKey = getStorageKey('currentValues')
+      const startTimeKey = getStorageKey('startTime')
+      localStorage.removeItem(chartKey)
+      localStorage.removeItem(valuesKey)
+      localStorage.removeItem(startTimeKey)
+    }
+  }
+  
+  // 디바이스 정보 로드
   useEffect(() => {
     const loadDeviceInfo = async () => {
-      if (!patientId) return;
+      if (!patientId) return
       
       try {
-        // 1. pet 정보 조회
-        const pet = await petService.getPet(patientId);
+        const pet = await petService.getPet(patientId)
         if (!pet || !pet.device_address) {
-          console.warn('[Monitoring] Pet has no device_address');
-          setDeviceConnectionStatus('disconnected');
-          return;
+          setDeviceConnectionStatus('disconnected')
+          return
         }
         
-        // 펫 정보 저장
-        setPetInfo(pet);
-        petInfoRef.current = pet; // ref에도 저장
+        setPetInfo(pet)
+        petInfoRef.current = pet
         
-        // 2. device 정보 조회
-        const device = await deviceService.getDevice(pet.device_address);
+        const device = await deviceService.getDevice(pet.device_address)
         if (device) {
-          setDeviceInfo(device);
-          deviceInfoRef.current = device; // ref에도 저장
-          console.log('[Monitoring] Loaded device info:', device);
+          setDeviceInfo(device)
+          deviceInfoRef.current = device
           
-          // 허브 상태 체크
-          if (device.hub_address && isConnected) {
-            const requestId = `state_check_${device.hub_address}_${Date.now()}`;
-            emit('CONTROL_REQUEST', {
-              hubId: device.hub_address,
-              deviceId: 'HUB',
-              command: {
-                raw_command: 'state:hub'
-              },
-              requestId
-            });
-          }
+          // 디바이스 정보 로드 후 localStorage 복구
+          setTimeout(() => {
+            restoreFromStorage()
+          }, 100)
         } else {
-          setDeviceConnectionStatus('disconnected');
+          setDeviceConnectionStatus('disconnected')
         }
       } catch (error) {
-        console.error('[Monitoring] Failed to load device info:', error);
-        setDeviceConnectionStatus('disconnected');
+        console.error('[Monitoring] Failed to load device info:', error)
+        setDeviceConnectionStatus('disconnected')
       }
-    };
-
-    loadDeviceInfo();
-  }, [patientId, isConnected, emit]); // patientId가 변경될 때만 실행
-
-  // 페이지 접속 시 주기적으로 허브 상태 체크
+    }
+    
+    loadDeviceInfo()
+  }, [patientId])
+  
+  // localStorage 자동 저장 (chartData, currentValues 변경 시)
   useEffect(() => {
-    if (!isConnected || !deviceInfo?.hub_address) return;
-
-    const checkHubState = () => {
-      const requestId = `state_check_${deviceInfo.hub_address}_${Date.now()}`;
-      emit('CONTROL_REQUEST', {
-        hubId: deviceInfo.hub_address,
-        deviceId: 'HUB',
-        command: {
-          raw_command: 'state:hub'
-        },
-        requestId
-      });
-    };
-
-    // 즉시 한 번 실행
-    checkHubState();
-
-    // 30초마다 상태 체크
-    const interval = setInterval(checkHubState, 30000);
-
-    return () => {
-      clearInterval(interval);
-    };
-  }, [isConnected, deviceInfo?.hub_address, emit]);
-
+    saveToStorage()
+  }, [chartData, currentValues, isMeasurementRunning])
+  
+  // 허브 상태 체크
+  useEffect(() => {
+    if (!isConnected || !deviceInfo?.hub_address || hasHubStateCheckedRef.current) return
+    
+    const requestId = `state_check_${deviceInfo.hub_address}_${Date.now()}`
+    emit('CONTROL_REQUEST', {
+      hubId: deviceInfo.hub_address,
+      deviceId: 'HUB',
+      command: {
+        raw_command: 'state:hub'
+      },
+      requestId
+    })
+    
+    hasHubStateCheckedRef.current = true
+  }, [isConnected, deviceInfo?.hub_address, emit])
+  
   // Socket.IO 이벤트 리스너 설정
   useEffect(() => {
     if (!isConnected) {
-      console.log('[Monitoring] Socket not connected yet');
-      return;
+      listenersRegisteredRef.current = false
+      return
     }
-
-    console.log('[Monitoring] Setting up Socket.IO listeners');
-
-    // TELEMETRY 데이터 수신
+    
+    if (listenersRegisteredRef.current) {
+      return
+    }
+    
+    listenersRegisteredRef.current = true
+    
+    // TELEMETRY 데이터 수신 핸들러
     const handleTelemetry = (data) => {
-      console.log('[Monitoring] Received TELEMETRY:', data);
+      if (data.type !== 'sensor_data' || !data.deviceId) return
       
-      if (data.type === 'sensor_data' && data.deviceId) {
-        // 디바이스 매칭 확인 (ref 사용으로 dependency 문제 해결)
-        const currentDeviceInfo = deviceInfoRef.current;
-        if (currentDeviceInfo && currentDeviceInfo.address !== data.deviceId) {
-          console.log(`[Monitoring] Ignoring TELEMETRY from device ${data.deviceId}, expecting ${currentDeviceInfo.address}`);
-          return; // 다른 디바이스의 데이터는 무시
+      const currentDeviceInfo = deviceInfoRef.current
+      if (currentDeviceInfo && currentDeviceInfo.address !== data.deviceId) {
+        return
+      }
+      
+      // 디바이스 연결 상태 업데이트
+      setDeviceConnectionStatus('connected')
+      setIsMeasurementRunning(true)
+      
+      // 신호처리 결과 처리
+      if (data.data?.processedHR !== undefined) {
+        setSignalProcessingStatus({
+          processedHR: data.data.processedHR,
+          originalHR: data.data.originalHR || null,
+          sqi: data.data.sqi || 0,
+          pi: data.data.pi || 0,
+          status: data.data.status || 'normal',
+          message: data.data.statusMessage || '정상 측정'
+        })
+      }
+      
+      // dataArr 처리 (배치 데이터)
+      if (data.data?.dataArr && Array.isArray(data.data.dataArr)) {
+        const parseStartTime = (startTimeStr) => {
+          if (!startTimeStr || startTimeStr.length < 9) {
+            const now = Date.now()
+            if (!measurementStartTimeRef.current) {
+              measurementStartTimeRef.current = now
+            }
+            return measurementStartTimeRef.current
+          }
+          
+          try {
+            const hours = parseInt(startTimeStr.substring(0, 2))
+            const minutes = parseInt(startTimeStr.substring(2, 4))
+            const seconds = parseInt(startTimeStr.substring(4, 6))
+            const milliseconds = parseInt(startTimeStr.substring(6, 9))
+            const today = new Date()
+            today.setHours(hours, minutes, seconds, milliseconds)
+            const startTimeMs = today.getTime()
+            
+            if (!measurementStartTimeRef.current) {
+              measurementStartTimeRef.current = startTimeMs
+            }
+            
+            return startTimeMs
+          } catch (e) {
+            const now = Date.now()
+            if (!measurementStartTimeRef.current) {
+              measurementStartTimeRef.current = now
+            }
+            return measurementStartTimeRef.current
+          }
         }
         
-        // deviceInfo가 없거나 매칭되면 데이터 처리
-        // 신호처리 결과 확인
-        if (data.data?.processedHR !== undefined) {
-          // 신호처리된 HR 사용
-          setSignalProcessingStatus({
-            processedHR: data.data.processedHR,
-            originalHR: data.data.originalHR || null,
-            sqi: data.data.sqi || 0,
-            pi: data.data.pi || 0,
-            status: data.data.status || 'normal',
-            message: data.data.statusMessage || '정상 측정'
-          });
-        }
-
-        // dataArr가 있는 경우 (배치 데이터)
-        if (data.data?.dataArr && Array.isArray(data.data.dataArr)) {
-          // start_time 파싱 (HHmmssSSS 형식)
-          const parseStartTime = (startTimeStr) => {
-            if (!startTimeStr || startTimeStr.length < 9) {
-              // start_time이 없으면 현재 시간 사용
-              const now = Date.now();
-              if (!measurementStartTimeRef.current) {
-                measurementStartTimeRef.current = now;
-              }
-              return measurementStartTimeRef.current;
-            }
-            try {
-              const hours = parseInt(startTimeStr.substring(0, 2));
-              const minutes = parseInt(startTimeStr.substring(2, 4));
-              const seconds = parseInt(startTimeStr.substring(4, 6));
-              const milliseconds = parseInt(startTimeStr.substring(6, 9));
-              const today = new Date();
-              today.setHours(hours, minutes, seconds, milliseconds);
-              const startTimeMs = today.getTime();
-              
-              // 측정 시작 시간 저장 (첫 번째 데이터인 경우)
-              if (!measurementStartTimeRef.current) {
-                measurementStartTimeRef.current = startTimeMs;
-              }
-              
-              return startTimeMs;
-            } catch (e) {
-              const now = Date.now();
-              if (!measurementStartTimeRef.current) {
-                measurementStartTimeRef.current = now;
-              }
-              return measurementStartTimeRef.current;
-            }
-          };
-
-          const startTimeStr = data.data.start_time || '000000000';
-          const startTimeMs = parseStartTime(startTimeStr);
-          const samplingRate = data.data.sampling_rate || 50;
-          
-          // 각 샘플마다 개별 데이터 포인트로 처리
-          // 시간 계산: start_time + (1 / sampling_rate * 250 * index)
-          const newData = data.data.dataArr.map((sample, index) => {
-            // 시간 계산: start_time + (1 / sampling_rate * 250 * index) 초
-            const elapsedSecondsFromStart = (1 / samplingRate) * 250 * index; // 초 단위
-            const sampleTime = startTimeMs + (elapsedSecondsFromStart * 1000); // 밀리초로 변환
-            
-            // 실제 시간 계산 (측정 시작 시간 + 경과 시간)
-            const actualTime = new Date(sampleTime);
-            const hours = actualTime.getHours();
-            const minutes = actualTime.getMinutes();
-            const seconds = actualTime.getSeconds();
-            const milliseconds = actualTime.getMilliseconds();
-            const timeString = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}:${String(milliseconds).padStart(3, '0')}`;
-            
-            // 허브에서 나오는 데이터: spo2와 hr이 바뀌어 있음
-            // 신호처리된 HR 우선 사용, 없으면 sample.hr 사용
-            const heartRate = data.data.processedHR !== undefined && data.data.processedHR !== null 
-              ? data.data.processedHR 
-              : (sample.hr || data.data.hr || 0);
-            
-            const spo2 = sample.spo2 !== null && sample.spo2 !== undefined ? sample.spo2 : (data.data.spo2 || 0);
-            
-            return {
-              timestamp: sampleTime,
-              elapsedSeconds: elapsedSecondsFromStart,
-              time: timeString,
-              ir: sample.ir || 0,
-              heartRate: heartRate,
-              spo2: spo2,
-              temperature: sample.temp !== null && sample.temp !== undefined ? sample.temp : (data.data.temp || 0),
-              battery: sample.battery || 0
-            };
-          });
-
-          // 최신 데이터로 현재 값 업데이트
-          if (newData.length > 0) {
-            const latest = newData[newData.length - 1];
-          setCurrentValues(prev => ({
-            heartRate: latest.heartRate,
-            spo2: latest.spo2,
-            temperature: latest.temperature,
-            battery: latest.battery !== 0 ? latest.battery : prev.battery
-          }));
-          
-          // 산포도가 9인지 체크 (2번 이상 연속으로 나오면 경고)
-          if (latest.spo2 === 9) {
-            spo2NineCountRef.current += 1;
-            if (spo2NineCountRef.current >= 2) {
-              // 펫 이름 가져오기
-              const petName = petInfoRef.current?.name || '강아지';
-              alert(`현재 연결된 ${petName}가 많이 움직이고 있어 정확한 측정이 어렵습니다.`);
-              spo2NineCountRef.current = 0; // 알림 후 리셋
-            }
-          } else {
-            // 산포도가 9가 아니면 카운터 리셋
-            spo2NineCountRef.current = 0;
-          }
-
-          // 시뮬레이션된 오류가 있으면 그것을 우선 사용, 없으면 실제 데이터에서 감지
-          // 신호처리된 HR이 있으면 그것을 사용
-          const hrForErrorDetection = data.data.processedHR !== undefined && data.data.processedHR !== null
-            ? data.data.processedHR
-            : latest.heartRate;
-          const error = simulatedError || detectHardwareError(hrForErrorDetection);
-          if (error) {
-            setHardwareAlerts([{
-              id: `alert-${data.deviceId}-${error.code}`,
-              deviceId: data.deviceId,
-              deviceName: deviceInfo?.name || data.deviceId,
-              deviceAddress: data.deviceId,
-              ...error,
-              timestamp: Date.now()
-            }]);
-          } else {
-            setHardwareAlerts([]);
-          }
-          }
-
-          // 각 샘플을 개별 데이터 포인트로 차트에 추가 (오른쪽에서 왼쪽으로 밀어주는 느낌)
-          if (newData.length > 0) {
-            setChartData(prev => {
-              // 기존 데이터와 새 데이터를 합치되, 같은 timestamp를 가진 데이터는 제거
-              const existingTimestamps = new Set(prev.map(d => d.timestamp));
-              const uniqueNewData = newData.filter(d => !existingTimestamps.has(d.timestamp));
-              const updated = [...prev, ...uniqueNewData];
-              // 시간 순서대로 정렬
-              const sorted = updated.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-              // 최근 데이터만 유지 (10개 정도 표시하기 위해 충분한 양 유지)
-              return sorted.slice(-50);
-            });
-          }
-        } else {
-          // 단일 샘플인 경우 또는 신호처리된 데이터
-          const heartRate = data.data?.processedHR !== undefined && data.data?.processedHR !== null
-            ? data.data.processedHR
-            : (data.data?.hr || 0);
-          
-          const spo2 = data.data?.spo2 || 0;
-          
-          // start_time이 있으면 파싱, 없으면 현재 시간 사용
-          const parseStartTime = (startTimeStr) => {
-            if (!startTimeStr || startTimeStr.length < 9) {
-              const now = Date.now();
-              if (!measurementStartTimeRef.current) {
-                measurementStartTimeRef.current = now;
-              }
-              return measurementStartTimeRef.current;
-            }
-            try {
-              const hours = parseInt(startTimeStr.substring(0, 2));
-              const minutes = parseInt(startTimeStr.substring(2, 4));
-              const seconds = parseInt(startTimeStr.substring(4, 6));
-              const milliseconds = parseInt(startTimeStr.substring(6, 9));
-              const today = new Date();
-              today.setHours(hours, minutes, seconds, milliseconds);
-              const startTimeMs = today.getTime();
-              
-              if (!measurementStartTimeRef.current) {
-                measurementStartTimeRef.current = startTimeMs;
-              }
-              
-              return startTimeMs;
-            } catch (e) {
-              const now = Date.now();
-              if (!measurementStartTimeRef.current) {
-                measurementStartTimeRef.current = now;
-              }
-              return measurementStartTimeRef.current;
-            }
-          };
-
-          const deviceTime = data.data?.start_time 
-            ? parseStartTime(data.data.start_time)
-            : (data.timestamp || data.data?.timestamp || Date.now());
-          
-          const elapsedMs = deviceTime - measurementStartTimeRef.current;
-          const elapsedSeconds = elapsedMs / 1000;
-          
-          // 경과 시간을 HH:MM:SS:SSS 형식으로 표시
-          const hours = Math.floor(elapsedSeconds / 3600);
-          const minutes = Math.floor((elapsedSeconds % 3600) / 60);
-          const seconds = Math.floor(elapsedSeconds % 60);
-          const milliseconds = Math.floor(elapsedMs % 1000);
-          const timeString = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}:${String(milliseconds).padStart(3, '0')}`;
-          
-          const sample = {
-            timestamp: deviceTime,
-            elapsedSeconds: elapsedSeconds,
-            time: timeString,
-            ir: data.data?.ir || 0,
-            heartRate: heartRate,
-            spo2: spo2,
-            temperature: data.data?.temp || 0,
-            battery: data.data?.battery || 0
-          };
-
-          setCurrentValues(prev => ({
-            heartRate: sample.heartRate,
-            spo2: sample.spo2,
-            temperature: sample.temperature,
-            battery: sample.battery !== 0 ? sample.battery : prev.battery
-          }));
-          
-          // 산포도가 9인지 체크 (2번 이상 연속으로 나오면 경고)
-          if (sample.spo2 === 9) {
-            spo2NineCountRef.current += 1;
-            if (spo2NineCountRef.current >= 2) {
-              // 펫 이름 가져오기
-              const petName = petInfoRef.current?.name || '강아지';
-              alert(`현재 연결된 ${petName}가 많이 움직이고 있어 정확한 측정이 어렵습니다.`);
-              spo2NineCountRef.current = 0; // 알림 후 리셋
-            }
-          } else {
-            // 산포도가 9가 아니면 카운터 리셋
-            spo2NineCountRef.current = 0;
-          }
-
-          // 시뮬레이션된 오류가 있으면 그것을 우선 사용, 없으면 실제 데이터에서 감지
-          const error = simulatedError || detectHardwareError(sample.heartRate);
-          if (error) {
-            setHardwareAlerts([{
-              id: `alert-${data.deviceId}-${error.code}`,
-              deviceId: data.deviceId,
-              deviceName: deviceInfo?.name || data.deviceId,
-              deviceAddress: data.deviceId,
-              ...error,
-              timestamp: Date.now()
-            }]);
-          } else {
-            setHardwareAlerts([]);
-          }
-
-          // 단일 샘플도 차트에 추가 (중복 제거)
-          setChartData(prev => {
-            const existingTimestamps = new Set(prev.map(d => d.timestamp));
-            if (!existingTimestamps.has(sample.timestamp)) {
-              const updated = [...prev, sample];
-              // 최근 100개만 유지 (10칸 기준으로 충분)
-              return updated.slice(-100);
-            }
-            return prev;
-          });
-        }
-      }
-    };
-
-    // DEVICE_STATUS 수신
-    const handleDeviceStatus = (data) => {
-      console.log('[Monitoring] Received DEVICE_STATUS:', data);
-      setDeviceInfo(data);
-    };
-
-    // MQTT_READY 메시지 수신 (디바이스 검색 모달 트리거)
-    const handleMqttReady = (data) => {
-      console.log('[Monitoring] Received MQTT_READY:', data);
-      if (data.message && data.message.includes('mqtt ready')) {
-        // TODO: 디바이스 검색 모달 표시
-        console.log('[Monitoring] 디바이스 검색 모달 표시 필요');
-        alert('디바이스 검색을 시작합니다.');
-      }
-    };
-
-    // CONTROL_RESULT 수신 (명령 실행 결과)
-    const handleControlResult = (data) => {
-      console.log('[Monitoring] Received CONTROL_RESULT:', data);
-      
-      // 현재 경로가 Monitoring 페이지인지 확인
-      const currentPath = window.location.pathname;
-      if (!currentPath.includes('/monitoring/')) {
-        // Monitoring 페이지가 아니면 무시
-        console.log('[Monitoring] Ignoring CONTROL_RESULT (not on monitoring page)');
-        return;
-      }
-      
-      if (data.success) {
-        const command = data.data?.command || data.command || {};
-        console.log('[Monitoring] Command result success, command:', command);
+        const startTimeStr = data.data.start_time || '000000000'
+        const startTimeMs = parseStartTime(startTimeStr)
+        const samplingRate = data.data.sampling_rate || 50
         
-        if (command.action === 'start_measurement') {
-          setIsMeasurementRunning(true);
-          measurementStartTimeRef.current = null; // 측정 시작 시간 리셋
-          spo2NineCountRef.current = 0; // 산포도 9 카운터 리셋
-          setChartData([]); // 차트 데이터 초기화
-          console.log('[Monitoring] 측정이 시작되었습니다.');
-        } else if (command.action === 'stop_measurement') {
-          setIsMeasurementRunning(false);
-          spo2NineCountRef.current = 0; // 산포도 9 카운터 리셋
-          console.log('[Monitoring] 측정이 정지되었습니다.');
-        } else if (command.action === 'check_hub_state') {
-          // 상태 체크 명령은 응답을 CONNECTED_DEVICES로 받음
-          console.log('[Monitoring] 허브 상태 확인 명령 전송됨');
+        // 각 샘플을 데이터 포인트로 변환
+        // dataArr의 각 샘플은 { hr, spo2, temp, battery, timestamp, index } 형태
+        const baseHr = sanitizeValue(data.data.hr || 0)
+        const baseSpo2 = sanitizeValue(data.data.spo2 || 0)
+        const baseTemp = sanitizeValue(data.data.temp || 0)
+        
+        // 각 배치에서 마지막 샘플만 차트 포인트로 추가 (10개의 포인트가 시간 순서대로 쌓이도록)
+        const lastSample = data.data.dataArr[data.data.dataArr.length - 1]
+        const lastIndex = data.data.dataArr.length - 1
+        const elapsedSecondsFromStart = (1 / samplingRate) * 250 * lastIndex
+        const sampleTime = startTimeMs + (elapsedSecondsFromStart * 1000)
+        
+        // 샘플에서 직접 값을 가져오되, 없으면 전체 데이터에서 가져옴
+        const rawHr = sanitizeValue((lastSample.hr !== undefined && lastSample.hr !== null) ? lastSample.hr : baseHr)
+        const rawSpo2 = sanitizeValue((lastSample.spo2 !== undefined && lastSample.spo2 !== null) ? lastSample.spo2 : baseSpo2)
+        
+        // 화면 표시: spo2를 심박수에, hr을 산포도에
+        const heartRateDisplay = sanitizeValue(rawSpo2)
+        const spo2Display = sanitizeValue(rawHr)
+        
+        const newDataPoint = {
+          timestamp: sampleTime,
+          elapsedSeconds: elapsedSecondsFromStart,
+          heartRate: heartRateDisplay,
+          spo2: spo2Display,
+          temperature: sanitizeValue((lastSample.temp !== undefined && lastSample.temp !== null) ? lastSample.temp : baseTemp),
+          battery: sanitizeValue((lastSample.battery !== undefined && lastSample.battery !== null) ? lastSample.battery : (data.data.battery || 0))
+        }
+        
+        // 디버깅: 추가되는 포인트 확인
+        console.log('[Monitoring] Adding chart point:', {
+          heartRate: newDataPoint.heartRate,
+          spo2: newDataPoint.spo2,
+          timestamp: newDataPoint.timestamp,
+          rawHr,
+          rawSpo2,
+          lastSampleHr: lastSample.hr,
+          lastSampleSpo2: lastSample.spo2
+        })
+        
+        // 차트 데이터 추가 (최대 10개 유지, 각 배치마다 하나의 포인트만 추가)
+        addChartData([newDataPoint])
+        
+        // 현재값 업데이트 (최신 데이터)
+        setCurrentValues(prev => ({
+          heartRate: newDataPoint.heartRate,
+          spo2: newDataPoint.spo2,
+          temperature: newDataPoint.temperature,
+          battery: newDataPoint.battery !== 0 ? newDataPoint.battery : prev.battery
+        }))
+        
+        // 경고/오류 감지 (실제 값 사용)
+        const lastRawHr = lastSample.hr || data.data.hr || 0
+        const lastRawSpo2 = (lastSample.spo2 !== null && lastSample.spo2 !== undefined)
+          ? lastSample.spo2
+          : (data.data.spo2 || 0)
+          
+        // SpO2 경고
+        if (lastRawSpo2 === 9) {
+          spo2NineCountRef.current += 1
+          if (spo2NineCountRef.current >= 2) {
+            const petName = petInfoRef.current?.name || '강아지'
+            alert(`현재 연결된 ${petName}가 많이 움직이고 있어 정확한 측정이 어렵습니다.`)
+            spo2NineCountRef.current = 0
+          }
         } else {
-          console.log('[Monitoring] 명령이 성공적으로 실행되었습니다.');
+          spo2NineCountRef.current = 0
+        }
+        
+        // 하드웨어 오류 감지
+        const hrForErrorDetection = data.data.processedHR !== undefined && data.data.processedHR !== null
+          ? data.data.processedHR
+          : lastRawHr
+        const error = detectHardwareError(hrForErrorDetection)
+        if (error) {
+          setHardwareAlerts([{
+            id: `alert-${data.deviceId}-${error.code}`,
+            deviceId: data.deviceId,
+            deviceName: deviceInfo?.name || data.deviceId,
+            deviceAddress: data.deviceId,
+            ...error,
+            timestamp: Date.now()
+          }])
+        } else {
+          setHardwareAlerts([])
         }
       } else {
-        // 에러 메시지에서 타임아웃 관련 메시지 필터링
-        const errorMsg = data.error || '알 수 없는 오류';
-        if (errorMsg.includes('timeout') || errorMsg.includes('타임아웃')) {
-          console.error('[Monitoring] Command timeout error:', errorMsg);
-          alert(`명령 실행 실패: ${errorMsg}\n\nmqtt-monitor 서버가 실행 중인지 확인해주세요.`);
+        // 단일 샘플 처리
+        const rawHr = data.data?.hr || 0
+        const rawSpo2 = data.data?.spo2 || 0
+        
+        const heartRateDisplay = (data.data?.processedHR !== undefined && data.data?.processedHR !== null)
+          ? data.data.processedHR
+          : rawSpo2
+        
+        const spo2Display = rawHr
+        
+        const now = Date.now()
+        if (!measurementStartTimeRef.current) {
+          measurementStartTimeRef.current = now
+        }
+        
+        const newPoint = {
+          timestamp: now,
+          elapsedSeconds: (now - measurementStartTimeRef.current) / 1000,
+          heartRate: heartRateDisplay,
+          spo2: spo2Display,
+          temperature: data.data?.temp || 0,
+          battery: data.data?.battery || 0
+        }
+        
+        // 차트 데이터 추가 (최대 10개 유지)
+        addChartData([newPoint])
+        
+        setCurrentValues({
+          heartRate: newPoint.heartRate,
+          spo2: newPoint.spo2,
+          temperature: newPoint.temperature,
+          battery: newPoint.battery !== 0 ? newPoint.battery : currentValues.battery
+        })
+        
+        // 경고/오류 감지
+        if (rawSpo2 === 9) {
+          spo2NineCountRef.current += 1
+          if (spo2NineCountRef.current >= 2) {
+            const petName = petInfoRef.current?.name || '강아지'
+            alert(`현재 연결된 ${petName}가 많이 움직이고 있어 정확한 측정이 어렵습니다.`)
+            spo2NineCountRef.current = 0
+          }
         } else {
-          alert(`명령 실행 실패: ${errorMsg}`);
+          spo2NineCountRef.current = 0
+        }
+        
+        const hrForError = (data.data?.processedHR !== undefined && data.data?.processedHR !== null)
+          ? data.data.processedHR
+          : rawHr
+        const error = detectHardwareError(hrForError)
+        if (error) {
+          setHardwareAlerts([{
+            id: `alert-${data.deviceId}-${error.code}`,
+            deviceId: data.deviceId,
+            deviceName: deviceInfo?.name || data.deviceId,
+            deviceAddress: data.deviceId,
+            ...error,
+            timestamp: Date.now()
+          }])
+        } else {
+          setHardwareAlerts([])
         }
       }
-    };
-
-    // 연결된 디바이스 목록 수신 (state:hub 응답)
-    const handleConnectedDevices = (payload) => {
-      const hubAddress = payload.hubAddress;
-      const connectedDevices = payload.connected_devices || [];
-
-      if (hubAddress === deviceInfoRef.current?.hub_address) {
-        setHubStatus(true);
-        
-        // 현재 디바이스가 연결되어 있는지 확인
-        const normalizeMac = (mac) => mac.replace(/[:-]/g, '').toUpperCase();
-        const currentDeviceMac = normalizeMac(deviceInfoRef.current?.address || '');
-        const isConnected = connectedDevices.some(mac => normalizeMac(mac) === currentDeviceMac);
-        
-        setDeviceConnectionStatus(isConnected ? 'connected' : 'disconnected');
-      }
-    };
-
-    // 이벤트 리스너 등록
-    on('TELEMETRY', handleTelemetry);
-    on('DEVICE_STATUS', handleDeviceStatus);
-    on('CONTROL_RESULT', handleControlResult);
-    on('MQTT_READY', handleMqttReady);
-    on('CONNECTED_DEVICES', handleConnectedDevices);
-
-    // 정리 함수
-    return () => {
-      off('TELEMETRY', handleTelemetry);
-      off('DEVICE_STATUS', handleDeviceStatus);
-      off('CONTROL_RESULT', handleControlResult);
-      off('MQTT_READY', handleMqttReady);
-      off('CONNECTED_DEVICES', handleConnectedDevices);
-    };
-  }, [isConnected, patientId, on, off, simulatedError]); // deviceInfo 제거
-
-  // 랜덤 오류 시뮬레이션
-  useEffect(() => {
-    if (!isErrorSimulationActive) {
-      // 시뮬레이션이 비활성화되면 정리
-      if (simulationIntervalRef.current) {
-        clearInterval(simulationIntervalRef.current);
-        simulationIntervalRef.current = null;
-      }
-      if (errorDurationRef.current) {
-        clearTimeout(errorDurationRef.current);
-        errorDurationRef.current = null;
-      }
-      setSimulatedError(null);
-      setHardwareAlerts([]);
-      return;
     }
-
-    // 랜덤 오류 발생 함수
-    const triggerRandomError = () => {
-      // 랜덤하게 오류 발생 (30% 확률)
-      if (Math.random() < 0.3) {
-        const errorCodes = [
-          { code: 'hr:7', type: 'warning', message: '배터리가 부족하니 충전을 해라.' },
-          { code: 'hr:8', type: 'error', message: '신호가 불량하니 다시 해라' },
-          { code: 'hr:9', type: 'info', message: '날뛰고 있어 신호가 안나오니 참고해라' }
-        ];
+    
+    // CONNECTED_DEVICES 핸들러
+    const handleConnectedDevices = (payload) => {
+      const hubAddress = payload.hubAddress
+      const connectedDevices = payload.connected_devices || []
+      
+      if (hubAddress === deviceInfoRef.current?.hub_address) {
+        setHubStatus(true)
         
-        const randomError = errorCodes[Math.floor(Math.random() * errorCodes.length)];
-        setSimulatedError(randomError);
-
-        // 오류 알림 생성
-        setHardwareAlerts([{
-          id: `simulated-alert-${Date.now()}`,
-          deviceId: patientId || 'test-device',
-          deviceName: deviceInfo?.name || '테스트 디바이스',
-          deviceAddress: patientId || 'TEST:00:00:00:00:00',
-          ...randomError,
-          timestamp: Date.now()
-        }]);
-
-        // 5-15초 후 자동으로 정상 복귀
-        const errorDuration = 5000 + Math.random() * 10000; // 5-15초
-        errorDurationRef.current = setTimeout(() => {
-          setSimulatedError(null);
-          setHardwareAlerts([]);
-        }, errorDuration);
+        const normalizeMac = (mac) => mac.replace(/[:-]/g, '').toUpperCase()
+        const currentDeviceMac = normalizeMac(deviceInfoRef.current?.address || '')
+        const isConnected = connectedDevices.some(mac => normalizeMac(mac) === currentDeviceMac)
+        
+        setDeviceConnectionStatus(isConnected ? 'connected' : 'disconnected')
       }
-    };
-
-    // 처음 한 번 실행
-    triggerRandomError();
-
-    // 10-30초마다 랜덤 오류 발생 시도
-    const interval = 10000 + Math.random() * 20000; // 10-30초
-    simulationIntervalRef.current = setInterval(triggerRandomError, interval);
-
+    }
+    
+    // CONTROL_RESULT 핸들러
+    const handleControlResult = (data) => {
+      if (!data.success) return
+      
+      const command = data.data?.command || data.command || {}
+      
+      if (command.action === 'start_measurement') {
+        // 측정 시작: 데이터 초기화
+        resetChartData()
+        setIsMeasurementRunning(true)
+      } else if (command.action === 'stop_measurement') {
+        setIsMeasurementRunning(false)
+        spo2NineCountRef.current = 0
+      }
+    }
+    
+    // 이벤트 리스너 등록
+    on('TELEMETRY', handleTelemetry)
+    on('CONNECTED_DEVICES', handleConnectedDevices)
+    on('CONTROL_RESULT', handleControlResult)
+    
     return () => {
-      if (simulationIntervalRef.current) {
-        clearInterval(simulationIntervalRef.current);
-        simulationIntervalRef.current = null;
-      }
-      if (errorDurationRef.current) {
-        clearTimeout(errorDurationRef.current);
-        errorDurationRef.current = null;
-      }
-    };
-  }, [isErrorSimulationActive, patientId, deviceInfo]);
-
-  const handleToggleErrorSimulation = () => {
-    setIsErrorSimulationActive(prev => !prev);
-  };
-
-
-
-  // 디바이스 제어 함수
+      off('TELEMETRY', handleTelemetry)
+      off('CONNECTED_DEVICES', handleConnectedDevices)
+      off('CONTROL_RESULT', handleControlResult)
+      listenersRegisteredRef.current = false
+    }
+  }, [isConnected, on, off, deviceInfo])
+  
+  // 측정 제어 함수
   const sendControlCommand = async (command) => {
     if (!isConnected) {
-      alert('Socket이 연결되지 않았습니다.');
-      return;
+      alert('Socket이 연결되지 않았습니다.')
+      return
     }
-
-    const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
-    // 측정 시작/정지 명령
-    if (command.action === 'start_measurement' || command.action === 'stop_measurement') {
-      // 디바이스 정보 가져오기
-      let deviceMacAddress = null;
-      let hubId = null;
-      
-      // deviceInfo가 있으면 사용
-      if (deviceInfo && deviceInfo.hub_address) {
-        hubId = deviceInfo.hub_address;
-        deviceMacAddress = deviceInfo.address;
-      } else if (patientId) {
-        // patientId는 pet의 ID이므로, pet 테이블에서 device_address를 가져온 다음 device 조회
-        try {
-          // 1. pet 정보 조회
-          const pet = await petService.getPet(patientId);
-          if (!pet || !pet.device_address) {
-            alert('환자에 연결된 디바이스를 찾을 수 없습니다.');
-            return;
-          }
-          
-          // 2. device 정보 조회 (사용자 email 확인 포함)
-          const device = await deviceService.getDevice(pet.device_address);
-          if (!device || !device.hub_address) {
-            alert('디바이스 정보를 찾을 수 없습니다.');
-            return;
-          }
-          
-          hubId = device.hub_address;
-          deviceMacAddress = device.address;
-          
-          // deviceInfo 업데이트
-          setDeviceInfo(device);
-        } catch (error) {
-          console.error('[Monitoring] Failed to get device info:', error);
-          alert('디바이스 정보를 가져오는데 실패했습니다.');
-          return;
+    let deviceMacAddress = null
+    let hubId = null
+    
+    if (deviceInfo && deviceInfo.hub_address) {
+      hubId = deviceInfo.hub_address
+      deviceMacAddress = deviceInfo.address
+    } else if (patientId) {
+      try {
+        const pet = await petService.getPet(patientId)
+        if (!pet || !pet.device_address) {
+          alert('환자에 연결된 디바이스를 찾을 수 없습니다.')
+          return
         }
+        
+        const device = await deviceService.getDevice(pet.device_address)
+        if (!device || !device.hub_address) {
+          alert('디바이스 정보를 찾을 수 없습니다.')
+          return
+        }
+        
+        hubId = device.hub_address
+        deviceMacAddress = device.address
+        setDeviceInfo(device)
+      } catch (error) {
+        console.error('[Monitoring] Failed to get device info:', error)
+        alert('디바이스 정보를 가져오는데 실패했습니다.')
+        return
       }
-      
-      if (!hubId) {
-        alert('디바이스의 허브 정보를 찾을 수 없습니다.');
-        return;
-      }
-      
-      const measurementCommand = command.action === 'start_measurement' 
+    }
+    
+    if (!hubId) {
+      alert('디바이스의 허브 정보를 찾을 수 없습니다.')
+      return
+    }
+    
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    
+    if (command.action === 'start_measurement' || command.action === 'stop_measurement') {
+      const measurementCommand = command.action === 'start_measurement'
         ? `start:${deviceMacAddress}`
-        : `stop:${deviceMacAddress}`;
-      
-      console.log(`[Monitoring] 📤 Sending ${command.action} command:`, {
-        hubId,
-        deviceId: deviceMacAddress,
-        command: measurementCommand
-      });
+        : `stop:${deviceMacAddress}`
       
       // CSV 세션 시작/종료
       try {
-        const now = new Date();
-        const startTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}:${String(now.getMilliseconds()).padStart(3, '0')}`;
+        const now = new Date()
+        const startTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}:${String(now.getMilliseconds()).padStart(3, '0')}`
         
         if (command.action === 'start_measurement') {
           const response = await fetch('http://localhost:5000/api/measurement/start', {
@@ -648,14 +566,14 @@ function Monitoring() {
             },
             body: JSON.stringify({
               deviceAddress: deviceMacAddress,
-              userEmail: 'test@example.com', // TODO: 실제 사용자 이메일로 변경
-              petName: '테스트펫', // TODO: 실제 펫 이름으로 변경
+              userEmail: 'test@example.com',
+              petName: petInfo?.name || '테스트펫',
               startTime
             })
-          });
-          const result = await response.json();
+          })
+          const result = await response.json()
           if (!result.success) {
-            console.error('[Monitoring] Failed to start CSV session:', result.message);
+            console.error('[Monitoring] Failed to start CSV session:', result.message)
           }
         } else {
           const response = await fetch('http://localhost:5000/api/measurement/stop', {
@@ -666,17 +584,16 @@ function Monitoring() {
             body: JSON.stringify({
               deviceAddress: deviceMacAddress
             })
-          });
-          const result = await response.json();
+          })
+          const result = await response.json()
           if (!result.success) {
-            console.error('[Monitoring] Failed to stop CSV session:', result.message);
+            console.error('[Monitoring] Failed to stop CSV session:', result.message)
           }
         }
       } catch (error) {
-        console.error(`[Monitoring] Error ${command.action} CSV session:`, error);
+        console.error(`[Monitoring] Error ${command.action} CSV session:`, error)
       }
       
-      // Socket.IO로 제어 명령 전송
       emit('CONTROL_REQUEST', {
         hubId,
         deviceId: deviceMacAddress,
@@ -685,102 +602,247 @@ function Monitoring() {
           raw_command: measurementCommand
         },
         requestId
-      });
-    } else {
-      // 기타 명령은 그대로 전송
-      console.log('[Monitoring] 📤 Sending MQTT command:', command);
-      emit('CONTROL_REQUEST', {
-        hubId: '', // 임시 값
-        deviceId: patientId || '', // 임시 값
-        command,
-        requestId
-      });
+      })
     }
-  };
-
-  const getChartData = () => {
-    if (!chartData || chartData.length === 0) return [];
-    
-    // activeTab에 따라 올바른 필드 선택
-    let valueField = 'heartRate';
-    if (activeTab === 'spo2') {
-      valueField = 'spo2';
-    } else if (activeTab === 'temperature') {
-      valueField = 'temperature';
-    } else if (activeTab === 'heartRate') {
-      valueField = 'heartRate';
-    }
-
-    // 데이터 필터링 및 정렬 (시간 순서대로)
-    const validData = chartData
-      .map(d => ({
-        timestamp: d.timestamp,
-        elapsedSeconds: d.elapsedSeconds || 0,
-        value: d[valueField],
-        time: d.time
-      }))
-      .filter(d => d.value !== null && d.value !== undefined && !isNaN(d.value))
-      .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)); // 시간 순서대로 정렬
-
-    // 최근 10개 데이터만 선택 (오른쪽이 최신, 왼쪽이 오래된 정보)
-    const recentData = validData.slice(-10);
-    
-    // 10칸 기준으로 데이터 매핑 (왼쪽이 1번=오래된 정보, 오른쪽이 10번=최신 정보)
-    const chartDataArray = recentData.map((data, index) => {
-      return {
-        slotNumber: index + 1, // 1~10 (왼쪽부터)
-        timestamp: data.timestamp,
-        elapsedSeconds: data.elapsedSeconds,
-        value: data.value,
-        time: data.time // 실제 시간 (HH:MM:SS:SSS 형식)
-      };
-    });
-    
-    return chartDataArray;
   }
-
-  const renderChart = () => {
-    const data = getChartData();
+  
+  // 시간 포맷 변환: timestamp -> HH:mm:ss:SSS
+  const formatTime = (timestamp) => {
+    if (!timestamp || isNaN(timestamp)) return '00:00:00:000'
     
-    // 빈 그래프 표시 (데이터가 없어도 그래프 표는 보여줌)
+    const date = new Date(timestamp)
+    if (isNaN(date.getTime())) return '00:00:00:000'
+    
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    const seconds = String(date.getSeconds()).padStart(2, '0')
+    const milliseconds = String(date.getMilliseconds()).padStart(3, '0')
+    
+    return `${hours}:${minutes}:${seconds}:${milliseconds}`
+  }
+  
+  // 값 유효성 검사 및 정규화 (NaN, Infinity, undefined 방어)
+  const sanitizeValue = (value) => {
+    if (value === null || value === undefined) return 0
+    if (typeof value !== 'number') {
+      const num = Number(value)
+      if (isNaN(num) || !isFinite(num)) return 0
+      return num
+    }
+    if (isNaN(value) || !isFinite(value)) return 0
+    return value
+  }
+  
+  // 차트 데이터 가져오기 (activeTab에 따라)
+  const getChartDataForDisplay = () => {
+    if (chartData.length === 0) return []
+    
+    let valueField = 'heartRate'
+    if (activeTab === 'spo2') {
+      valueField = 'spo2'
+    } else if (activeTab === 'temperature') {
+      valueField = 'temperature'
+    }
+    
+    const result = chartData.map((d, index) => {
+      const rawValue = d[valueField]
+      const validValue = sanitizeValue(rawValue)
+      
+      return {
+        index,
+        value: validValue,
+        timestamp: d.timestamp,
+        timeString: formatTime(d.timestamp)
+      }
+    })
+    
+    return result
+  }
+  
+  // 그래프 Y축 범위 계산 (데이터 기반 동적 범위)
+  const calculateYAxisRange = (data) => {
+    if (data.length === 0) {
+      // 기본값 (탭에 따라 다름)
+      if (activeTab === 'heartRate') {
+        return { min: 0, max: 200, effectiveMin: 0, effectiveMax: 200 }
+      } else if (activeTab === 'spo2') {
+        return { min: 0, max: 100, effectiveMin: 0, effectiveMax: 100 }
+      } else if (activeTab === 'temperature') {
+        return { min: 30, max: 45, effectiveMin: 30, effectiveMax: 45 }
+      }
+      return { min: 0, max: 250, effectiveMin: 0, effectiveMax: 250 }
+    }
+    
+    // 실제 데이터 값 추출
+    const values = data.map(d => d.value).filter(v => isFinite(v) && !isNaN(v))
+    
+    if (values.length === 0) {
+      // 기본값
+      if (activeTab === 'heartRate') {
+        return { min: 0, max: 200, effectiveMin: 0, effectiveMax: 200 }
+      } else if (activeTab === 'spo2') {
+        return { min: 0, max: 100, effectiveMin: 0, effectiveMax: 100 }
+      } else if (activeTab === 'temperature') {
+        return { min: 30, max: 45, effectiveMin: 30, effectiveMax: 45 }
+      }
+      return { min: 0, max: 250, effectiveMin: 0, effectiveMax: 250 }
+    }
+    
+    let min = Math.min(...values)
+    let max = Math.max(...values)
+    
+    // 모든 값이 같을 때 처리
+    if (min === max) {
+      if (activeTab === 'heartRate') {
+        // 심박수: ±10% 범위 또는 최소 20 범위
+        const center = min
+        const range = Math.max(Math.abs(center) * 0.1, 10)
+        min = Math.max(0, center - range)
+        max = center + range
+      } else if (activeTab === 'spo2') {
+        // 산포도: ±5% 범위 또는 최소 10 범위
+        const center = min
+        const range = Math.max(Math.abs(center) * 0.05, 5)
+        min = Math.max(0, center - range)
+        max = Math.min(100, center + range)
+      } else if (activeTab === 'temperature') {
+        // 온도: ±2도 범위
+        const center = min
+        min = Math.max(30, center - 2)
+        max = Math.min(45, center + 2)
+      } else {
+        const range = Math.max(Math.abs(min) * 0.1, 1)
+        min = min - range
+        max = max + range
+      }
+    }
+    
+    // 패딩 추가 (10% 여유)
+    const range = max - min
+    const padding = range * 0.1
+    let effectiveMin = min - padding
+    let effectiveMax = max + padding
+    
+    // 탭별 최소/최대 범위 제한
+    if (activeTab === 'heartRate') {
+      effectiveMin = Math.max(0, effectiveMin)
+      effectiveMax = Math.min(250, effectiveMax)
+    } else if (activeTab === 'spo2') {
+      effectiveMin = Math.max(0, effectiveMin)
+      effectiveMax = Math.min(100, effectiveMax)
+    } else if (activeTab === 'temperature') {
+      effectiveMin = Math.max(25, effectiveMin)
+      effectiveMax = Math.min(50, effectiveMax)
+    }
+    
+    return { min, max, effectiveMin, effectiveMax }
+  }
+  
+  // SVG 좌표 계산 (NaN, Infinity 방어)
+  const calculateChartPoints = (data, yAxisRange) => {
+    if (data.length === 0) return []
+    
+    const { effectiveMin, effectiveMax } = yAxisRange
+    const chartHeight = 260
+    const chartTop = 10
+    const chartBottom = 270
+    const chartWidth = 800
+    
+    const points = data.map((d, i) => {
+      // X 좌표 계산
+      const x = data.length > 1
+        ? (i / (data.length - 1)) * chartWidth
+        : chartWidth / 2
+      
+      // 값 정규화 (0~1 범위)
+      const range = effectiveMax - effectiveMin
+      const normalized = range !== 0
+        ? (d.value - effectiveMin) / range
+        : 0.5
+      
+      // Y 좌표 계산 (상단이 max, 하단이 min)
+      const y = chartBottom - (normalized * chartHeight)
+      
+      // 좌표 유효성 검사
+      const validX = isFinite(x) && !isNaN(x) ? Math.max(0, Math.min(chartWidth, x)) : chartWidth / 2
+      const validY = isFinite(y) && !isNaN(y) ? Math.max(chartTop, Math.min(chartBottom, y)) : chartBottom
+      
+      return { x: validX, y: validY, value: d.value, timeString: d.timeString }
+    })
+    
+    return points
+  }
+  
+  // SVG 차트 렌더링
+  const renderChart = () => {
+    const data = getChartDataForDisplay()
+    const chartTop = 10
+    const chartBottom = 270
+    const chartWidth = 800
+  
+    // 빈 데이터일 때 그리드와 Y축 레이블만 표시
     if (data.length === 0) {
       return (
         <>
-          {/* 그리드 라인만 표시 */}
           {[0, 1, 2, 3, 4].map(i => (
             <line
               key={`grid-${i}`}
               x1="0"
-              y1={10 + i * 70}
-              x2="800"
-              y2={10 + i * 70}
+              y1={chartTop + i * 65}
+              x2={chartWidth}
+              y2={chartTop + i * 65}
               stroke="#e0e0e0"
               strokeWidth="1"
               strokeDasharray="5,5"
             />
           ))}
+          {/* Y축 레이블 (기본값) */}
+          {[0, 1, 2, 3, 4].map(i => {
+            let value = 0
+            if (activeTab === 'heartRate') {
+              value = 200 - (i * 50) // 200, 150, 100, 50, 0
+            } else if (activeTab === 'spo2') {
+              value = 100 - (i * 25) // 100, 75, 50, 25, 0
+            } else if (activeTab === 'temperature') {
+              value = 45 - (i * 3.75) // 45, 41.25, 37.5, 33.75, 30
+            } else {
+              value = 250 - (i * 50)
+            }
+            return (
+              <text
+                key={`label-${i}`}
+                x="5"
+                y={chartTop + 5 + i * 65}
+                fill="#666"
+                fontSize="12"
+              >
+                {activeTab === 'temperature' ? value.toFixed(1) : value.toFixed(0)}
+              </text>
+            )
+          })}
         </>
-      );
+      )
     }
+  
+    // Y축 범위 계산 (데이터 기반 동적 범위)
+    const yAxisRange = calculateYAxisRange(data)
+    const { effectiveMin, effectiveMax } = yAxisRange
 
-    // Y축 범위를 0~250으로 고정
-    const effectiveMin = 0;
-    const effectiveMax = 250;
-
-    // slotNumber 기준으로 정렬 (1~10 순서, 왼쪽이 1번, 오른쪽이 10번)
-    const sortedData = [...data].sort((a, b) => (a.slotNumber || 0) - (b.slotNumber || 0));
-
-    // 포인트 생성 (10칸에 맞춰 균등 배치, 왼쪽이 1번, 오른쪽이 10번)
-    const points = sortedData.map((d, i) => {
-      // 10칸 기준으로 x 위치 계산
-      // 데이터가 10개 미만일 때도 올바르게 배치
-      const totalSlots = Math.max(10, sortedData.length);
-      const slotIndex = (d.slotNumber || (i + 1)) - 1; // 1~10을 0~9로 변환
-      const x = totalSlots > 1 ? (slotIndex / (totalSlots - 1)) * 800 : 400;
-      const normalizedValue = (d.value - effectiveMin) / (effectiveMax - effectiveMin);
-      const y = 280 - (normalizedValue * 260); // 10px 여백, 260px 그래프 영역
-      return `${x},${Math.max(10, Math.min(290, y))}`; // Y 범위 제한
-    }).join(' ');
+    // 차트 포인트 계산
+    const points = calculateChartPoints(data, yAxisRange)
+    
+    // 디버깅: 렌더링되는 데이터 확인
+    console.log('[Monitoring] Rendering chart:', {
+      tab: activeTab,
+      dataCount: data.length,
+      dataValues: data.map(d => ({ value: d.value, time: d.timeString })),
+      yAxisRange: { min: yAxisRange.min, max: yAxisRange.max, effectiveMin, effectiveMax },
+      pointsCount: points.length,
+      pointsCoords: points.map(p => ({ x: p.x.toFixed(2), y: p.y.toFixed(2), value: p.value }))
+    })
+    
+    // polyline points 문자열 생성
+    const pointsString = points.map(p => `${p.x},${p.y}`).join(' ')
 
     return (
       <>
@@ -789,89 +851,82 @@ function Monitoring() {
           <line
             key={`grid-${i}`}
             x1="0"
-            y1={10 + i * 70}
-            x2="800"
-            y2={10 + i * 70}
+            y1={chartTop + i * 65}
+            x2={chartWidth}
+            y2={chartTop + i * 65}
             stroke="#e0e0e0"
             strokeWidth="1"
             strokeDasharray="5,5"
           />
         ))}
-        
-        {/* Y축 레이블 (0~250 범위) */}
+
+        {/* Y축 레이블 (동적 범위 기반) */}
         {[0, 1, 2, 3, 4].map(i => {
-          const value = effectiveMax - (i * (effectiveMax - effectiveMin) / 4);
+          const value = effectiveMax - (i * (effectiveMax - effectiveMin)) / 4
+          const validValue = sanitizeValue(value)
+          
           return (
             <text
               key={`label-${i}`}
               x="5"
-              y={15 + i * 70}
+              y={chartTop + 5 + i * 65}
               fill="#666"
               fontSize="12"
             >
-              {value.toFixed(0)}
+              {validValue.toFixed(activeTab === 'temperature' ? 1 : 0)}
             </text>
-          );
+          )
         })}
-        
-        {/* 차트 라인 */}
-        <polyline
-          fill="none"
-          stroke="#3498db"
-          strokeWidth="2.5"
-          points={points}
-        />
-        
-        {/* 데이터 포인트 표시 */}
-        {sortedData.map((d, i) => {
-          const slotIndex = (d.slotNumber || (i + 1)) - 1; // 1~10을 0~9로 변환
-          const x = (slotIndex / 9) * 800; // 0~9를 0~800으로 매핑
-          const normalizedValue = (d.value - effectiveMin) / (effectiveMax - effectiveMin);
-          const y = Math.max(10, Math.min(290, 280 - (normalizedValue * 260)));
+  
+        {/* 차트 라인 (애니메이션 적용) */}
+        {points.length > 1 && (
+          <polyline
+            fill="none"
+            stroke="#3498db"
+            strokeWidth="2.5"
+            points={pointsString}
+            style={{
+              transition: 'all 0.3s ease-out',
+              vectorEffect: 'non-scaling-stroke'
+            }}
+          />
+        )}
+  
+        {/* 데이터 포인트 */}
+        {points.map((p, i) => {
+          const validX = sanitizeValue(p.x)
+          const validY = sanitizeValue(p.y)
+          
           return (
             <circle
-              key={`point-${d.slotNumber || i}`}
-              cx={x}
-              cy={y}
+              key={`point-${i}`}
+              cx={validX}
+              cy={validY}
               r="5"
               fill="#3498db"
+              style={{
+                transition: 'all 0.3s ease-out'
+              }}
             />
-          );
+          )
         })}
       </>
-    );
+    )
   }
-
-  const handleShowMore = () => {
-    // TODO: 실제 환자 데이터 가져오기
-    setSelectedPatient({
-      name: '환자명',
-      species: '강아지',
-      breed: '포메라니안',
-      weight: '3.5kg',
-      gender: '수컷',
-      neutered: true,
-      doctor: '김수의사',
-      diagnosis: '건강함'
-    })
-  }
-
-  const handleCloseModal = () => {
-    setSelectedPatient(null)
-  }
-
+  
+  
   const handleDismissAlert = (alertId) => {
     setHardwareAlerts(prev => prev.filter(alert => alert.id !== alertId))
   }
-
+  
   return (
     <div className="monitoring-page">
       <Header />
       <HardwareAlertBar alerts={hardwareAlerts} onDismiss={handleDismissAlert} />
       <div className="monitoring-container">
-        {/* 연결 상태 표시 */}
-        <div className="connection-status" style={{ 
-          padding: '10px', 
+        {/* 연결 상태 */}
+        <div className="connection-status" style={{
+          padding: '10px',
           marginBottom: '10px',
           backgroundColor: isConnected ? '#d4edda' : '#f8d7da',
           color: isConnected ? '#155724' : '#721c24',
@@ -880,26 +935,19 @@ function Monitoring() {
         }}>
           {isConnected ? '🟢 실시간 연결됨' : '🔴 연결 안 됨'}
         </div>
-
+        
         {/* 환자 정보 */}
         <section className="patient-info-section">
           <div className="patient-info-row">
             <div className="patient-info-left">
               <h3 className="patient-name">환자 ID: {patientId}</h3>
-              <div className="patient-info-items">
-                <button 
-                  className="more-btn"
-                  onClick={handleShowMore}
-                >
-                  더보기
-                </button>
-              </div>
             </div>
             <div className="device-name-right">
               {deviceInfo?.name || '디바이스 연결 중...'}
             </div>
           </div>
-          {/* 신호처리 상태 표시 */}
+          
+          {/* 신호처리 상태 */}
           {signalProcessingStatus.processedHR !== null && (
             <div className={`signal-processing-status ${signalProcessingStatus.status}`}>
               <div className="signal-status-header">
@@ -927,13 +975,15 @@ function Monitoring() {
               </div>
             </div>
           )}
+          
+          {/* 현재값 */}
           <div className="current-values-row">
             <div className="current-values-left">
               <span className="current-value-item-inline">
                 <span className="current-value-label-inline">심박수:</span>
                 <span className="current-value-value-inline">
-                  {signalProcessingStatus.processedHR !== null 
-                    ? `${Math.round(signalProcessingStatus.processedHR)} bpm` 
+                  {signalProcessingStatus.processedHR !== null
+                    ? `${Math.round(signalProcessingStatus.processedHR)} bpm`
                     : `${Math.round(currentValues.heartRate)} bpm`}
                   {hardwareAlerts.length > 0 && (
                     <span className="device-warning-badge" title={hardwareAlerts[0].message}>⚠️</span>
@@ -961,13 +1011,13 @@ function Monitoring() {
             </div>
           </div>
         </section>
-
-        {/* 디바이스 연결 상태 확인 */}
+        
+        {/* 디바이스 연결 상태 */}
         {deviceConnectionStatus === 'disconnected' && (
-          <section style={{ 
-            marginBottom: '20px', 
-            padding: '20px', 
-            backgroundColor: '#fff3cd', 
+          <section style={{
+            marginBottom: '20px',
+            padding: '20px',
+            backgroundColor: '#fff3cd',
             border: '1px solid #ffc107',
             borderRadius: '4px',
             textAlign: 'center'
@@ -978,7 +1028,7 @@ function Monitoring() {
             <p style={{ margin: '0 0 15px 0', fontSize: '14px' }}>
               디바이스를 켜주세요.
             </p>
-            <button 
+            <button
               className="btn-primary"
               onClick={() => navigate('/hardware')}
             >
@@ -986,12 +1036,12 @@ function Monitoring() {
             </button>
           </section>
         )}
-
+        
         {/* 제어 버튼 */}
         {deviceConnectionStatus === 'connected' && (
           <section style={{ marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <div style={{ 
-              padding: '8px 16px', 
+            <div style={{
+              padding: '8px 16px',
               backgroundColor: isMeasurementRunning ? '#d4edda' : '#f8d7da',
               color: isMeasurementRunning ? '#155724' : '#721c24',
               borderRadius: '4px',
@@ -1001,7 +1051,7 @@ function Monitoring() {
               {isMeasurementRunning ? '🟢 측정 실행 중' : '🔴 측정 중지됨'}
             </div>
             {isMeasurementRunning ? (
-              <button 
+              <button
                 className="btn-secondary"
                 onClick={() => sendControlCommand({ action: 'stop_measurement' })}
                 disabled={!isConnected}
@@ -1009,7 +1059,7 @@ function Monitoring() {
                 측정 정지
               </button>
             ) : (
-              <button 
+              <button
                 className="btn-primary"
                 onClick={() => sendControlCommand({ action: 'start_measurement' })}
                 disabled={!isConnected}
@@ -1019,7 +1069,7 @@ function Monitoring() {
             )}
           </section>
         )}
-
+        
         {/* 차트 섹션 */}
         <section className="chart-section">
           <div className="chart-tabs">
@@ -1042,7 +1092,7 @@ function Monitoring() {
               온도
             </button>
           </div>
-
+          
           <div className="chart-container">
             <div className="chart-header">
               <h3>
@@ -1056,53 +1106,28 @@ function Monitoring() {
                 {renderChart()}
               </svg>
               <div className="chart-labels" style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
-                {(() => {
-                  const chartData = getChartData();
-                  // 데이터가 있는 슬롯만 시간 표시
-                  return chartData.map((d, i) => (
+                {chartData.map((d, i) => {
+                  const timeStr = formatTime(d.timestamp)
+                  return (
                     <div key={i} className="chart-label" style={{ flex: 1, textAlign: 'center' }}>
-                      {d.time}
+                      {timeStr}
                     </div>
-                  ));
-                })()}
+                  )
+                })}
               </div>
             </div>
           </div>
         </section>
-
+        
         <div className="back-button">
           <button onClick={() => navigate('/dashboard')} className="btn-secondary">
             대시보드로 돌아가기
           </button>
         </div>
       </div>
-
-      {/* 환자 상세 정보 모달 */}
-      {selectedPatient && (
-        <div className="modal-overlay">
-          <div className="modal-content patient-detail-modal">
-            <div className="modal-header">
-              <h3>환자 상세 정보</h3>
-              <button onClick={handleCloseModal} className="close-btn">×</button>
-            </div>
-            <div className="modal-body">
-              <div className="patient-detail-grid">
-                {Object.entries(selectedPatient).map(([key, value]) => (
-                  <div key={key} className="detail-item">
-                    <span className="detail-label">{key}:</span>
-                    <span className="detail-value">{String(value)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button onClick={handleCloseModal} className="btn-primary">닫기</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
 
 export default Monitoring
+
