@@ -266,11 +266,22 @@ router.put('/:petId', verifyToken, async (req, res) => {
       }
     }
 
-    // 업데이트 가능한 필드만 업데이트
+    // state 필드는 별도로 처리 (퇴원 버튼으로만 변경 가능)
+    // 일반 수정에서는 state를 변경할 수 없도록 제한
+    if (updateData.state !== undefined) {
+      // state가 '퇴원'으로 변경되는 경우만 허용 (퇴원 버튼을 통한 경우)
+      // 그 외의 경우는 무시하거나 에러 처리
+      if (updateData.state === '퇴원') {
+        pet.state = '퇴원';
+      }
+      // '입원중'으로 변경하려는 경우는 무시 (기본값이므로)
+    }
+
+    // 업데이트 가능한 필드만 업데이트 (state 제외)
     const allowedFields = [
       'name', 'species', 'breed', 'weight', 'gender', 'neutering',
       'birthDate', 'admissionDate', 'veterinarian', 'diagnosis',
-      'medicalHistory', 'device_address', 'state'
+      'medicalHistory', 'device_address'
     ];
 
     allowedFields.forEach(field => {

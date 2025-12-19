@@ -188,7 +188,9 @@ function Patients() {
   const handleEditSubmit = async (e) => {
     e.preventDefault()
     try {
-      await petService.updatePet(editingPatient.id, formData)
+      // state 필드는 제외하고 수정 (state는 퇴원 버튼으로만 변경 가능)
+      const { state, ...updateData } = formData
+      await petService.updatePet(editingPatient.id, updateData)
       setAlertModal({ isOpen: true, title: '수정 완료', message: '환자 정보가 수정되었습니다.' })
       setShowEditModal(false)
       setEditingPatient(null)

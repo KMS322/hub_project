@@ -402,7 +402,7 @@ function Hardware() {
         }
       }
 
-      // 연결된 디바이스 상태 업데이트
+      // 연결된 디바이스 상태 업데이트 (항상 실행)
       if (Array.isArray(connectedDevices) && connectedDevices.length > 0) {
         const normalizeMac = (mac) => mac.replace(/[:-]/g, '').toUpperCase()
         const connectedMacSet = new Set(connectedDevices.map(mac => normalizeMac(mac)))
@@ -420,6 +420,31 @@ function Hardware() {
           })
           return newStatuses
         })
+        
+        // 디바이스 등록 완료 직후인 경우에도 상태 업데이트
+        // (handleFinalRegister에서 loadData() 후 state:hub를 보냈을 때)
+        if (!isScanning && !isConnectingAll) {
+          // 등록 완료 후 상태 업데이트를 위해 디바이스 목록 다시 로드
+          loadData().then(() => {
+            // loadData 완료 후 상태 다시 업데이트
+            const normalizeMac = (mac) => mac.replace(/[:-]/g, '').toUpperCase()
+            const connectedMacSet = new Set(connectedDevices.map(mac => normalizeMac(mac)))
+            
+            deviceService.getDevices().then(updatedDevices => {
+              const newConnectionStatuses = {}
+              updatedDevices.forEach(device => {
+                const deviceMac = normalizeMac(device.address)
+                const isConnected = connectedMacSet.has(deviceMac)
+                newConnectionStatuses[device.address] = isConnected ? 'connected' : 'disconnected'
+                newConnectionStatuses[deviceMac] = isConnected ? 'connected' : 'disconnected'
+              })
+              setDeviceConnectionStatuses(prev => ({
+                ...prev,
+                ...newConnectionStatuses
+              }))
+            })
+          })
+        }
       }
 
       if (!Array.isArray(connectedDevices) || connectedDevices.length === 0) {
@@ -1825,13 +1850,29 @@ function Hardware() {
       const failed = registrationResults.filter(r => r.status === 'rejected').length
 
       if (successful > 0) {
-      setAlertModal({ 
-        isOpen: true, 
-        title: '등록 완료', 
+        // 디바이스 목록 새로고침
+        await loadData()
+        
+        // 등록된 디바이스의 상태를 확인하기 위해 state:hub 명령 전송
+        if (isConnected && hubAddress) {
+          const requestId = `state_check_${hubAddress}_${Date.now()}`
+          emit('CONTROL_REQUEST', {
+            hubId: hubAddress,
+            deviceId: 'HUB',
+            command: {
+              raw_command: 'state:hub'
+            },
+            requestId
+          })
+          console.log('[Device Register] 상태 확인을 위한 state:hub 명령 전송:', requestId)
+        }
+        
+        setAlertModal({ 
+          isOpen: true, 
+          title: '등록 완료', 
           message: `${successful}개의 디바이스가 성공적으로 등록되었습니다.${failed > 0 ? ` (${failed}개 실패)` : ''}` 
-      })
-      handleCloseDeviceRegister()
-        // 자동 새로고침 제거 (사용자가 수동으로 새로고침 가능)
+        })
+        handleCloseDeviceRegister()
       } else {
         const errorMessages = registrationResults
           .filter(r => r.status === 'rejected')
@@ -2232,12 +2273,6 @@ function Hardware() {
                       }}
                     >
                       이름 변경
-                    </button>
-                    <button 
-                      className="btn-primary"
-                      onClick={() => handleDevicePatientChange(device.id)}
-                    >
-                      {device.connectedPatient ? '환자 변경' : '환자 연결'}
                     </button>
                   </div>
                 </div>

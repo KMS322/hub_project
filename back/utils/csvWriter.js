@@ -139,36 +139,49 @@ class CSVWriter {
 
     let buffer = '';
 
-    // dataArr가 있으면 각 샘플의 hr, spo2, temp를 사용
-    const hasDataArr = payload.dataArr && Array.isArray(payload.dataArr) && payload.dataArr.length > 0;
+      // dataArr가 있으면 각 샘플의 hr, spo2, temp를 사용
+      const hasDataArr = payload.dataArr && Array.isArray(payload.dataArr) && payload.dataArr.length > 0;
 
-    for (let i = 0; i < payload.data.length; i++) {
-      const [ir, red, green] = payload.data[i].split(',');
+      // hr 값을 텍스트로 변환하는 함수 (8: 측정 불가, 9: 움직임 감지)
+      const formatHrValue = (hrValue) => {
+        if (hrValue === 8) {
+          return '측정 불가';
+        } else if (hrValue === 9) {
+          return '움직임 감지';
+        } else {
+          return hrValue !== undefined && hrValue !== null ? hrValue : '';
+        }
+      };
 
-      const elapsedMs = counter.total * intervalMs;
-      const time = new Date(baseMs + elapsedMs);
-      const timeStr = this.formatTime(time);
+      for (let i = 0; i < payload.data.length; i++) {
+        const [ir, red, green] = payload.data[i].split(',');
 
-      // dataArr가 있으면 각 샘플의 값을 사용, 없으면 첫 번째 샘플에만 값 사용
-      let hr = '';
-      let spo2 = '';
-      let temp = '';
-      
-      if (hasDataArr && payload.dataArr[i]) {
-        // dataArr의 각 샘플에서 값 가져오기 (hr과 spo2가 바뀌어 있음)
-        hr = payload.dataArr[i].spo2 !== undefined && payload.dataArr[i].spo2 !== null ? payload.dataArr[i].spo2 : '';
-        spo2 = payload.dataArr[i].hr !== undefined && payload.dataArr[i].hr !== null ? payload.dataArr[i].hr : '';
-        temp = payload.dataArr[i].temp !== undefined && payload.dataArr[i].temp !== null ? payload.dataArr[i].temp : '';
-      } else if (i === 0) {
-        // 첫 번째 샘플에만 전체 값 사용 (hr과 spo2가 바뀌어 있음)
-        hr = payload.spo2 !== undefined && payload.spo2 !== null ? payload.spo2 : '';
-        spo2 = payload.hr !== undefined && payload.hr !== null ? payload.hr : '';
-        temp = payload.temp !== undefined && payload.temp !== null ? payload.temp : '';
+        const elapsedMs = counter.total * intervalMs;
+        const time = new Date(baseMs + elapsedMs);
+        const timeStr = this.formatTime(time);
+
+        // dataArr가 있으면 각 샘플의 값을 사용, 없으면 첫 번째 샘플에만 값 사용
+        let hr = '';
+        let spo2 = '';
+        let temp = '';
+        
+        if (hasDataArr && payload.dataArr[i]) {
+          // dataArr의 각 샘플에서 값 가져오기 (hr과 spo2가 바뀌어 있음)
+          const rawHr = payload.dataArr[i].spo2 !== undefined && payload.dataArr[i].spo2 !== null ? payload.dataArr[i].spo2 : '';
+          hr = formatHrValue(rawHr);
+          spo2 = payload.dataArr[i].hr !== undefined && payload.dataArr[i].hr !== null ? payload.dataArr[i].hr : '';
+          temp = payload.dataArr[i].temp !== undefined && payload.dataArr[i].temp !== null ? payload.dataArr[i].temp : '';
+        } else if (i === 0) {
+          // 첫 번째 샘플에만 전체 값 사용 (hr과 spo2가 바뀌어 있음)
+          const rawHr = payload.spo2 !== undefined && payload.spo2 !== null ? payload.spo2 : '';
+          hr = formatHrValue(rawHr);
+          spo2 = payload.hr !== undefined && payload.hr !== null ? payload.hr : '';
+          temp = payload.temp !== undefined && payload.temp !== null ? payload.temp : '';
+        }
+
+        buffer += `${timeStr},${ir},${red},${green},${hr},${spo2},${temp}\n`;
+        counter.total++;
       }
-
-      buffer += `${timeStr},${ir},${red},${green},${hr},${spo2},${temp}\n`;
-      counter.total++;
-    }
 
     fs.appendFileSync(session.filePath, buffer, 'utf8');
   }

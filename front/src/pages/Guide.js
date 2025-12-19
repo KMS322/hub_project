@@ -45,7 +45,7 @@ function Guide() {
               디바이스 검색 시 <b>목록에 나타난 기기를 선택하여 등록</b>합니다.
             </li>
             <li>
-              디바이스 찾기 기능 실행 시 <b>하얀불이 10초간 깜빡입니다.</b>
+              디바이스 찾기 기능 실행 시 <b>삼색이 10초간 깜빡입니다.</b>
             </li>
           </ul>
 
@@ -80,19 +80,19 @@ function DeviceSVG() {
   return (
     <svg width="180" height="150" viewBox="0 0 180 360">
       {/* Body */}
-      <rect x="40" y="20" width="100" height="100" rx="18" fill="#e0e3e8" />
+      <rect x="20" y="70" width="200" height="200" rx="18" fill="#e0e3e8" />
 
       {/* Button (왼쪽 상단) */}
-      <circle cx="50" cy="50" r="6" fill="#333" />
-      <text x="10" y="55" fontSize="12">버튼</text>
+      <circle cx="50" cy="100" r="15" fill="#333" />
+      <text x="80" y="110" fontSize="30">버튼</text>
 
       {/* LED (왼쪽 측면 상단 20%) */}
-      <circle cx="40" cy="84" r="5" fill="green" />
-      <text x="5" y="90" fontSize="12">LED</text>
+      <rect x="15" y="120" width="8" height="20" rx="3" fill="#4caf50" />
+      <text x="-50" y="140" fontSize="30">LED</text>
 
       {/* Charging Port (오른쪽 측면 하단 20%) */}
-      <rect x="140" y="260" width="8" height="20" rx="2" fill="#555" />
-      <text x="95" y="290" fontSize="12">충전단자</text>
+      <rect x="215" y="200" width="8" height="30" rx="2" fill="#555" />
+      <text x="90" y="230" fontSize="30">충전단자</text>
     </svg>
   )
 }
@@ -104,19 +104,22 @@ function HubSVG() {
   return (
     <svg width="200" height="320" viewBox="0 0 200 320">
       {/* Body */}
-      <rect x="60" y="20" width="80" height="260" rx="10" fill="#dde1e6" />
+      <rect x="50" y="20" width="120" height="210" rx="10" fill="	#F8C8DC" />
 
       {/* LED */}
-      <circle cx="100" cy="60" r="6" fill="#4caf50" />
-      <text x="110" y="65" fontSize="12">LED</text>
+      <circle cx="90" cy="170" r="6" fill="#4caf50" />
+      <text x="100" y="175" fontSize="12">LED</text>
 
       {/* Button */}
-      <circle cx="100" cy="120" r="8" fill="#555" />
-      <text x="110" y="125" fontSize="12">버튼</text>
+      <circle cx="130" cy="88" r="8" fill="#555" />
+      <text x="105" y="115" fontSize="12">리셋 버튼</text>
+      
+      <circle cx="130" cy="130" r="8" fill="#555" />
+      <text x="105" y="155" fontSize="12">부팅 버튼</text>
 
       {/* USB */}
-      <rect x="85" y="280" width="30" height="20" rx="3" fill="#333" />
-      <text x="70" y="315" fontSize="12">USB</text>
+      <rect x="60" y="0" width="100" height="25" rx="3" fill="#333" />
+      <text x="75" y="220" fontSize="12">USB</text>
     </svg>
   )
 }
