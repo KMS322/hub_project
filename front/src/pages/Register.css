@@ -140,3 +140,20 @@
   margin-top: 0.25rem;
 }
 
+.phone-input-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.phone-input-group input {
+  flex: 0 0 auto;
+}
+
+.phone-separator {
+  color: #666;
+  font-size: 1.2rem;
+  font-weight: 500;
+  user-select: none;
+}
+

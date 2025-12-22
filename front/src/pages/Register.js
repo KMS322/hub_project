@@ -18,6 +18,11 @@ function Register() {
     detail_address: '',
     phone: ''
   })
+  const [phoneParts, setPhoneParts] = useState({
+    part1: '', // 3자리 (02, 031 등)
+    part2: '', // 3-4자리
+    part3: ''  // 4자리
+  })
   const [validationError, setValidationError] = useState('')
   const [fieldErrors, setFieldErrors] = useState({})
 
@@ -54,6 +59,62 @@ function Register() {
       ...formData,
       [e.target.name]: value
     })
+  }
+
+  // 전화번호 파트별 입력 처리
+  const handlePhonePartChange = (part, value) => {
+    // 숫자만 허용
+    const numericValue = value.replace(/\D/g, '')
+    
+    let newPhoneParts = { ...phoneParts }
+    
+    if (part === 'part1') {
+      // 첫 번째 파트: 최대 3자리
+      newPhoneParts.part1 = numericValue.slice(0, 3)
+      // 3자리 입력 시 다음 필드로 포커스 이동
+      if (numericValue.length === 3) {
+        setTimeout(() => {
+          document.getElementById('phone-part2')?.focus()
+        }, 0)
+      }
+    } else if (part === 'part2') {
+      // 두 번째 파트: 최대 4자리
+      newPhoneParts.part2 = numericValue.slice(0, 4)
+      // 4자리 입력 시 다음 필드로 포커스 이동
+      if (numericValue.length === 4) {
+        setTimeout(() => {
+          document.getElementById('phone-part3')?.focus()
+        }, 0)
+      }
+    } else if (part === 'part3') {
+      // 세 번째 파트: 최대 4자리
+      newPhoneParts.part3 = numericValue.slice(0, 4)
+    }
+    
+    setPhoneParts(newPhoneParts)
+    
+    // 전체 전화번호 조합 (하이픈 포함)
+    const fullPhone = `${newPhoneParts.part1}${newPhoneParts.part2 ? '-' + newPhoneParts.part2 : ''}${newPhoneParts.part3 ? '-' + newPhoneParts.part3 : ''}`
+    setFormData({
+      ...formData,
+      phone: fullPhone
+    })
+  }
+
+  // 전화번호 파트별 백스페이스 처리
+  const handlePhonePartKeyDown = (part, e) => {
+    if (e.key === 'Backspace') {
+      const currentValue = phoneParts[part]
+      if (currentValue === '' && part === 'part2') {
+        // 두 번째 필드가 비어있으면 첫 번째 필드로 포커스 이동
+        e.preventDefault()
+        document.getElementById('phone-part1')?.focus()
+      } else if (currentValue === '' && part === 'part3') {
+        // 세 번째 필드가 비어있으면 두 번째 필드로 포커스 이동
+        e.preventDefault()
+        document.getElementById('phone-part2')?.focus()
+      }
+    }
   }
 
   return (
@@ -164,16 +225,46 @@ function Register() {
             </div>
             <div className="form-group">
               <label htmlFor="phone">병원 전화번호</label>
-              <input
-                type="tel"
-                id="phone"
-                name="phone"
-                value={formData.phone}
-                onChange={handleChange}
-                required
-                placeholder="전화번호를 입력하세요 (예: 02-1234-5678)"
-                className={fieldErrors.phone ? 'error' : ''}
-              />
+              <div className="phone-input-group">
+                <input
+                  type="tel"
+                  id="phone-part1"
+                  value={phoneParts.part1}
+                  onChange={(e) => handlePhonePartChange('part1', e.target.value)}
+                  onKeyDown={(e) => handlePhonePartKeyDown('part1', e)}
+                  required
+                  placeholder="02"
+                  maxLength={3}
+                  className={fieldErrors.phone ? 'error' : ''}
+                  style={{ width: '80px', textAlign: 'center' }}
+                />
+                <span className="phone-separator">-</span>
+                <input
+                  type="tel"
+                  id="phone-part2"
+                  value={phoneParts.part2}
+                  onChange={(e) => handlePhonePartChange('part2', e.target.value)}
+                  onKeyDown={(e) => handlePhonePartKeyDown('part2', e)}
+                  required
+                  placeholder="1234"
+                  maxLength={4}
+                  className={fieldErrors.phone ? 'error' : ''}
+                  style={{ width: '100px', textAlign: 'center' }}
+                />
+                <span className="phone-separator">-</span>
+                <input
+                  type="tel"
+                  id="phone-part3"
+                  value={phoneParts.part3}
+                  onChange={(e) => handlePhonePartChange('part3', e.target.value)}
+                  onKeyDown={(e) => handlePhonePartKeyDown('part3', e)}
+                  required
+                  placeholder="5678"
+                  maxLength={4}
+                  className={fieldErrors.phone ? 'error' : ''}
+                  style={{ width: '100px', textAlign: 'center' }}
+                />
+              </div>
               {fieldErrors.phone && <span className="field-error">{fieldErrors.phone}</span>}
             </div>
           </div>

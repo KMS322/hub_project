@@ -20,6 +20,11 @@ function Profile() {
     detail_address: "",
     phone: "",
   });
+  const [phoneParts, setPhoneParts] = useState({
+    part1: '', // 3자리 (02, 031 등)
+    part2: '', // 3-4자리
+    part3: ''  // 4자리
+  });
 
   const [alertModal, setAlertModal] = useState({
     isOpen: false,
@@ -44,14 +49,25 @@ function Profile() {
       const response = await authService.getMe();
       if (response.success && response.data?.user) {
         const userData = response.data.user;
+        const phone = userData.phone || "";
+        
+        // 전화번호 파싱
+        const phonePartsArray = phone.split('-');
+        const parsedPhoneParts = {
+          part1: phonePartsArray[0] || '',
+          part2: phonePartsArray[1] || '',
+          part3: phonePartsArray[2] || ''
+        };
+        
         setFormData({
           email: userData.email || "",
           name: userData.name || "",
           postcode: userData.postcode || "",
           address: userData.address || "",
           detail_address: userData.detail_address || "",
-          phone: userData.phone || "",
+          phone: phone,
         });
+        setPhoneParts(parsedPhoneParts);
       }
     } catch (error) {
       console.error("Failed to load user data:", error);
@@ -66,6 +82,62 @@ function Profile() {
       [e.target.name]: value,
     });
   };
+
+  // 전화번호 파트별 입력 처리
+  const handlePhonePartChange = (part, value) => {
+    // 숫자만 허용
+    const numericValue = value.replace(/\D/g, '')
+    
+    let newPhoneParts = { ...phoneParts }
+    
+    if (part === 'part1') {
+      // 첫 번째 파트: 최대 3자리
+      newPhoneParts.part1 = numericValue.slice(0, 3)
+      // 3자리 입력 시 다음 필드로 포커스 이동
+      if (numericValue.length === 3) {
+        setTimeout(() => {
+          document.getElementById('profile-phone-part2')?.focus()
+        }, 0)
+      }
+    } else if (part === 'part2') {
+      // 두 번째 파트: 최대 4자리
+      newPhoneParts.part2 = numericValue.slice(0, 4)
+      // 4자리 입력 시 다음 필드로 포커스 이동
+      if (numericValue.length === 4) {
+        setTimeout(() => {
+          document.getElementById('profile-phone-part3')?.focus()
+        }, 0)
+      }
+    } else if (part === 'part3') {
+      // 세 번째 파트: 최대 4자리
+      newPhoneParts.part3 = numericValue.slice(0, 4)
+    }
+    
+    setPhoneParts(newPhoneParts)
+    
+    // 전체 전화번호 조합 (하이픈 포함)
+    const fullPhone = `${newPhoneParts.part1}${newPhoneParts.part2 ? '-' + newPhoneParts.part2 : ''}${newPhoneParts.part3 ? '-' + newPhoneParts.part3 : ''}`
+    setFormData({
+      ...formData,
+      phone: fullPhone
+    })
+  }
+
+  // 전화번호 파트별 백스페이스 처리
+  const handlePhonePartKeyDown = (part, e) => {
+    if (e.key === 'Backspace') {
+      const currentValue = phoneParts[part]
+      if (currentValue === '' && part === 'part2') {
+        // 두 번째 필드가 비어있으면 첫 번째 필드로 포커스 이동
+        e.preventDefault()
+        document.getElementById('profile-phone-part1')?.focus()
+      } else if (currentValue === '' && part === 'part3') {
+        // 세 번째 필드가 비어있으면 두 번째 필드로 포커스 이동
+        e.preventDefault()
+        document.getElementById('profile-phone-part2')?.focus()
+      }
+    }
+  }
 
   const handleEditToggle = () => {
     if (isEditing) {
@@ -216,17 +288,49 @@ function Profile() {
             </div>
             <div className="form-group">
               <label htmlFor="phone">병원 전화번호 *</label>
-              <input
-                type="tel"
-                id="phone"
-                name="phone"
-                value={formData.phone}
-                onChange={handleChange}
-                disabled={!isEditing}
-                className={!isEditing ? "disabled-input" : ""}
-                placeholder="전화번호를 입력하세요 (예: 010-1234-5678)"
-                required
-              />
+              <div className="phone-input-group">
+                <input
+                  type="tel"
+                  id="profile-phone-part1"
+                  value={phoneParts.part1}
+                  onChange={(e) => handlePhonePartChange('part1', e.target.value)}
+                  onKeyDown={(e) => handlePhonePartKeyDown('part1', e)}
+                  disabled={!isEditing}
+                  className={!isEditing ? "disabled-input" : ""}
+                  placeholder="02"
+                  maxLength={3}
+                  required
+                  style={{ width: '80px', textAlign: 'center' }}
+                />
+                <span className="phone-separator">-</span>
+                <input
+                  type="tel"
+                  id="profile-phone-part2"
+                  value={phoneParts.part2}
+                  onChange={(e) => handlePhonePartChange('part2', e.target.value)}
+                  onKeyDown={(e) => handlePhonePartKeyDown('part2', e)}
+                  disabled={!isEditing}
+                  className={!isEditing ? "disabled-input" : ""}
+                  placeholder="1234"
+                  maxLength={4}
+                  required
+                  style={{ width: '100px', textAlign: 'center' }}
+                />
+                <span className="phone-separator">-</span>
+                <input
+                  type="tel"
+                  id="profile-phone-part3"
+                  value={phoneParts.part3}
+                  onChange={(e) => handlePhonePartChange('part3', e.target.value)}
+                  onKeyDown={(e) => handlePhonePartKeyDown('part3', e)}
+                  disabled={!isEditing}
+                  className={!isEditing ? "disabled-input" : ""}
+                  placeholder="5678"
+                  maxLength={4}
+                  required
+                  style={{ width: '100px', textAlign: 'center' }}
+                />
+              </div>
             </div>
           </div>
 
