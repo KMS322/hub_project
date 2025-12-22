@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuthStore } from '../stores/useAuthStore'
+import { validateRegisterForm } from '../utils/validation'
 import './Register.css'
 
 function Register() {
@@ -18,14 +19,24 @@ function Register() {
     phone: ''
   })
   const [validationError, setValidationError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState({})
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setValidationError('')
+    setFieldErrors({})
 
     // 비밀번호 확인 검증
     if (formData.password !== formData.passwordConfirm) {
       setValidationError('비밀번호가 일치하지 않습니다.')
+      return
+    }
+
+    // 폼 데이터 검증
+    const validation = validateRegisterForm(formData)
+    if (!validation.valid) {
+      setFieldErrors(validation.errors)
+      setValidationError('입력한 정보를 확인해주세요.')
       return
     }
 
@@ -103,8 +114,10 @@ function Register() {
                 value={formData.name}
                 onChange={handleChange}
                 required
-                placeholder="병원명을 입력하세요"
+                placeholder="병원명을 입력하세요 (2-50자)"
+                className={fieldErrors.name ? 'error' : ''}
               />
+              {fieldErrors.name && <span className="field-error">{fieldErrors.name}</span>}
             </div>
             <div className="form-group">
               <label htmlFor="postcode">우편번호</label>
@@ -115,8 +128,11 @@ function Register() {
                 value={formData.postcode}
                 onChange={handleChange}
                 required
-                placeholder="우편번호를 입력하세요"
+                placeholder="우편번호를 입력하세요 (예: 12345)"
+                maxLength={5}
+                className={fieldErrors.postcode ? 'error' : ''}
               />
+              {fieldErrors.postcode && <span className="field-error">{fieldErrors.postcode}</span>}
             </div>
             <div className="form-group">
               <label htmlFor="address">주소</label>
@@ -128,7 +144,9 @@ function Register() {
                 onChange={handleChange}
                 required
                 placeholder="주소를 입력하세요"
+                className={fieldErrors.address ? 'error' : ''}
               />
+              {fieldErrors.address && <span className="field-error">{fieldErrors.address}</span>}
             </div>
             <div className="form-group">
               <label htmlFor="detail_address">상세주소</label>
@@ -140,7 +158,9 @@ function Register() {
                 onChange={handleChange}
                 required
                 placeholder="상세주소를 입력하세요"
+                className={fieldErrors.detail_address ? 'error' : ''}
               />
+              {fieldErrors.detail_address && <span className="field-error">{fieldErrors.detail_address}</span>}
             </div>
             <div className="form-group">
               <label htmlFor="phone">병원 전화번호</label>
@@ -151,8 +171,10 @@ function Register() {
                 value={formData.phone}
                 onChange={handleChange}
                 required
-                placeholder="병원 전화번호를 입력하세요"
+                placeholder="전화번호를 입력하세요 (예: 02-1234-5678)"
+                className={fieldErrors.phone ? 'error' : ''}
               />
+              {fieldErrors.phone && <span className="field-error">{fieldErrors.phone}</span>}
             </div>
           </div>
 

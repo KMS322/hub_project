@@ -4,6 +4,7 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const db = require("../models");
 const { verifyToken } = require("../middlewares/auth");
+const { validateRegisterData } = require("../utils/validation");
 
 const generateToken = (user) => {
   return jwt.sign(
@@ -21,6 +22,7 @@ router.post("/register", async (req, res) => {
     const { email, password, name, postcode, address, detail_address, phone } =
       req.body;
 
+    // 필수 항목 확인
     if (
       !email ||
       !password ||
@@ -33,6 +35,23 @@ router.post("/register", async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "필수 항목을 모두 입력해주세요.",
+      });
+    }
+
+    // 입력값 검증
+    const validation = validateRegisterData({
+      name,
+      postcode,
+      address,
+      detail_address,
+      phone
+    });
+
+    if (!validation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: "입력한 정보를 확인해주세요.",
+        errors: validation.errors
       });
     }
 
@@ -203,6 +222,23 @@ router.put("/update", verifyToken, async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "필수 항목을 모두 입력해주세요.",
+      });
+    }
+
+    // 입력값 검증
+    const validation = validateRegisterData({
+      name,
+      postcode,
+      address,
+      detail_address,
+      phone
+    });
+
+    if (!validation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: "입력한 정보를 확인해주세요.",
+        errors: validation.errors
       });
     }
 
