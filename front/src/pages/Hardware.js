@@ -408,6 +408,10 @@ function Hardware() {
       const hubAddress = payload.hubAddress;
       const connectedDevices = payload.connected_devices;
 
+      // 디바이스 검색 모드가 아닐 때는 조기 종료 (상태 업데이트만 수행)
+      const isSearchMode = isScanning;
+      const isConnectAllMode = isConnectingAll;
+
       if (hubAddress) {
         // 허브가 응답했으므로 온라인으로 표시
         setHubStatuses((prev) => ({
@@ -422,35 +426,65 @@ function Hardware() {
         }
       }
 
-      // 연결된 디바이스 상태 업데이트 (항상 실행)
+      // 디바이스 검색 모드가 아닐 때는 상태 업데이트만 수행하고 종료
+      if (!isSearchMode && !isConnectAllMode) {
+        // 연결된 디바이스 상태만 업데이트
+        if (Array.isArray(connectedDevices) && connectedDevices.length > 0) {
+          const normalizeMac = (mac) => mac.replace(/[:-]/g, "").toUpperCase();
+          const connectedMacSet = new Set(
+            connectedDevices.map((mac) => normalizeMac(mac))
+          );
+
+          // 현재 devices 상태를 사용하여 상태 업데이트
+          setDeviceConnectionStatuses((prev) => {
+            const newStatuses = { ...prev };
+            // devices 상태를 직접 참조하지 않고 prev 상태를 기반으로 업데이트
+            Object.keys(prev).forEach((deviceAddress) => {
+              const deviceMac = normalizeMac(deviceAddress);
+              const isConnected = connectedMacSet.has(deviceMac);
+              if (isConnected) {
+                newStatuses[deviceAddress] = "connected";
+                newStatuses[deviceMac] = "connected";
+              }
+            });
+            return newStatuses;
+          });
+        } else {
+          // 연결된 디바이스가 없으면 모든 디바이스를 disconnected로 표시
+          setDeviceConnectionStatuses((prev) => {
+            const newStatuses = { ...prev };
+            Object.keys(prev).forEach((deviceAddress) => {
+              newStatuses[deviceAddress] = "disconnected";
+            });
+            return newStatuses;
+          });
+        }
+        return;
+      }
+
+      // 연결된 디바이스 상태 업데이트 (검색 모드 또는 전체 연결 모드일 때)
       if (Array.isArray(connectedDevices) && connectedDevices.length > 0) {
         const normalizeMac = (mac) => mac.replace(/[:-]/g, "").toUpperCase();
         const connectedMacSet = new Set(
           connectedDevices.map((mac) => normalizeMac(mac))
         );
 
-        // 모든 디바이스 상태 업데이트
+        // devices 상태를 사용하여 상태 업데이트
         setDeviceConnectionStatuses((prev) => {
           const newStatuses = { ...prev };
           devices.forEach((device) => {
             const deviceMac = normalizeMac(device.address);
-            // 정규화된 MAC과 원본 MAC 모두 확인
-            const isConnected =
-              connectedMacSet.has(deviceMac) ||
-              connectedMacSet.has(normalizeMac(device.address));
-            newStatuses[device.address] = isConnected
-              ? "connected"
-              : "disconnected";
-            // 정규화된 MAC도 저장
-            newStatuses[deviceMac] = isConnected ? 'connected' : 'disconnected'
-          })
-          return newStatuses
-        })
+            const isConnected = connectedMacSet.has(deviceMac);
+            newStatuses[device.address] = isConnected ? "connected" : "disconnected";
+            newStatuses[deviceMac] = isConnected ? 'connected' : 'disconnected';
+          });
+          return newStatuses;
+        });
       }
 
       if (!Array.isArray(connectedDevices) || connectedDevices.length === 0) {
         // 디바이스 전체 연결 중이면 성공 메시지 표시
-        if (isConnectingAll) {
+        if (isConnectAllMode) {
           setAlertModal({
             isOpen: true,
             title: "연결 완료",
@@ -470,7 +504,7 @@ function Hardware() {
       }
 
       // 디바이스 전체 연결 모드인 경우
-      if (isConnectingAll) {
+      if (isConnectAllMode) {
         try {
           const existingDevices = await deviceService.getDevices();
           const normalizeMac = (mac) => mac.replace(/[:-]/g, "").toUpperCase();
@@ -537,59 +571,59 @@ function Hardware() {
         return;
       }
 
-      // 디바이스 등록 스캔이 아닐 때는 여기서 종료 (페이지 초기 state:hub, connect_all 등)
-      if (!isScanning) {
-        return;
-      }
-
-      // 기존 디바이스 등록 모달 로직 (디바이스 검색 후에만)
-      if (!deviceRegisterModal.isOpen) {
-        handleOpenDeviceRegister();
-      }
-
-      try {
-        const existingDevices = await deviceService.getDevices();
-        console.log(
-          "[Device Register] DB에서 가져온 디바이스:",
-          existingDevices
-        );
-
-        // MAC 주소를 정규화하여 매핑 (대소문자 무시, 구분자 통일)
-        const normalizeMac = (mac) => mac.replace(/[:-]/g, "").toUpperCase();
-        const nameMap = new Map(
-          existingDevices.map((d) => [normalizeMac(d.address), d.name])
-        );
-
-        const devices = connectedDevices.map((mac, index) => {
-          const normalizedMac = normalizeMac(mac);
-          const dbName = nameMap.get(normalizedMac);
-          const deviceName = dbName || "tailing";
-
+      // 디바이스 검색 모드인 경우에만 스캔된 디바이스 목록 업데이트
+      if (isSearchMode) {
+        try {
+          const existingDevices = await deviceService.getDevices();
           console.log(
-            `[Device Register] MAC: ${mac}, 정규화: ${normalizedMac}, DB 이름: ${
-              dbName || "없음"
-            }, 최종 이름: ${deviceName}`
+            "[Device Register] DB에서 가져온 디바이스:",
+            existingDevices
           );
 
-          return {
-            id: `${mac}-${index}`,
-            macAddress: mac,
-            name: deviceName,
-          };
-        });
+          // MAC 주소를 정규화하여 매핑 (대소문자 무시, 구분자 통일)
+          const normalizeMac = (mac) => mac.replace(/[:-]/g, "").toUpperCase();
+          const nameMap = new Map(
+            existingDevices.map((d) => [normalizeMac(d.address), d.name])
+          );
 
-        setScannedDevices(devices);
-        setIsScanning(false);
-        setSearchCommandReceived(true);
+          const newScannedDevices = connectedDevices.map((mac, index) => {
+            const normalizedMac = normalizeMac(mac);
+            const dbName = nameMap.get(normalizedMac);
+            const deviceName = dbName || "tailing";
 
-        // 타임아웃 정리
-        if (searchCommandTimeoutRef.current) {
-          clearTimeout(searchCommandTimeoutRef.current);
-          searchCommandTimeoutRef.current = null;
+            console.log(
+              `[Device Register] MAC: ${mac}, 정규화: ${normalizedMac}, DB 이름: ${
+                dbName || "없음"
+              }, 최종 이름: ${deviceName}`
+            );
+
+            return {
+              id: `${mac}-${index}`,
+              macAddress: mac,
+              name: deviceName,
+            };
+          });
+
+          // 상태 업데이트를 한 번에 수행하여 깜빡임 방지
+          // 먼저 디바이스 목록을 설정한 후 모달을 열어서 깜빡임 방지
+          setScannedDevices(newScannedDevices);
+          setIsScanning(false);
+          setSearchCommandReceived(true);
+
+          // 모달이 열려있지 않으면 열기 (검색된 디바이스 목록 보존)
+          if (!deviceRegisterModal.isOpen) {
+            handleOpenDeviceRegister(true);
+          }
+
+          // 타임아웃 정리
+          if (searchCommandTimeoutRef.current) {
+            clearTimeout(searchCommandTimeoutRef.current);
+            searchCommandTimeoutRef.current = null;
+          }
+        } catch (error) {
+          console.error("[Hardware] CONNECTED_DEVICES 처리 중 오류:", error);
+          setIsScanning(false);
         }
-      } catch (error) {
-        console.error("[Hardware] CONNECTED_DEVICES 처리 중 오류:", error);
-        setIsScanning(false);
       }
     };
 
@@ -1677,10 +1711,13 @@ function Hardware() {
   };
 
   // 디바이스 등록 모달
-  const handleOpenDeviceRegister = () => {
+  const handleOpenDeviceRegister = (preserveScannedDevices = false) => {
     setDeviceRegisterModal({ isOpen: true });
     setHubModeSwitched(false);
-    setScannedDevices([]);
+    // 검색된 디바이스 목록을 보존할지 결정
+    if (!preserveScannedDevices) {
+      setScannedDevices([]);
+    }
     setIsScanning(false);
     setDevicesToRegister({});
   };
