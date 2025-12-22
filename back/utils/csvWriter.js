@@ -156,12 +156,14 @@ class CSVWriter {
       // dataArr가 있으면 각 샘플의 hr, spo2, temp를 사용
       const hasDataArr = payload.dataArr && Array.isArray(payload.dataArr) && payload.dataArr.length > 0;
 
-      // hr 값을 텍스트로 변환하는 함수 (8: 측정 불가, 9: 움직임 감지)
+      // hr 값을 텍스트로 변환하는 함수 (7: 배터리 부족, 8: 신호 불량, 9: 움직임 감지)
       const formatHrValue = (hrValue) => {
-        if (hrValue === 8) {
-          return '측정 불가';
+        if (hrValue === 7) {
+          return 'Low Battery';
+        } else if (hrValue === 8) {
+          return 'Poor Signal';
         } else if (hrValue === 9) {
-          return '움직임 감지';
+          return 'Movement Detected';
         } else {
           return hrValue !== undefined && hrValue !== null ? hrValue : '';
         }
