@@ -26,15 +26,18 @@ router.post('/start', async (req, res) => {
       });
     }
 
-    // 디바이스가 실제로 존재하는지 확인
+    // 디바이스가 실제로 존재하고 해당 사용자의 것인지 확인
     const device = await db.Device.findOne({
-      where: { address: deviceAddress }
+      where: { 
+        address: deviceAddress,
+        user_email: userEmail
+      }
     });
 
     if (!device) {
       return res.status(404).json({
         success: false,
-        message: '디바이스를 찾을 수 없습니다.'
+        message: '디바이스를 찾을 수 없거나 접근 권한이 없습니다.'
       });
     }
 

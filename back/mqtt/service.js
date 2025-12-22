@@ -197,8 +197,8 @@ class MQTTService {
           });
 
           // CSV 저장은 디바이스가 허브에 연결되어 있고 펫이 연결된 경우에만
-          if (device && device.Hub && device.Hub.user_email) {
-            const userEmail = device.Hub.user_email;
+          if (device && device.user_email) {
+            const userEmail = device.user_email;
             const petName = device.Pet?.name || 'Unknown';
             
             // 펫이 연결된 경우에만 CSV 저장

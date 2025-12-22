@@ -171,6 +171,14 @@ router.post("/hub", async (req, res) => {
                   }]
                 });
 
+                // 디바이스의 user_email이 허브의 user_email과 일치하는지 확인
+                if (device && device.Hub && device.Hub.user_email !== device.user_email) {
+                  log(`[Hub Check] Device user_email mismatch: device.user_email=${device.user_email}, hub.user_email=${device.Hub.user_email}`);
+                  // 디바이스의 user_email을 허브의 user_email로 업데이트
+                  device.user_email = device.Hub.user_email;
+                  await device.save();
+                }
+
                 // CSV 저장은 디바이스가 허브에 연결되어 있고 펫이 연결된 경우에만
                 if (device && device.Hub && device.Hub.user_email) {
                   const userEmail = device.Hub.user_email;
@@ -298,9 +306,23 @@ router.post("/hub", async (req, res) => {
               // 기존 디바이스만 업데이트 (등록하지 않고 연결만)
               data.connected_devices.forEach(async (deviceMac) => {
                 try {
-                  // 기존 디바이스만 찾아서 업데이트
+                  // 허브의 user_email 조회
+                  const hub = await db.Hub.findOne({
+                    where: { address: mac_address },
+                    attributes: ['user_email']
+                  });
+
+                  if (!hub) {
+                    log(`[Hub Check] Hub not found: ${mac_address}`);
+                    return;
+                  }
+
+                  // 기존 디바이스만 찾아서 업데이트 (같은 사용자의 디바이스만)
                   const device = await db.Device.findOne({
-                    where: { address: deviceMac }
+                    where: { 
+                      address: deviceMac,
+                      user_email: hub.user_email
+                    }
                   });
                   
                   if (device) {

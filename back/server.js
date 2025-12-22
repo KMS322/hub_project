@@ -85,19 +85,30 @@ const socketHandler = require("./socket");
 socketHandler(io);
 
 db.sequelize
-  .sync({ alter: false, force: false })
+  .sync({ alter: true, force: false })
   .then(async () => {
     console.log("Database connected successfully");
     
-    // 테이블이 없으면 생성 시도
+    // 기존 디바이스에 user_email이 없으면 허브의 user_email로 업데이트
     try {
-      await db.sequelize.query('SELECT 1 FROM Users LIMIT 1').catch(async () => {
-        console.log("⚠️  Users table not found, creating tables...");
-        await db.sequelize.sync({ force: false, alter: true });
-        console.log("✅ Tables created successfully");
+      const devicesWithoutEmail = await db.Device.findAll({
+        where: { user_email: null },
+        include: [{
+          model: db.Hub,
+          as: 'Hub',
+          attributes: ['address', 'user_email']
+        }]
       });
+
+      for (const device of devicesWithoutEmail) {
+        if (device.Hub && device.Hub.user_email) {
+          device.user_email = device.Hub.user_email;
+          await device.save();
+          console.log(`[Migration] Updated device ${device.address} with user_email: ${device.Hub.user_email}`);
+        }
+      }
     } catch (error) {
-      console.error("❌ Error checking/creating tables:", error.message);
+      console.error("❌ Error migrating device user_email:", error.message);
     }
 
     // 개발 모드에서만 더미 데이터 초기화

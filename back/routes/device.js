@@ -12,26 +12,28 @@ router.get('/', verifyToken, async (req, res) => {
   try {
     const { hubAddress } = req.query;
 
-    const where = {};
+    // 사용자 이메일 기준으로 디바이스 조회 (user_email 필드 사용)
+    const where = {
+      user_email: req.user.email
+    };
     
-    // 사용자의 허브에 속한 디바이스만 조회 (최적화: 필요한 필드만 조회)
-    const userHubs = await db.Hub.findAll({
-      where: { user_email: req.user.email },
-      attributes: ['address'],
-      raw: true // 객체 변환 오버헤드 제거
-    });
-    const hubAddresses = userHubs.map(h => h.address);
-
+    // hubAddress 파라미터가 있으면 해당 허브의 디바이스만 조회 (단, 사용자의 허브인지 확인)
     if (hubAddress) {
-      if (!hubAddresses.includes(hubAddress)) {
+      // 허브 소유권 확인
+      const hub = await db.Hub.findOne({
+        where: {
+          address: hubAddress,
+          user_email: req.user.email
+        }
+      });
+
+      if (!hub) {
         return res.status(403).json({
           success: false,
           message: '접근 권한이 없습니다.'
         });
       }
       where.hub_address = hubAddress;
-    } else {
-      where.hub_address = { [Op.in]: hubAddresses };
     }
 
     const devices = await db.Device.findAll({
@@ -86,11 +88,13 @@ router.get('/:deviceAddress', verifyToken, async (req, res) => {
     const { deviceAddress } = req.params;
 
     const device = await db.Device.findOne({
-      where: { address: deviceAddress },
+      where: { 
+        address: deviceAddress,
+        user_email: req.user.email
+      },
       include: [{
         model: db.Hub,
         as: 'Hub',
-        where: { user_email: req.user.email },
         attributes: ['address', 'name']
       }, {
         model: db.Pet,
@@ -156,12 +160,31 @@ router.post('/', verifyToken, async (req, res) => {
       });
     }
 
-    // 중복 확인
+    // 중복 확인: 같은 MAC 주소이지만 다른 사용자의 디바이스인 경우 재등록 허용
     const existingDevice = await db.Device.findByPk(address);
     if (existingDevice) {
-      return res.status(409).json({
-        success: false,
-        message: '이미 등록된 디바이스입니다.'
+      // 같은 사용자의 디바이스인 경우 중복 오류
+      if (existingDevice.user_email === req.user.email) {
+        return res.status(409).json({
+          success: false,
+          message: '이미 등록된 디바이스입니다.'
+        });
+      }
+      // 다른 사용자의 디바이스인 경우 기존 디바이스 정보 업데이트 (재등록)
+      existingDevice.name = name && name.trim() ? name.trim() : address.slice(-5);
+      existingDevice.hub_address = hubAddress;
+      existingDevice.user_email = req.user.email;
+      await existingDevice.save();
+      
+      return res.status(200).json({
+        success: true,
+        message: '디바이스가 재등록되었습니다.',
+        data: {
+          id: existingDevice.address,
+          address: existingDevice.address,
+          name: existingDevice.name,
+          hub_address: existingDevice.hub_address
+        }
       });
     }
 
@@ -171,7 +194,8 @@ router.post('/', verifyToken, async (req, res) => {
     const device = await db.Device.create({
       address,
       name: deviceName,
-      hub_address: hubAddress
+      hub_address: hubAddress,
+      user_email: req.user.email
     });
 
     res.status(201).json({
@@ -204,12 +228,10 @@ router.put('/:deviceAddress', verifyToken, async (req, res) => {
     const { name } = req.body;
 
     const device = await db.Device.findOne({
-      where: { address: deviceAddress },
-      include: [{
-        model: db.Hub,
-        as: 'Hub',
-        where: { user_email: req.user.email }
-      }]
+      where: { 
+        address: deviceAddress,
+        user_email: req.user.email
+      }
     });
 
     if (!device) {
@@ -294,12 +316,10 @@ router.put('/:deviceAddress/patient', verifyToken, async (req, res) => {
     const { petId } = req.body; // null이면 해제
 
     const device = await db.Device.findOne({
-      where: { address: deviceAddress },
-      include: [{
-        model: db.Hub,
-        as: 'Hub',
-        where: { user_email: req.user.email }
-      }]
+      where: { 
+        address: deviceAddress,
+        user_email: req.user.email
+      }
     });
 
     if (!device) {
@@ -328,9 +348,12 @@ router.put('/:deviceAddress/patient', verifyToken, async (req, res) => {
       pet.device_address = deviceAddress;
       await pet.save();
     } else {
-      // 해제
+      // 해제: 같은 사용자의 환자만 해제
       const pet = await db.Pet.findOne({
-        where: { device_address: deviceAddress }
+        where: { 
+          device_address: deviceAddress,
+          user_email: req.user.email
+        }
       });
       if (pet) {
         pet.device_address = null;

@@ -159,12 +159,10 @@ router.post('/', verifyToken, async (req, res) => {
     // device_address가 있으면 소유권 확인
     if (device_address) {
       const device = await db.Device.findOne({
-        where: { address: device_address },
-        include: [{
-          model: db.Hub,
-          as: 'Hub',
-          where: { user_email: req.user.email }
-        }]
+        where: { 
+          address: device_address,
+          user_email: req.user.email
+        }
       });
 
       if (!device) {
@@ -249,12 +247,10 @@ router.put('/:petId', verifyToken, async (req, res) => {
     if (updateData.device_address !== undefined) {
       if (updateData.device_address) {
         const device = await db.Device.findOne({
-          where: { address: updateData.device_address },
-          include: [{
-            model: db.Hub,
-            as: 'Hub',
-            where: { user_email: req.user.email }
-          }]
+          where: { 
+            address: updateData.device_address,
+            user_email: req.user.email
+          }
         });
 
         if (!device) {

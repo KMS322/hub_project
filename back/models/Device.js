@@ -15,6 +15,10 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING(100),
         allowNull: false,
       },
+      user_email: {
+        type: DataTypes.STRING(100),
+        allowNull: false,
+      },
     },
     {
       charset: "utf8mb4",
@@ -23,6 +27,7 @@ module.exports = (sequelize, DataTypes) => {
   );
   Device.associate = (db) => {
     db.Device.belongsTo(db.Hub, { foreignKey: "hub_address" });
+    db.Device.belongsTo(db.User, { foreignKey: "user_email" });
     db.Device.hasOne(db.Pet, { foreignKey: "device_address" });
   };
 

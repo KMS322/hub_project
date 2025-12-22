@@ -42,12 +42,10 @@ router.get('/', verifyToken, async (req, res) => {
 
       // 디바이스 소유권 확인
       const device = await db.Device.findOne({
-        where: { address: fileDeviceAddress },
-        include: [{
-          model: db.Hub,
-          as: 'Hub',
-          where: { user_email: req.user.email }
-        }]
+        where: { 
+          address: fileDeviceAddress,
+          user_email: req.user.email
+        }
       });
 
       if (!device) continue;
@@ -146,12 +144,10 @@ router.get('/download/:fileName', verifyToken, async (req, res) => {
     if (match) {
       const deviceAddress = match[1].replace(/-/g, ':');
       const device = await db.Device.findOne({
-        where: { address: deviceAddress },
-        include: [{
-          model: db.Hub,
-          as: 'Hub',
-          where: { user_email: req.user.email }
-        }]
+        where: { 
+          address: deviceAddress,
+          user_email: req.user.email
+        }
       });
 
       if (!device) {
@@ -214,12 +210,10 @@ router.delete('/:fileName', verifyToken, async (req, res) => {
     if (match) {
       const deviceAddress = match[1].replace(/-/g, ':');
       const device = await db.Device.findOne({
-        where: { address: deviceAddress },
-        include: [{
-          model: db.Hub,
-          as: 'Hub',
-          where: { user_email: req.user.email }
-        }]
+        where: { 
+          address: deviceAddress,
+          user_email: req.user.email
+        }
       });
 
       if (!device) {
@@ -289,9 +283,12 @@ router.post('/csv', async (req, res) => {
       });
     }
 
-    // 디바이스와 연결된 펫 정보 조회
+    // 디바이스와 연결된 펫 정보 조회 (사용자 이메일 기준)
     const device = await db.Device.findOne({
-      where: { address: device_mac_address },
+      where: { 
+        address: device_mac_address,
+        user_email: req.user.email
+      },
       include: [
         {
           model: db.Pet,
@@ -309,7 +306,7 @@ router.post('/csv', async (req, res) => {
     if (!device) {
       return res.status(404).json({
         success: false,
-        message: '디바이스를 찾을 수 없습니다.'
+        message: '디바이스를 찾을 수 없거나 접근 권한이 없습니다.'
       });
     }
 
