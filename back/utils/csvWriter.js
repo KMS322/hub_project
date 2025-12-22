@@ -30,7 +30,9 @@ class CSVWriter {
   // 이메일, MAC 주소, 시간은 sanitize하지 않고 그대로 사용
   sanitizeForPath(value) {
     // 경로에 사용할 수 없는 문자만 제거
+    // Windows 파일 시스템에서 @는 폴더명에 사용 가능하지만, 안전을 위해 _at_로 변환
     return String(value)
+      .replace(/@/g, '_at_')  // @를 _at_로 변환 (Windows 호환성)
       .replace(/[<>:"|?*\\]/g, '_')
       .replace(/\s+/g, '_');
   }
@@ -148,16 +150,6 @@ class CSVWriter {
 
     const counter = this.dataCounters.get(deviceAddress);
     const samplingRate = payload.sampling_rate || 50;
-    const intervalMs = 1000 / samplingRate;
-
-    const startTimeStr = payload.start_time || session.startTime;
-    const [h, m, s, ms] = this.parseStartTime(startTimeStr);
-
-    const baseMs =
-      h * 3600000 +
-      m * 60000 +
-      s * 1000 +
-      ms;
 
     let buffer = '';
 
@@ -178,9 +170,9 @@ class CSVWriter {
       for (let i = 0; i < payload.data.length; i++) {
         const [ir, red, green] = payload.data[i].split(',');
 
-        const elapsedMs = counter.total * intervalMs;
-        const time = new Date(baseMs + elapsedMs);
-        const timeStr = this.formatTime(time);
+        // 현재 시간 기준으로 time 저장 (HH:mm:ss:SSS 형식)
+        const now = new Date();
+        const timeStr = this.formatTime(now);
 
         // dataArr가 있으면 각 샘플의 값을 사용, 없으면 첫 번째 샘플에만 값 사용
         let hr = '';

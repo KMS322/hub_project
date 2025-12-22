@@ -303,10 +303,6 @@ function Monitoring() {
           }
         }
         
-        const startTimeStr = data.data.start_time || '000000000'
-        const startTimeMs = parseStartTime(startTimeStr)
-        const samplingRate = data.data.sampling_rate || 50
-        
         // 각 샘플을 데이터 포인트로 변환
         // dataArr의 각 샘플은 { hr, spo2, temp, battery, timestamp, index } 형태
         const baseHr = sanitizeValue(data.data.hr || 0)
@@ -314,13 +310,14 @@ function Monitoring() {
         const baseTemp = sanitizeValue(data.data.temp || 0)
         
         // 각 배치에서 마지막 샘플만 차트 포인트로 추가 (10개의 포인트가 시간 순서대로 쌓이도록)
-        // 측정 시작 시간: start_time + 1 / sampling_rate * 250 (첫 번째 샘플)
+        // 현재 시간 기준으로 timestamp 저장
         const lastSample = data.data.dataArr[data.data.dataArr.length - 1]
-        const lastIndex = data.data.dataArr.length - 1
-        // 첫 번째 샘플의 시간: start_time + 1 / sampling_rate * 250
-        // 이후 샘플: start_time + 1 / sampling_rate * 250 * (index + 1)
-        const elapsedSecondsFromStart = (1 / samplingRate) * 250 * (lastIndex + 1)
-        const sampleTime = startTimeMs + (elapsedSecondsFromStart * 1000)
+        const sampleTime = Date.now() // 현재 시간 사용
+        
+        // 측정 시작 시간 초기화 (첫 번째 데이터 수신 시)
+        if (!measurementStartTimeRef.current) {
+          measurementStartTimeRef.current = sampleTime
+        }
         
         // 샘플에서 직접 값을 가져오되, 없으면 전체 데이터에서 가져옴
         const rawHr = sanitizeValue((lastSample.hr !== undefined && lastSample.hr !== null) ? lastSample.hr : baseHr)
@@ -330,9 +327,14 @@ function Monitoring() {
         const heartRateDisplay = sanitizeValue(rawSpo2)
         const spo2Display = sanitizeValue(rawHr)
         
+        // elapsedSeconds는 측정 시작 시간 기준으로 계산 (표시용)
+        const elapsedSeconds = measurementStartTimeRef.current 
+          ? (sampleTime - measurementStartTimeRef.current) / 1000
+          : 0
+
         const newDataPoint = {
           timestamp: sampleTime,
-          elapsedSeconds: elapsedSecondsFromStart,
+          elapsedSeconds: elapsedSeconds,
           heartRate: heartRateDisplay,
           spo2: spo2Display,
           temperature: sanitizeValue((lastSample.temp !== undefined && lastSample.temp !== null) ? lastSample.temp : baseTemp),

@@ -2048,13 +2048,14 @@ function Hardware() {
       ).length;
 
       if (successful > 0) {
-      setAlertModal({ 
-        isOpen: true, 
-        title: '등록 완료', 
+        setAlertModal({ 
+          isOpen: true, 
+          title: '등록 완료', 
           message: `${successful}개의 디바이스가 성공적으로 등록되었습니다.${failed > 0 ? ` (${failed}개 실패)` : ''}` 
-      })
-      handleCloseDeviceRegister()
-        // 자동 새로고침 제거 (사용자가 수동으로 새로고침 가능)
+        })
+        handleCloseDeviceRegister()
+        // 디바이스 목록 자동 새로고침
+        await loadData()
       } else {
         const errorMessages = registrationResults
           .filter((r) => r.status === "rejected")
@@ -2530,12 +2531,6 @@ function Hardware() {
                       }}
                     >
                       이름 변경
-                    </button>
-                    <button 
-                      className="btn-primary"
-                      onClick={() => handleDevicePatientChange(device.id)}
-                    >
-                      {device.connectedPatient ? '환자 변경' : '환자 연결'}
                     </button>
                   </div>
                 </div>
