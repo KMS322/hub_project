@@ -8,6 +8,7 @@ import { detectHardwareError } from '../utils/hardwareErrorDetector'
 import deviceService from '../api/deviceService'
 import petService from '../api/petService'
 import { useAuthStore } from '../stores/useAuthStore'
+import axiosInstance from '../api/axios'
 import './Monitoring.css'
 
 function Monitoring() {
@@ -566,35 +567,21 @@ function Monitoring() {
         const startTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}:${String(now.getMilliseconds()).padStart(3, '0')}`
         
         if (command.action === 'start_measurement') {
-          const response = await fetch('http://localhost:5000/api/measurement/start', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              deviceAddress: deviceMacAddress,
-              userEmail: user?.email || '',
-              petName: petInfo?.name || '테스트펫',
-              startTime
-            })
+          const result = await axiosInstance.post('/api/measurement/start', {
+            deviceAddress: deviceMacAddress,
+            userEmail: user?.email || '',
+            petName: petInfo?.name || '테스트펫',
+            startTime
           })
-          const result = await response.json()
-          if (!result.success) {
-            console.error('[Monitoring] Failed to start CSV session:', result.message)
+          if (!result.data.success) {
+            console.error('[Monitoring] Failed to start CSV session:', result.data.message)
           }
         } else {
-          const response = await fetch('http://localhost:5000/api/measurement/stop', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              deviceAddress: deviceMacAddress
-            })
+          const result = await axiosInstance.post('/api/measurement/stop', {
+            deviceAddress: deviceMacAddress
           })
-          const result = await response.json()
-          if (!result.success) {
-            console.error('[Monitoring] Failed to stop CSV session:', result.message)
+          if (!result.data.success) {
+            console.error('[Monitoring] Failed to stop CSV session:', result.data.message)
           }
         }
       } catch (error) {

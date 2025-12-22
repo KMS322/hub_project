@@ -1,4 +1,5 @@
 import { io } from "socket.io-client";
+import { API_URL } from "../constants";
 
 /**
  * Socket.IO 서비스
@@ -14,9 +15,9 @@ class SocketService {
   /**
    * Socket.IO 연결
    * @param {string} token - JWT 인증 토큰
-   * @param {string} serverUrl - 서버 URL (기본: http://localhost:5000)
+   * @param {string} serverUrl - 서버 URL (기본: API_URL 상수 사용)
    */
-  connect(token, serverUrl = import.meta.env.VITE_API_URL) {
+  connect(token, serverUrl = API_URL) {
     if (this.socket && this.isConnected) {
       console.log("[Socket] Already connected");
       return;

@@ -9,6 +9,7 @@ import { useSocket } from "../hooks/useSocket";
 import { detectDeviceErrors } from "../utils/hardwareErrorDetector";
 import ConfirmModal from "../components/ConfirmModal";
 import { useAuthStore } from "../stores/useAuthStore";
+import axiosInstance from "../api/axios";
 import "./Dashboard.css";
 
 function Dashboard() {
@@ -298,26 +299,16 @@ function Dashboard() {
         now.getMilliseconds()
       ).padStart(3, "0")}`;
 
-      const response = await fetch(
-        "http://localhost:5000/api/measurement/start",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            deviceAddress: device.address,
-            userEmail: user?.email || "",
-            petName: device.connectedPatient?.name || "테스트펫",
-            startTime,
-          }),
-        }
-      );
-      const result = await response.json();
-      if (!result.success) {
+      const result = await axiosInstance.post("/api/measurement/start", {
+        deviceAddress: device.address,
+        userEmail: user?.email || "",
+        petName: device.connectedPatient?.name || "테스트펫",
+        startTime,
+      });
+      if (!result.data.success) {
         console.error(
           "[Dashboard] Failed to start CSV session:",
-          result.message
+          result.data.message
         );
       }
     } catch (error) {
@@ -365,23 +356,13 @@ function Dashboard() {
 
     // CSV 세션 종료
     try {
-      const response = await fetch(
-        "http://localhost:5000/api/measurement/stop",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            deviceAddress: device.address,
-          }),
-        }
-      );
-      const result = await response.json();
-      if (!result.success) {
+      const result = await axiosInstance.post("/api/measurement/stop", {
+        deviceAddress: device.address,
+      });
+      if (!result.data.success) {
         console.error(
           "[Dashboard] Failed to stop CSV session:",
-          result.message
+          result.data.message
         );
       }
     } catch (error) {
