@@ -206,7 +206,8 @@ class MQTTService {
               // CSV 세션이 없으면 시작
               if (!csvWriter.hasActiveSession(data.device_mac_address)) {
                 const startTime = data.start_time || '000000000';
-                csvWriter.startSession(data.device_mac_address, userEmail, petName, startTime);
+                const samplingRate = data.sampling_rate || 50;
+                csvWriter.startSession(data.device_mac_address, userEmail, petName, startTime, samplingRate);
                 console.log(`[MQTT Service] Started CSV session for ${data.device_mac_address}`);
               }
               

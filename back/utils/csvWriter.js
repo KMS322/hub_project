@@ -44,7 +44,7 @@ class CSVWriter {
    * 세션 관리
    * ========================= */
 
-  startSession(deviceAddress, userEmail, petName, startTime) {
+  startSession(deviceAddress, userEmail, petName, startTime, samplingRate = 50) {
     const now = new Date();
     const date = now.toISOString().split('T')[0];
 
@@ -55,14 +55,36 @@ class CSVWriter {
     const safeDevice = deviceAddress.replace(/:/g, '_');
     const safePet = this.sanitizeForPath(petName);
 
-    // 시간 형식 변환: HHmmssSSS -> HH_mm_ss_SSS (Windows 호환)
-    let safeTime = startTime;
-    if (startTime && !startTime.includes(':') && !startTime.includes('_') && startTime.length === 9) {
+    // 측정 시작 시간 계산: start_time + 1 / sampling_rate * 250 (밀리초)
+    let calculatedStartTime = startTime;
+    if (startTime && samplingRate > 0) {
+      // start_time을 밀리초로 변환
+      const [h, m, s, ms] = this.parseStartTime(startTime);
+      const today = new Date();
+      today.setHours(h, m, s, ms);
+      let startTimeMs = today.getTime();
+      
+      // 1 / sampling_rate * 250 밀리초 추가
+      const offsetMs = (1 / samplingRate) * 250 * 1000;
+      startTimeMs += offsetMs;
+      
+      // HH:mm:ss:SSS 형식으로 변환
+      const calculatedDate = new Date(startTimeMs);
+      const hours = String(calculatedDate.getHours()).padStart(2, '0');
+      const minutes = String(calculatedDate.getMinutes()).padStart(2, '0');
+      const seconds = String(calculatedDate.getSeconds()).padStart(2, '0');
+      const milliseconds = String(calculatedDate.getMilliseconds()).padStart(3, '0');
+      calculatedStartTime = `${hours}:${minutes}:${seconds}:${milliseconds}`;
+    }
+
+    // 시간 형식 변환: HH:mm:ss:SSS -> HH_mm_ss_SSS (Windows 호환)
+    let safeTime = calculatedStartTime;
+    if (calculatedStartTime && !calculatedStartTime.includes(':') && !calculatedStartTime.includes('_') && calculatedStartTime.length === 9) {
       // HHmmssSSS 형식을 HH_mm_ss_SSS로 변환
-      safeTime = `${startTime.slice(0, 2)}_${startTime.slice(2, 4)}_${startTime.slice(4, 6)}_${startTime.slice(6, 9)}`;
-    } else if (startTime && startTime.includes(':')) {
+      safeTime = `${calculatedStartTime.slice(0, 2)}_${calculatedStartTime.slice(2, 4)}_${calculatedStartTime.slice(4, 6)}_${calculatedStartTime.slice(6, 9)}`;
+    } else if (calculatedStartTime && calculatedStartTime.includes(':')) {
       // HH:mm:ss:SSS 형식을 HH_mm_ss_SSS로 변환
-      safeTime = startTime.replace(/:/g, '_');
+      safeTime = calculatedStartTime.replace(/:/g, '_');
     }
 
     const dirPath = path.join(
@@ -77,17 +99,17 @@ class CSVWriter {
     // 🔥 핵심: 중간 경로 포함 전부 생성
     fs.mkdirSync(dirPath, { recursive: true });
 
-    // 파일명: device_mac_address-HH_mm_ss_SSS.csv (Windows 호환)
+    // 파일명: device_mac_address_pet_name_HH_mm_ss_SSS.csv (Windows 호환)
     const filePath = path.join(
       dirPath,
-      `${safeDevice}-${safeTime}.csv`
+      `${safeDevice}_${safePet}_${safeTime}.csv`
     );
 
     fs.writeFileSync(filePath, this.csvHeaders, 'utf8');
 
     this.activeSessions.set(deviceAddress, {
       filePath,
-      startTime,
+      startTime: calculatedStartTime, // 계산된 시작 시간 저장
       baseTimestamp: now.getTime(),
     });
 

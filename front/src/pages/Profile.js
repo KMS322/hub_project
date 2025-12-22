@@ -150,9 +150,16 @@ function Profile() {
           </div>
 
           <div className="form-section">
-            <h2>병원 정보</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <h2 style={{ margin: 0 }}>병원 정보</h2>
+              {!isEditing && (
+                <span style={{ fontSize: '0.9rem', color: '#666' }}>
+                  정보를 수정하려면 아래 "정보 수정" 버튼을 클릭하세요
+                </span>
+              )}
+            </div>
             <div className="form-group">
-              <label htmlFor="name">병원명</label>
+              <label htmlFor="name">병원명 *</label>
               <input
                 type="text"
                 id="name"
@@ -161,11 +168,12 @@ function Profile() {
                 onChange={handleChange}
                 disabled={!isEditing}
                 className={!isEditing ? "disabled-input" : ""}
+                placeholder="병원명을 입력하세요"
                 required
               />
             </div>
             <div className="form-group">
-              <label htmlFor="postcode">우편번호</label>
+              <label htmlFor="postcode">우편번호 *</label>
               <input
                 type="text"
                 id="postcode"
@@ -174,11 +182,12 @@ function Profile() {
                 onChange={handleChange}
                 disabled={!isEditing}
                 className={!isEditing ? "disabled-input" : ""}
+                placeholder="우편번호를 입력하세요"
                 required
               />
             </div>
             <div className="form-group">
-              <label htmlFor="address">주소</label>
+              <label htmlFor="address">주소 *</label>
               <input
                 type="text"
                 id="address"
@@ -187,11 +196,12 @@ function Profile() {
                 onChange={handleChange}
                 disabled={!isEditing}
                 className={!isEditing ? "disabled-input" : ""}
+                placeholder="주소를 입력하세요"
                 required
               />
             </div>
             <div className="form-group">
-              <label htmlFor="detail_address">상세주소</label>
+              <label htmlFor="detail_address">상세주소 *</label>
               <input
                 type="text"
                 id="detail_address"
@@ -200,11 +210,12 @@ function Profile() {
                 onChange={handleChange}
                 disabled={!isEditing}
                 className={!isEditing ? "disabled-input" : ""}
+                placeholder="상세주소를 입력하세요"
                 required
               />
             </div>
             <div className="form-group">
-              <label htmlFor="phone">병원 전화번호</label>
+              <label htmlFor="phone">병원 전화번호 *</label>
               <input
                 type="tel"
                 id="phone"
@@ -213,6 +224,7 @@ function Profile() {
                 onChange={handleChange}
                 disabled={!isEditing}
                 className={!isEditing ? "disabled-input" : ""}
+                placeholder="전화번호를 입력하세요 (예: 010-1234-5678)"
                 required
               />
             </div>
@@ -220,13 +232,14 @@ function Profile() {
 
           <div className="form-actions">
             <button type="submit" className="btn-primary" disabled={loading}>
-              {loading ? "저장 중..." : isEditing ? "정보 저장" : "정보 수정"}
+              {loading ? "저장 중..." : isEditing ? "병원 정보 저장" : "병원 정보 수정"}
             </button>
             {isEditing && (
               <button
                 type="button"
                 className="btn-secondary"
                 onClick={handleEditToggle}
+                disabled={loading}
               >
                 취소
               </button>

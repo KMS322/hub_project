@@ -340,12 +340,13 @@ router.post('/csv', async (req, res) => {
     // 현재 날짜 (YYYY-MM-DD)
     const dateStr = today.toISOString().split('T')[0];
 
-    // 파일 경로 생성: csv_files/user_email/YYYY-MM-DD/device_mac_address/pet_name/device_mac_address-HH_mm_ss_SSS.csv
+    // 파일 경로 생성: csv_files/user_email/YYYY-MM-DD/device_mac_address/pet_name/device_mac_address_pet_name_HH_mm_ss_SSS.csv
     // Windows에서는 폴더명과 파일명에 : 사용 불가하므로 _로 변환
     const sanitizedEmail = csvWriter.sanitizeForPath(userEmail);
     const sanitizedAddress = device_mac_address.replace(/:/g, '_'); // MAC 주소의 :를 _로 변환
+    const sanitizedPet = csvWriter.sanitizeForPath(petName);
     const sanitizedTime = start_time.replace(/:/g, '_'); // 시간의 :를 _로 변환
-    const fileName = `${sanitizedAddress}-${sanitizedTime}.csv`;
+    const fileName = `${sanitizedAddress}_${sanitizedPet}_${sanitizedTime}.csv`;
     
     const fileDir = path.join(
       process.cwd(),
@@ -472,8 +473,9 @@ router.get('/csv-content', async (req, res) => {
     // Windows에서는 폴더명과 파일명에 : 사용 불가하므로 _로 변환
     const sanitizedEmail = csvWriter.sanitizeForPath(user_email);
     const sanitizedAddress = device_mac_address.replace(/:/g, '_'); // MAC 주소의 :를 _로 변환
+    const sanitizedPet = csvWriter.sanitizeForPath(pet_name);
     const sanitizedTime = start_time.replace(/:/g, '_'); // 시간의 :를 _로 변환
-    const fileName = `${sanitizedAddress}-${sanitizedTime}.csv`;
+    const fileName = `${sanitizedAddress}_${sanitizedPet}_${sanitizedTime}.csv`;
 
     const fileDir = path.join(
       process.cwd(),

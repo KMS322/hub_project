@@ -314,9 +314,12 @@ function Monitoring() {
         const baseTemp = sanitizeValue(data.data.temp || 0)
         
         // 각 배치에서 마지막 샘플만 차트 포인트로 추가 (10개의 포인트가 시간 순서대로 쌓이도록)
+        // 측정 시작 시간: start_time + 1 / sampling_rate * 250 (첫 번째 샘플)
         const lastSample = data.data.dataArr[data.data.dataArr.length - 1]
         const lastIndex = data.data.dataArr.length - 1
-        const elapsedSecondsFromStart = (1 / samplingRate) * 250 * lastIndex
+        // 첫 번째 샘플의 시간: start_time + 1 / sampling_rate * 250
+        // 이후 샘플: start_time + 1 / sampling_rate * 250 * (index + 1)
+        const elapsedSecondsFromStart = (1 / samplingRate) * 250 * (lastIndex + 1)
         const sampleTime = startTimeMs + (elapsedSecondsFromStart * 1000)
         
         // 샘플에서 직접 값을 가져오되, 없으면 전체 데이터에서 가져옴

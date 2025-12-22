@@ -41,8 +41,9 @@ router.post('/start', async (req, res) => {
     // CSV 세션 시작
     const now = new Date();
     const time = startTime || `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}:${String(now.getMilliseconds()).padStart(3, '0')}`;
+    const samplingRate = req.body.samplingRate || 50;
     
-    csvWriter.startSession(deviceAddress, userEmail, petName, time);
+    csvWriter.startSession(deviceAddress, userEmail, petName, time, samplingRate);
 
     console.log(`[Measurement API] Started session for ${deviceAddress}`);
 
