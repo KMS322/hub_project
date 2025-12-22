@@ -8,11 +8,13 @@ import hubService from "../api/hubService";
 import { useSocket } from "../hooks/useSocket";
 import { detectDeviceErrors } from "../utils/hardwareErrorDetector";
 import ConfirmModal from "../components/ConfirmModal";
+import { useAuthStore } from "../stores/useAuthStore";
 import "./Dashboard.css";
 
 function Dashboard() {
   const navigate = useNavigate();
   const { isConnected, on, off, emit } = useSocket();
+  const { user } = useAuthStore();
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [connectedDevices, setConnectedDevices] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -305,7 +307,7 @@ function Dashboard() {
           },
           body: JSON.stringify({
             deviceAddress: device.address,
-            userEmail: "test@example.com", // TODO: 실제 사용자 이메일로 변경
+            userEmail: user?.email || "",
             petName: device.connectedPatient?.name || "테스트펫",
             startTime,
           }),

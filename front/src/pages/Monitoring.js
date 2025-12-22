@@ -7,12 +7,14 @@ import { API_URL } from '../constants'
 import { detectHardwareError } from '../utils/hardwareErrorDetector'
 import deviceService from '../api/deviceService'
 import petService from '../api/petService'
+import { useAuthStore } from '../stores/useAuthStore'
 import './Monitoring.css'
 
 function Monitoring() {
   const { patientId } = useParams()
   const navigate = useNavigate()
   const { isConnected, on, emit, off } = useSocket()
+  const { user } = useAuthStore()
   
   // UI 상태
   const [activeTab, setActiveTab] = useState('heartRate')
@@ -571,7 +573,7 @@ function Monitoring() {
             },
             body: JSON.stringify({
               deviceAddress: deviceMacAddress,
-              userEmail: 'test@example.com',
+              userEmail: user?.email || '',
               petName: petInfo?.name || '테스트펫',
               startTime
             })
