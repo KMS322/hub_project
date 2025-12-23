@@ -11,8 +11,9 @@ import { API_URL } from "../constants";
 import { useSocket } from "../hooks/useSocket";
 import axiosInstance from "../api/axios";
 import { detectHardwareError } from "../utils/hardwareErrorDetector";
+import { SkeletonCard, Skeleton } from "../components/Skeleton";
 import "./Hardware.css";
-import deviceImage from "../assets/device.png";
+import deviceImage from "../assets/device.gif";
 
 function Hardware() {
   const [searchParams] = useSearchParams();
@@ -235,7 +236,8 @@ function Hardware() {
           clearTimeout(timeoutRefs[hubAddress]);
         }
 
-        // 60초 후 자동으로 오프라인으로 변경 (활동이 없으면)
+        // 실제로 데이터가 안 들어올 때만 오프라인으로 변경 (5분 후)
+        // 데이터가 들어오면 handleTelemetry나 handleConnectedDevices에서 타임아웃을 리셋함
         timeoutRefs[hubAddress] = setTimeout(() => {
           setHubStatuses((prev) => ({
             ...prev,
@@ -246,7 +248,7 @@ function Hardware() {
             [hubAddress]: { progress: 0, isActive: false },
           }));
           delete timeoutRefs[hubAddress];
-        }, 60000); // 60초
+        }, 300000); // 5분 // 60초
       }
     };
 
@@ -278,14 +280,15 @@ function Hardware() {
           [hubId]: true,
         }));
 
-        // 60초 후 자동으로 오프라인으로 변경 (데이터가 없으면)
+        // 실제로 데이터가 안 들어올 때만 오프라인으로 변경 (5분 후)
+        // 데이터가 들어오면 타임아웃이 리셋됨
         timeoutRefs[hubId] = setTimeout(() => {
           setHubStatuses((prev) => ({
             ...prev,
             [hubId]: false,
           }));
           delete timeoutRefs[hubId];
-        }, 60000); // 60초
+        }, 300000); // 5분
       }
 
       // 하드웨어 오류 감지
@@ -420,10 +423,15 @@ function Hardware() {
           [hubAddress]: true,
         }));
 
-        // 타임아웃 정리
+        // 타임아웃 정리 (데이터가 들어왔으므로 타임아웃 리셋)
         if (hubTimeoutRefs.current[hubAddress]) {
           clearTimeout(hubTimeoutRefs.current[hubAddress]);
           delete hubTimeoutRefs.current[hubAddress];
+        }
+        // timeoutRefs도 정리 (handleHubActivity의 타임아웃)
+        if (timeoutRefs[hubAddress]) {
+          clearTimeout(timeoutRefs[hubAddress]);
+          delete timeoutRefs[hubAddress];
         }
       }
 
@@ -553,6 +561,19 @@ function Hardware() {
             ...prev,
             ...newConnectionStatuses,
           }));
+
+          // 전체 연결 성공 시 해당 허브를 온라인으로 설정
+          if (hubAddress) {
+            setHubStatuses((prev) => ({
+              ...prev,
+              [hubAddress]: true,
+            }));
+            // 타임아웃 정리 (연결 성공 시 타임아웃 제거)
+            if (hubTimeoutRefs.current[hubAddress]) {
+              clearTimeout(hubTimeoutRefs.current[hubAddress]);
+              delete hubTimeoutRefs.current[hubAddress];
+            }
+          }
 
           setAlertModal({
             isOpen: true,
@@ -2086,6 +2107,19 @@ function Hardware() {
       ).length;
 
       if (successful > 0) {
+        // 디바이스 등록 성공 시 해당 허브를 온라인으로 설정
+        if (hubAddress) {
+          setHubStatuses((prev) => ({
+            ...prev,
+            [hubAddress]: true,
+          }));
+          // 타임아웃 정리 (등록 성공 시 타임아웃 제거)
+          if (hubTimeoutRefs.current[hubAddress]) {
+            clearTimeout(hubTimeoutRefs.current[hubAddress]);
+            delete hubTimeoutRefs.current[hubAddress];
+          }
+        }
+        
         setAlertModal({ 
           isOpen: true, 
           title: '등록 완료', 
@@ -2329,7 +2363,49 @@ function Hardware() {
           onDismiss={handleDismissAlert}
         />
         <div className="hardware-container">
-          <div className="loading">데이터를 불러오는 중...</div>
+          {/* 스탯 섹션 스켈레톤 */}
+          <section className="stats-section">
+            <h2>디바이스 및 허브 현황</h2>
+            <div className="stats-grid">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="stat-card">
+                  <Skeleton width="80%" height="1rem" />
+                  <div style={{ marginTop: '0.5rem' }}>
+                    <Skeleton width="60%" height="2rem" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* 허브 & 디바이스 관리 스켈레톤 */}
+          <div className="hardware-grid-layout">
+            {/* 허브 목록 스켈레톤 */}
+            <div className="hub-section">
+              <div className="section-header">
+                <h2>허브 목록</h2>
+                <Skeleton width="100px" height="2.5rem" />
+              </div>
+              <div className="hub-list">
+                {[1, 2].map((i) => (
+                  <SkeletonCard key={i} />
+                ))}
+              </div>
+            </div>
+
+            {/* 디바이스 목록 스켈레톤 */}
+            <div className="device-section">
+              <div className="section-header">
+                <h2>디바이스 목록</h2>
+                <Skeleton width="120px" height="2.5rem" />
+              </div>
+              <div className="device-list">
+                {[1, 2, 3].map((i) => (
+                  <SkeletonCard key={i} />
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -2367,14 +2443,7 @@ function Hardware() {
         </section>
 
         {/* 허브 & 디바이스 관리 2열 레이아웃 */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: "2rem",
-            marginTop: "2rem",
-          }}
-        >
+        <div className="hardware-grid-layout">
           {/* 왼쪽: 허브 관리 */}
           <div className="hub-section">
             <div className="section-header">
@@ -2488,14 +2557,7 @@ function Hardware() {
           <div className="device-section">
             <div className="section-header">
               <h2>디바이스 목록</h2>
-              <div
-                style={{
-                  display: "flex",
-                  gap: "0.5rem",
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                }}
-              >
+              <div className="device-section-actions">
                 <button
                   className="btn-secondary"
                   onClick={handleConnectAllDevices}
@@ -2552,10 +2614,9 @@ function Hardware() {
                   </div>
                   <div className="device-actions">
                     <button 
-                      className="btn-secondary"
+                      className={`btn-secondary ${deviceConnectionStatuses[device.address] !== 'connected' ? 'disabled' : ''}`}
                       onClick={() => handleBlinkRegisteredDevice(device.address)}
                       disabled={deviceConnectionStatuses[device.address] !== 'connected'}
-                      style={{ opacity: deviceConnectionStatuses[device.address] !== 'connected' ? 0.5 : 1 }}
                     >
                       LED 깜빡이기
                     </button>

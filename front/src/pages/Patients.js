@@ -4,6 +4,7 @@ import petService from '../api/petService'
 import deviceService from '../api/deviceService'
 import AlertModal from '../components/AlertModal'
 import ConfirmModal from '../components/ConfirmModal'
+import { SkeletonCard, Skeleton } from '../components/Skeleton'
 import './Patients.css'
 
 // PatientForm 컴포넌트를 외부로 분리
@@ -425,7 +426,21 @@ function Patients() {
       <div className="patients-page">
         <Header />
         <div className="patients-container">
-          <div className="loading">데이터를 불러오는 중...</div>
+          <div className="patients-header">
+            <Skeleton width="120px" height="2.5rem" />
+          </div>
+
+          <div className="filter-tabs">
+            <Skeleton width="80px" height="2rem" />
+            <Skeleton width="80px" height="2rem" />
+            <Skeleton width="80px" height="2rem" />
+          </div>
+
+          <div className="patients-list">
+            {[1, 2, 3, 4].map((i) => (
+              <SkeletonCard key={i} />
+            ))}
+          </div>
         </div>
       </div>
     )

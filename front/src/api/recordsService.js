@@ -52,12 +52,13 @@ const recordsService = {
   /**
    * CSV 파일 다운로드 (새 API)
    * @param {string} relativePath - 상대 경로 (API에서 받은 relativePath)
+   * @param {string} customFileName - 커스텀 파일명 (선택사항, 없으면 원본 파일명 사용)
    * @returns {Promise<void>}
    */
-  downloadCsvFile: async (relativePath) => {
+  downloadCsvFile: async (relativePath, customFileName = null) => {
     const token = localStorage.getItem('auth-storage');
     let authToken = '';
-    
+
     if (token) {
       try {
         const { state } = JSON.parse(token);
@@ -82,7 +83,15 @@ const recordsService = {
     const downloadUrl = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = downloadUrl;
-    const filename = relativePath.split('/').pop() || 'download.csv';
+
+    // 커스텀 파일명이 있으면 사용, 없으면 원본 파일명 사용
+    let filename = customFileName || relativePath.split('/').pop() || 'download.csv';
+
+    // .csv 확장자가 없으면 추가
+    if (!filename.endsWith('.csv')) {
+      filename = filename + '.csv';
+    }
+
     link.download = filename;
     document.body.appendChild(link);
     link.click();
@@ -93,12 +102,13 @@ const recordsService = {
   /**
    * CSV 파일 다운로드
    * @param {string} fileName - 파일명
+   * @param {string} customFileName - 커스텀 파일명 (선택사항, 없으면 원본 파일명 사용)
    * @returns {Promise<void>}
    */
-  downloadFile: async (fileName) => {
+  downloadFile: async (fileName, customFileName = null) => {
     const token = localStorage.getItem('auth-storage');
     let authToken = '';
-    
+
     if (token) {
       try {
         const { state } = JSON.parse(token);
@@ -123,7 +133,16 @@ const recordsService = {
     const downloadUrl = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = downloadUrl;
-    link.download = fileName;
+
+    // 커스텀 파일명이 있으면 사용, 없으면 원본 파일명 사용
+    let downloadFileName = customFileName || fileName;
+
+    // .csv 확장자가 없으면 추가
+    if (!downloadFileName.endsWith('.csv')) {
+      downloadFileName = downloadFileName + '.csv';
+    }
+
+    link.download = downloadFileName;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

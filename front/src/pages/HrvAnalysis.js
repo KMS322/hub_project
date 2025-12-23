@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import Header from '../components/Header'
 import recordsService from '../api/recordsService'
 import HrvDetail from '../components/hrv/HrvDetail'
+import { SkeletonCard, Skeleton } from '../components/Skeleton'
 import './HrvAnalysis.css'
 
 function HrvAnalysis() {
@@ -155,11 +156,28 @@ function HrvAnalysis() {
     }
   }
 
-  // 파일명 포맷팅: "디바이스 이름 - 환자명" (Records 페이지와 동일)
+  // 파일명 포맷팅: "디바이스 이름 - 환자명 - 종료시간"
   const formatFileName = (file) => {
     if (!file) return ''
-    // Records 페이지와 동일한 형식
-    return `${file.deviceName || file.device || ''} - ${file.pet || ''}`
+    
+    // 종료 시간 포맷팅 함수
+    const formatEndTimeForFileName = (endTime) => {
+      if (!endTime) return null
+      const date = new Date(endTime)
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const day = String(date.getDate()).padStart(2, '0')
+      const hours = String(date.getHours()).padStart(2, '0')
+      const minutes = String(date.getMinutes()).padStart(2, '0')
+      const seconds = String(date.getSeconds()).padStart(2, '0')
+      return `${year}-${month}-${day} ${hours}시${minutes}분${seconds}초`
+    }
+    
+    // 파일명: "디바이스명 - 환자명 - 종료시간"
+    const endTimeStr = formatEndTimeForFileName(file.endTime)
+    const baseFileName = `${file.deviceName || file.device || ''} - ${file.pet || ''}`
+    
+    return endTimeStr ? `${baseFileName} - ${endTimeStr}` : baseFileName
   }
   
   return (
@@ -180,7 +198,21 @@ function HrvAnalysis() {
             </div>
             
             {isLoadingFiles ? (
-              <div className="loading">파일 목록을 불러오는 중...</div>
+              <div className="file-list">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="file-item" style={{ pointerEvents: 'none' }}>
+                    <div className="file-info">
+                      <div style={{ marginBottom: '0.5rem' }}>
+                        <Skeleton width="70%" height="1.2rem" />
+                      </div>
+                      <div className="file-meta" style={{ display: 'flex', gap: '1rem' }}>
+                        <Skeleton width="100px" height="0.9rem" />
+                        <Skeleton width="80px" height="0.9rem" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : csvFiles.length === 0 ? (
               <div className="no-data">저장된 CSV 파일이 없습니다.</div>
             ) : (

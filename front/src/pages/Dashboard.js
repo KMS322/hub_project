@@ -15,7 +15,6 @@ import { SkeletonCard } from "../components/Skeleton";
 import EmptyState from "../components/EmptyState";
 import axiosInstance from "../api/axios";
 import "./Dashboard.css";
-
 function Dashboard() {
   const navigate = useNavigate();
   const { isConnected, on, off, emit } = useSocket();
@@ -39,16 +38,14 @@ function Dashboard() {
   const hasShownConnectionToastRef = useRef(false); // 환자 연결 토스트 표시 여부 추적
   const hrErrorCountsRef = useRef({}); // 디바이스별 HR 에러 카운트 { deviceAddress: { count7: 0, count8: 0, count9: 0 } }
   const lastValidHrRef = useRef({}); // 디바이스별 마지막 유효한 HR 값 { deviceAddress: number }
-
+  const lastToastTimeRef = useRef({}); // 디바이스별 마지막 토스트 표시 시간 { deviceAddress: { type7: timestamp, type8: timestamp, type9: timestamp } }
   // 데이터 로드
   useEffect(() => {
     loadData();
   }, []);
-
   // Socket.IO로 실시간 데이터 업데이트
   useEffect(() => {
     if (!isConnected) return;
-
     const handleTelemetry = (data) => {
       console.log("[Dashboard] Received TELEMETRY:", data);
       if (data.type === "sensor_data" && data.deviceId) {
@@ -57,7 +54,28 @@ function Dashboard() {
           ...prev,
           [data.deviceId]: true,
         }));
-
+        
+        // 데이터가 들어왔으므로 해당 디바이스의 허브를 온라인으로 설정
+        const device = connectedDevices.find((d) => d.address === data.deviceId);
+        if (device && device.hub_address) {
+          const hubAddress = device.hub_address;
+          setHubStatuses((prev) => ({
+            ...prev,
+            [hubAddress]: true,
+          }));
+          // 타임아웃 정리 (데이터가 들어왔으므로 타임아웃 리셋)
+          if (hubTimeoutRefs.current[hubAddress]) {
+            clearTimeout(hubTimeoutRefs.current[hubAddress]);
+            delete hubTimeoutRefs.current[hubAddress];
+          }
+          // 타임아웃 알림 제거
+          setHubTimeoutAlerts((prev) => {
+            const updated = { ...prev };
+            delete updated[hubAddress];
+            return updated;
+          });
+        }
+        
         // 디바이스의 현재 데이터 업데이트
         // 허브에서 hr / spo2 값이 바뀌어서 오기 때문에,
         // 여기서는 "원본 값"을 그대로 저장하고,
@@ -67,10 +85,8 @@ function Dashboard() {
             if (device.address === data.deviceId) {
               const latest =
                 data.data?.dataArr?.[data.data.dataArr.length - 1] || data.data;
-
               let rawHr = Number(latest.hr || data.data?.hr || 0);
-              const rawSpo2 = latest.spo2 || data.data?.spo2 || 0;
-
+              const rawSpo2 = Number(latest.spo2 || data.data?.spo2 || 0);
               // HR 값 처리 및 에러 카운트 관리
               let processedHr = rawHr;
               const deviceAddress = device.address;
@@ -78,6 +94,10 @@ function Dashboard() {
               // HR 에러 카운트 초기화
               if (!hrErrorCountsRef.current[deviceAddress]) {
                 hrErrorCountsRef.current[deviceAddress] = { count7: 0, count8: 0, count9: 0 };
+              }
+              // 토스트 시간 추적 초기화
+              if (!lastToastTimeRef.current[deviceAddress]) {
+                lastToastTimeRef.current[deviceAddress] = { type7: 0, type8: 0, type9: 0 };
               }
               
               // 마지막 유효한 HR 값 저장 (원본 값 저장)
@@ -87,11 +107,14 @@ function Dashboard() {
                 lastValidHrRef.current[deviceAddress] = rawHr;
               }
               
-              // HR 값 처리 (심박수)
-              const rawHrInt = Math.floor(rawHr);
-              console.log('[Dashboard] HR 처리:', { rawHr, rawHrInt, deviceAddress, lastValid: lastValidHrRef.current[deviceAddress] });
-              
-              if (rawHrInt === 7) {
+              // SpO2 값 처리 (에러 체크용 - 실제로는 SpO2 값으로 체크)
+              const rawSpo2Int = Math.floor(rawSpo2);
+              console.log('[Dashboard] ⭐ SpO2 처리 시작:', { rawSpo2, rawSpo2Int, deviceAddress, lastValid: lastValidHrRef.current[deviceAddress] });
+              // 🔥 강력한 디버깅: SpO2 값이 7, 8, 9일 때 무조건 로그 출력
+              if (rawSpo2Int === 7 || rawSpo2Int === 8 || rawSpo2Int === 9) {
+                console.log(`[Dashboard] 🔥🔥🔥 SpO2 에러 감지! rawSpo2Int=${rawSpo2Int}, count7=${hrErrorCountsRef.current[deviceAddress].count7}, count8=${hrErrorCountsRef.current[deviceAddress].count8}, count9=${hrErrorCountsRef.current[deviceAddress].count9}`);
+              }
+              if (rawSpo2Int === 7) {
                 // 배터리 부족: 이전 값에서 ±5로 랜덤
                 // spo2가 심박수로 표시되므로 spo2 값을 기준으로 사용
                 const lastValid = lastValidHrRef.current[deviceAddress] || device.currentData?.spo2 || 70;
@@ -99,44 +122,73 @@ function Dashboard() {
                 processedHr = Math.max(0, lastValid + randomOffset);
                 console.log('[Dashboard] HR 7 처리:', { lastValid, processedHr, count: hrErrorCountsRef.current[deviceAddress].count7 });
                 
-                // 토스트 표시 (한 번만)
+                // 토스트 표시 (한 번만, 5초 내 중복 방지)
                 hrErrorCountsRef.current[deviceAddress].count7 += 1;
-                if (hrErrorCountsRef.current[deviceAddress].count7 === 1) {
-                  console.log('[Dashboard] 배터리 부족 토스트 표시');
-                  showWarning("배터리 부족");
+                if (!lastToastTimeRef.current[deviceAddress]) {
+                  lastToastTimeRef.current[deviceAddress] = {};
                 }
-              } else if (rawHrInt === 8) {
+                const now = Date.now();
+                const lastToastTime = lastToastTimeRef.current[deviceAddress].type7 || 0;
+                const timeSinceLastToast = now - lastToastTime;
+                
+                console.log(`[Dashboard] 🔋 SpO2=7 카운트 증가: ${hrErrorCountsRef.current[deviceAddress].count7}, 마지막 토스트: ${timeSinceLastToast}ms 전`);
+                if (hrErrorCountsRef.current[deviceAddress].count7 === 1 && timeSinceLastToast > 5000) {
+                  console.log('[Dashboard] 🔔🔔🔔 배터리 부족 토스트 호출!');
+                  showWarning("배터리가 부족합니다");
+                  lastToastTimeRef.current[deviceAddress].type7 = now;
+                  console.log('[Dashboard] ✅ showWarning 호출 완료');
+                }
+              } else if (rawSpo2Int === 8) {
                 // 신호불량: 이전 값에서 ±5로 랜덤
                 // spo2가 심박수로 표시되므로 spo2 값을 기준으로 사용
                 const lastValid = lastValidHrRef.current[deviceAddress] || device.currentData?.spo2 || 70;
                 const randomOffset = Math.floor(Math.random() * 11) - 5; // -5 ~ +5
                 processedHr = Math.max(0, lastValid + randomOffset);
-                console.log('[Dashboard] HR 8 처리:', { lastValid, processedHr, count: hrErrorCountsRef.current[deviceAddress].count8 });
+                console.log('[Dashboard] SpO2 8 처리:', { lastValid, processedHr, count: hrErrorCountsRef.current[deviceAddress].count8 });
                 
-                // 5번마다 토스트 표시
+                // 연속으로 3번 이상 나오면 토스트 표시 (5초 내 중복 방지)
                 hrErrorCountsRef.current[deviceAddress].count8 += 1;
-                if (hrErrorCountsRef.current[deviceAddress].count8 % 5 === 0) {
-                  console.log('[Dashboard] 신호불량 토스트 표시');
-                  showWarning("신호불량");
+                if (!lastToastTimeRef.current[deviceAddress]) {
+                  lastToastTimeRef.current[deviceAddress] = {};
                 }
-              } else if (rawHrInt === 9) {
+                const now = Date.now();
+                const lastToastTime = lastToastTimeRef.current[deviceAddress].type8 || 0;
+                const timeSinceLastToast = now - lastToastTime;
+                
+                console.log(`[Dashboard] 📡 SpO2=8 카운트 증가: ${hrErrorCountsRef.current[deviceAddress].count8}, 마지막 토스트: ${timeSinceLastToast}ms 전`);
+                if (hrErrorCountsRef.current[deviceAddress].count8 >= 3 && timeSinceLastToast > 5000) {
+                  console.log('[Dashboard] 🔔🔔🔔 신호불량 토스트 호출!');
+                  showWarning("신호가 불량합니다");
+                  lastToastTimeRef.current[deviceAddress].type8 = now;
+                  hrErrorCountsRef.current[deviceAddress].count8 = 0; // 리셋
+                  console.log('[Dashboard] ✅ showWarning 호출 완료');
+                }
+              } else if (rawSpo2Int === 9) {
                 // 움직임 감지: 이전 값에서 ±5로 랜덤
                 // spo2가 심박수로 표시되므로 spo2 값을 기준으로 사용
                 const lastValid = lastValidHrRef.current[deviceAddress] || device.currentData?.spo2 || 70;
                 const randomOffset = Math.floor(Math.random() * 11) - 5; // -5 ~ +5
                 processedHr = Math.max(0, lastValid + randomOffset);
-                console.log('[Dashboard] HR 9 처리:', { lastValid, processedHr, count: hrErrorCountsRef.current[deviceAddress].count9 });
+                console.log('[Dashboard] SpO2 9 처리:', { lastValid, processedHr });
                 
-                // 3번 이상이면 토스트 표시
-                hrErrorCountsRef.current[deviceAddress].count9 += 1;
-                if (hrErrorCountsRef.current[deviceAddress].count9 >= 3) {
+                // SpO2 9가 나오면 토스트 표시 (5초 내 중복 방지)
+                if (!lastToastTimeRef.current[deviceAddress]) {
+                  lastToastTimeRef.current[deviceAddress] = {};
+                }
+                const now = Date.now();
+                const lastToastTime = lastToastTimeRef.current[deviceAddress].type9 || 0;
+                const timeSinceLastToast = now - lastToastTime;
+                
+                console.log(`[Dashboard] 🏃 SpO2=9 감지, 마지막 토스트: ${timeSinceLastToast}ms 전`);
+                if (timeSinceLastToast > 5000) {
                   const patientName = device.connectedPatient?.name || "환자";
-                  const patientSuffix = patientName.endsWith('이') || patientName.endsWith('가') 
-                    ? patientName 
+                  const patientSuffix = patientName.endsWith('이') || patientName.endsWith('가')
+                    ? patientName
                     : (patientName.match(/[가-힣]$/) ? `${patientName}이` : `${patientName}가`);
-                  console.log('[Dashboard] 움직임 감지 토스트 표시');
-                  showWarning(`${patientSuffix} 움직이고 있습니다.`);
-                  hrErrorCountsRef.current[deviceAddress].count9 = 0; // 리셋
+                  console.log(`[Dashboard] 🔔🔔🔔 움직임 감지 토스트 호출! 메시지: "${patientSuffix} 움직이고 있어 측정이 불가 합니다."`);
+                  showWarning(`${patientSuffix} 움직이고 있어 측정이 불가 합니다.`);
+                  lastToastTimeRef.current[deviceAddress].type9 = now;
+                  console.log('[Dashboard] ✅ showWarning 호출 완료');
                 }
               } else if (rawHr >= 10 && rawHr < 50) {
                 // 10 이상 50 미만: * 1.6, 소수점 제거
@@ -149,15 +201,13 @@ function Dashboard() {
               }
               
               console.log('[Dashboard] 최종 HR 값:', { rawHr, processedHr });
-
               // 화면 표시: spo2를 심박수로, hr을 산포도로 사용
-              // HR 값이 7, 8, 9일 때는 처리된 값을 spo2(심박수)에 저장
+              // SpO2 값이 7, 8, 9일 때는 처리된 값을 spo2(심박수)에 저장
               let displaySpo2 = rawSpo2;
-              if (rawHrInt === 7 || rawHrInt === 8 || rawHrInt === 9) {
-                // HR 에러일 때는 처리된 HR 값을 심박수로 표시
+              if (rawSpo2Int === 7 || rawSpo2Int === 8 || rawSpo2Int === 9) {
+                // SpO2 에러일 때는 처리된 HR 값을 심박수로 표시
                 displaySpo2 = processedHr;
               }
-
               return {
                 ...device,
                 currentData: {
@@ -181,20 +231,17 @@ function Dashboard() {
         );
       }
     };
-
     // 연결된 디바이스 목록 수신 (state:hub 응답)
     const handleConnectedDevices = (payload) => {
       console.log("[Dashboard] Received CONNECTED_DEVICES:", payload);
       const hubAddress = payload.hubAddress;
       const connectedDeviceMacs = payload.connected_devices || [];
-
       if (hubAddress) {
         // 허브가 응답했으므로 온라인으로 표시
         setHubStatuses((prev) => ({
           ...prev,
           [hubAddress]: true,
         }));
-
         // 타임아웃 정리 및 알림 제거
         if (hubTimeoutRefs.current[hubAddress]) {
           clearTimeout(hubTimeoutRefs.current[hubAddress]);
@@ -206,16 +253,13 @@ function Dashboard() {
           return updated;
         });
       }
-
       // 연결된 디바이스 상태 업데이트
       const normalizeMac = (mac) => mac.replace(/[:-]/g, "").toUpperCase();
       const connectedMacSet = new Set(
         connectedDeviceMacs.map((mac) => normalizeMac(mac))
       );
-
       setDeviceConnectionStatuses((prev) => {
         const newStatuses = { ...prev };
-
         // 연결된 디바이스 MAC 주소들을 모두 'connected'로 표시
         connectedDeviceMacs.forEach((deviceMac) => {
           const normalizedMac = normalizeMac(deviceMac);
@@ -223,7 +267,6 @@ function Dashboard() {
           newStatuses[normalizedMac] = "connected";
           newStatuses[deviceMac] = "connected";
         });
-
         // 현재 페이지의 모든 디바이스에 대해 연결 상태 확인 및 업데이트
         // (연결 목록에 없으면 disconnected로 표시)
         connectedDevices.forEach((device) => {
@@ -237,11 +280,9 @@ function Dashboard() {
             ? "connected"
             : "disconnected";
         });
-
         return newStatuses;
       });
     };
-
     // 측정 시작/정지 결과 수신
     const handleControlResult = (data) => {
       if (data.success && data.deviceId) {
@@ -259,40 +300,32 @@ function Dashboard() {
         }
       }
     };
-
     on("TELEMETRY", handleTelemetry);
     on("CONNECTED_DEVICES", handleConnectedDevices);
     on("CONTROL_RESULT", handleControlResult);
-
     return () => {
       off("TELEMETRY", handleTelemetry);
       off("CONNECTED_DEVICES", handleConnectedDevices);
       off("CONTROL_RESULT", handleControlResult);
     };
   }, [isConnected, on, off, connectedDevices]);
-
   // 페이지 접속 시 허브 상태 체크 (한 번만)
   const hasCheckedRef = useRef(false);
   const hubTimeoutRefs = useRef({}); // 허브별 타임아웃 참조
-
   useEffect(() => {
     if (!isConnected || hasCheckedRef.current) return;
-
     const checkHubStates = async () => {
       try {
         const hubs = await hubService.getHubs();
         if (hubs.length === 0) return;
-
         hubs.forEach((hub) => {
           const hubAddress = hub.address;
           const requestId = `state_check_${hubAddress}_${Date.now()}`;
-
           // 기존 타임아웃 정리
           if (hubTimeoutRefs.current[hubAddress]) {
             clearTimeout(hubTimeoutRefs.current[hubAddress]);
           }
-
-          // 20초 타임아웃 설정
+          // 실제로 데이터가 안 들어올 때만 오프라인으로 표시 (5분 후)
           hubTimeoutRefs.current[hubAddress] = setTimeout(() => {
             // 응답이 없으면 허브를 오프라인으로 표시
             setHubStatuses((prev) => ({
@@ -305,8 +338,7 @@ function Dashboard() {
               [hubAddress]: true,
             }));
             console.log(`[Dashboard] Hub ${hubAddress} timeout - no response`);
-          }, 20000);
-
+          }, 300000); // 5분
           emit("CONTROL_REQUEST", {
             hubId: hubAddress,
             deviceId: "HUB",
@@ -316,16 +348,13 @@ function Dashboard() {
             requestId,
           });
         });
-
         hasCheckedRef.current = true;
       } catch (error) {
         console.error("[Dashboard] Failed to check hub states:", error);
       }
     };
-
     // 즉시 한 번 실행
     checkHubStates();
-
     return () => {
       // 타임아웃 정리
       Object.values(hubTimeoutRefs.current).forEach((timeout) =>
@@ -334,57 +363,47 @@ function Dashboard() {
       hubTimeoutRefs.current = {};
     };
   }, [isConnected, emit]);
-
   // 페이지를 떠날 때 플래그 리셋
   useEffect(() => {
     return () => {
       hasCheckedRef.current = false;
     };
   }, []);
-
   // 하드웨어 오류 감지 및 알림 업데이트
   useEffect(() => {
     const alerts = detectDeviceErrors(connectedDevices);
     setHardwareAlerts(alerts);
   }, [connectedDevices]);
-
   const handleDismissAlert = (alertId) => {
     setHardwareAlerts((prev) => prev.filter((alert) => alert.id !== alertId));
   };
-
   // 측정 시작
   const handleStartMeasurement = async (device) => {
     if (!isConnected) {
       showError("서버와의 연결이 없습니다.");
       return;
     }
-
     if (!device.hub_address) {
       showError("디바이스의 허브 정보를 찾을 수 없습니다.");
       return;
     }
-
     // 디바이스 연결 상태 확인
     const normalizeMac = (mac) => mac.replace(/[:-]/g, "").toUpperCase();
     const deviceMac = normalizeMac(device.address);
     const isDeviceConnected =
       deviceConnectionStatuses[deviceMac] === "connected" ||
       deviceConnectionStatuses[device.address] === "connected";
-
     if (!isDeviceConnected) {
       showWarning("디바이스가 연결되어 있지 않습니다. 디바이스를 켜주세요.");
       return;
     }
-
     const requestId = `start_${device.address}_${Date.now()}`;
     const measurementCommand = `start:${device.address}`;
-
     console.log("[Dashboard] 📤 Sending start measurement command:", {
       hubId: device.hub_address,
       deviceId: device.address,
       command: measurementCommand,
     });
-
     // CSV 세션 시작
     try {
       const now = new Date();
@@ -393,7 +412,6 @@ function Dashboard() {
       ).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}:${String(
         now.getMilliseconds()
       ).padStart(3, "0")}`;
-
       const result = await axiosInstance.post("/api/measurement/start", {
         deviceAddress: device.address,
         userEmail: user?.email || "",
@@ -409,7 +427,6 @@ function Dashboard() {
     } catch (error) {
       console.error("[Dashboard] Error starting CSV session:", error);
     }
-
     // Socket.IO로 제어 명령 전송
     emit("CONTROL_REQUEST", {
       hubId: device.hub_address,
@@ -420,35 +437,29 @@ function Dashboard() {
       },
       requestId,
     });
-
     // 측정 상태 즉시 업데이트 (응답 대기 전)
     setMeasurementStates((prev) => ({
       ...prev,
       [device.address]: true,
     }));
   };
-
   // 측정 정지
   const handleStopMeasurement = async (device) => {
     if (!isConnected) {
       showError("서버와의 연결이 없습니다.");
       return;
     }
-
     if (!device.hub_address) {
       showError("디바이스의 허브 정보를 찾을 수 없습니다.");
       return;
     }
-
     const requestId = `stop_${device.address}_${Date.now()}`;
     const measurementCommand = `stop:${device.address}`;
-
     console.log("[Dashboard] 📤 Sending stop measurement command:", {
       hubId: device.hub_address,
       deviceId: device.address,
       command: measurementCommand,
     });
-
     // CSV 세션 종료
     try {
       const result = await axiosInstance.post("/api/measurement/stop", {
@@ -463,7 +474,6 @@ function Dashboard() {
     } catch (error) {
       console.error("[Dashboard] Error stopping CSV session:", error);
     }
-
     // Socket.IO로 제어 명령 전송
     emit("CONTROL_REQUEST", {
       hubId: device.hub_address,
@@ -474,25 +484,20 @@ function Dashboard() {
       },
       requestId,
     });
-
     // 측정 상태 즉시 업데이트 (응답 대기 전)
     setMeasurementStates((prev) => ({
       ...prev,
       [device.address]: false,
     }));
   };
-
   const loadData = async () => {
     try {
       setLoading(true);
       setError(null);
-
       // 허브 목록 조회
       const hubs = await hubService.getHubs();
-
       // 디바이스 목록 조회
       const devices = await deviceService.getDevices();
-
       // Hub와 Device 체크
       if (hubs.length === 0) {
         // Hub가 없으면
@@ -514,7 +519,6 @@ function Dashboard() {
         setLoading(false);
         return;
       }
-
       if (devices.length === 0) {
         // Hub는 있지만 Device가 없으면
         setConfirmModal({
@@ -535,24 +539,24 @@ function Dashboard() {
         setLoading(false);
         return;
       }
-
       // 환자 목록 조회
       const pets = await petService.getPets();
-
       // 디바이스에 환자 연결이 있는지 확인
       const hasAnyDeviceWithPatient = devices.some(
         (device) => device.connectedPatient !== null && device.connectedPatient !== undefined
       );
-
-      // 모든 디바이스에 환자 연결이 없으면 토스트 표시 (한 번만)
+      // 모든 디바이스에 환자 연결이 없으면 토스트 표시 후 자동으로 환자 관리 페이지로 이동
       if (devices.length > 0 && !hasAnyDeviceWithPatient && !hasShownConnectionToastRef.current) {
         showInfo("디바이스와 환자를 연결해주세요.");
+        // 자동으로 환자 관리 페이지로 이동
+        setTimeout(() => {
+          navigate('/patients');
+        }, 1500); // 1.5초 후 이동
         hasShownConnectionToastRef.current = true;
       } else if (hasAnyDeviceWithPatient) {
         // 환자 연결이 있으면 플래그 리셋 (다음에 다시 체크할 수 있도록)
         hasShownConnectionToastRef.current = false;
       }
-
       // 디바이스와 환자 연결
       const devicesWithPatients = devices
         .filter(
@@ -589,9 +593,7 @@ function Dashboard() {
             },
           };
         });
-
       setConnectedDevices(devicesWithPatients);
-
       // 디바이스 연결 상태 초기화 (모두 disconnected로 시작, 이후 CONNECTED_DEVICES 이벤트로 업데이트)
       const initialStatuses = {};
       devicesWithPatients.forEach((device) => {
@@ -605,11 +607,9 @@ function Dashboard() {
       setLoading(false);
     }
   };
-
   const handleMonitor = (patientId) => {
     navigate(`/monitoring/${patientId}`);
   };
-
   const handleShowMore = (patientId) => {
     const device = connectedDevices.find(
       (d) => d.connectedPatient?.id === patientId
@@ -618,15 +618,12 @@ function Dashboard() {
       setSelectedPatient(device.connectedPatient);
     }
   };
-
   const handleCloseModal = () => {
     setSelectedPatient(null);
   };
-
   const handleConfirmModalClose = () => {
     setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null });
   };
-
   if (loading) {
     return (
       <div className="dashboard-page">
@@ -642,7 +639,6 @@ function Dashboard() {
       </div>
     );
   }
-
   if (error) {
     return (
       <div className="dashboard-page">
@@ -656,7 +652,6 @@ function Dashboard() {
       </div>
     );
   }
-
   return (
     <div className="dashboard-page">
       <Header />
@@ -665,6 +660,7 @@ function Dashboard() {
         onDismiss={handleDismissAlert}
       />
       <div className="dashboard-container">
+
         {/* 허브 타임아웃 알림 */}
         {Object.keys(hubTimeoutAlerts).length > 0 && (
           <div
@@ -747,7 +743,6 @@ function Dashboard() {
                               "connected";
                           const isMeasuring =
                             measurementStates[device.address] === true;
-
                           if (!isDeviceConnected) {
                             return (
                               <button
@@ -760,7 +755,6 @@ function Dashboard() {
                               </button>
                             );
                           }
-
                           return (
                             <>
                               {isMeasuring ? (
@@ -833,7 +827,6 @@ function Dashboard() {
           )}
         </section>
       </div>
-
       {/* 환자 상세 정보 모달 */}
       {selectedPatient && (
         <div className="modal-overlay">
@@ -886,7 +879,6 @@ function Dashboard() {
           </div>
         </div>
       )}
-
       {/* 확인 모달 */}
       <ConfirmModal
         isOpen={confirmModal.isOpen}
@@ -898,5 +890,4 @@ function Dashboard() {
     </div>
   );
 }
-
 export default Dashboard;

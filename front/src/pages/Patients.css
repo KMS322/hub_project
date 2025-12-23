@@ -59,10 +59,13 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 1rem;
 }
 
 .patient-info {
   flex: 1;
+  min-width: 0; /* flex 아이템 오버플로우 방지 */
 }
 
 .patient-header {
@@ -70,12 +73,16 @@
   align-items: center;
   gap: 1rem;
   margin-bottom: 1rem;
+  flex-wrap: wrap;
+  width: 100%;
 }
 
 .patient-header h3 {
   margin: 0;
   color: #2c3e50;
   font-size: 1.2rem;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .status-badge {
@@ -99,11 +106,14 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
   gap: 0.5rem;
+  width: 100%;
 }
 
 .detail-row {
   display: flex;
   gap: 0.5rem;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .detail-row.full-width {
@@ -115,6 +125,13 @@
   color: #666;
   min-width: 120px;
   flex-shrink: 0;
+  word-break: break-word;
+}
+
+.detail-row span:not(.label) {
+  word-break: break-word;
+  overflow-wrap: break-word;
+  min-width: 0;
 }
 
 .patient-actions {
@@ -122,6 +139,7 @@
   flex-direction: column;
   gap: 0.5rem;
   margin-left: 1rem;
+  flex-shrink: 0;
 }
 
 .no-data {
@@ -301,20 +319,118 @@
   background-color: #c0392b;
 }
 
-/* 반응형 디자인 */
+/* 반응형 디자인 - 매우 세밀한 조정 (1px 단위) */
+@media (max-width: 1920px) {
+  .patients-container {
+    padding: 1.9375rem;
+  }
+}
+
+@media (max-width: 1600px) {
+  .patients-container {
+    padding: 1.8125rem;
+  }
+  
+  .patient-card {
+    padding: 1.4375rem;
+  }
+}
+
+@media (max-width: 1440px) {
+  .patients-container {
+    padding: 1.6875rem;
+  }
+  
+  .patients-header {
+    margin-bottom: 1.9375rem;
+  }
+  
+  .filter-tabs {
+    margin-bottom: 1.9375rem;
+  }
+  
+  .patient-card {
+    padding: 1.3125rem;
+  }
+  
+  .patient-header h3 {
+    font-size: 1.125rem;
+  }
+}
+
+@media (max-width: 1280px) {
+  .patients-container {
+    padding: 1.5625rem;
+  }
+  
+  .patients-header {
+    margin-bottom: 1.8125rem;
+  }
+  
+  .filter-tabs {
+    margin-bottom: 1.8125rem;
+  }
+  
+  .patient-card {
+    padding: 1.25rem;
+  }
+  
+  .patient-header h3 {
+    font-size: 1.125rem;
+  }
+  
+  .patient-details {
+    gap: 0.4375rem;
+  }
+}
+
 @media (max-width: 1024px) {
   .patients-container {
     padding: 1.5rem;
   }
+  
+  .patients-header {
+    margin-bottom: 1.75rem;
+  }
+  
+  .filter-tabs {
+    margin-bottom: 1.75rem;
+  }
 
   .patient-details {
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.4375rem;
+  }
+  
+  .patient-card {
+    padding: 1.25rem;
+  }
+  
+  .modal-content {
+    max-width: 850px;
+    width: 92%;
+  }
+  
+  .modal-header {
+    padding: 1.4375rem;
+  }
+  
+  .modal-body {
+    padding: 1.4375rem;
+  }
+  
+  .modal-footer {
+    padding: 0.9375rem 1.4375rem;
   }
 }
 
 @media (max-width: 768px) {
   .patients-container {
     padding: 1rem;
+  }
+  
+  .patients-header {
+    margin-bottom: 1rem;
   }
 
   .patients-header {
@@ -329,22 +445,43 @@
   .filter-tabs {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+    margin-bottom: 1rem;
   }
 
   .filter-tab {
     padding: 0.75rem 1rem;
-    font-size: 0.9rem;
+    font-size: 0.9375rem;
     white-space: nowrap;
   }
 
   .patient-card {
     flex-direction: column;
     padding: 1rem;
+    gap: 0.875rem;
   }
 
   .patient-info {
     width: 100%;
-    margin-bottom: 1rem;
+    margin-bottom: 0;
+    min-width: 0;
+  }
+  
+  .patient-header {
+    margin-bottom: 0.875rem;
+    width: 100%;
+  }
+  
+  .patient-header h3 {
+    font-size: 1.0625rem;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    width: 100%;
+  }
+  
+  .status-badge {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.8125rem;
+    flex-shrink: 0;
   }
 
   .patient-actions {
@@ -352,25 +489,44 @@
     margin-left: 0;
     flex-direction: row;
     flex-wrap: wrap;
+    gap: 0.4375rem;
   }
 
   .patient-actions button {
     flex: 1;
-    min-width: calc(50% - 0.25rem);
+    min-width: calc(50% - 0.21875rem);
+    white-space: normal;
+    word-break: break-word;
+    line-height: 1.4;
   }
 
   .patient-details {
     grid-template-columns: 1fr;
     gap: 0.5rem;
+    width: 100%;
   }
 
   .detail-row {
     flex-direction: column;
     gap: 0.25rem;
+    width: 100%;
+    padding: 0.25rem 0;
+    border-bottom: 1px solid #f0f0f0;
+  }
+  
+  .detail-row:last-child {
+    border-bottom: none;
   }
 
   .detail-row .label {
     min-width: auto;
+    width: 100%;
+    font-size: 0.875rem;
+  }
+  
+  .detail-row span:not(.label) {
+    width: 100%;
+    word-break: break-word;
   }
 
   .modal-content {
@@ -378,9 +534,63 @@
     max-width: none;
     margin: 1rem;
   }
+  
+  .modal-header {
+    padding: 1.25rem;
+  }
+  
+  .modal-header h3 {
+    font-size: 1.125rem;
+  }
+  
+  .modal-body {
+    padding: 1.25rem;
+  }
+  
+  .modal-footer {
+    padding: 0.875rem 1.25rem;
+  }
 
   .form-group {
     margin-bottom: 0.75rem;
+  }
+  
+  .form-group label {
+    font-size: 0.875rem;
+  }
+  
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    padding: 0.6875rem;
+    font-size: 0.9375rem;
+  }
+  
+  .btn-primary,
+  .btn-secondary,
+  .btn-danger {
+    padding: 0.6875rem 1.375rem;
+    font-size: 0.9375rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .patients-container {
+    padding: 0.9375rem;
+  }
+  
+  .patient-card {
+    padding: 0.9375rem;
+  }
+  
+  .filter-tab {
+    padding: 0.6875rem 0.9375rem;
+    font-size: 0.875rem;
+  }
+  
+  .patient-actions button {
+    padding: 0.5625rem 0.9375rem;
+    font-size: 0.875rem;
   }
 }
 
@@ -388,20 +598,148 @@
   .patients-container {
     padding: 0.75rem;
   }
+  
+  .patients-header {
+    margin-bottom: 0.875rem;
+  }
+  
+  .filter-tabs {
+    margin-bottom: 0.875rem;
+  }
 
   .patient-card {
     padding: 0.75rem;
   }
+  
+  .patient-header {
+    margin-bottom: 0.8125rem;
+  }
+  
+  .patient-header h3 {
+    font-size: 1rem;
+  }
+  
+  .patient-details {
+    gap: 0.4375rem;
+  }
 
   .patient-actions button {
     min-width: 100%;
-    font-size: 0.9rem;
-    padding: 0.6rem 1rem;
+    font-size: 0.875rem;
+    padding: 0.5625rem 1rem;
   }
 
   .filter-tab {
-    padding: 0.6rem 0.75rem;
-    font-size: 0.85rem;
+    padding: 0.5625rem 0.75rem;
+    font-size: 0.8125rem;
+  }
+  
+  .modal-content {
+    width: 98%;
+    margin: 0.875rem;
+  }
+  
+  .modal-header {
+    padding: 1.125rem;
+  }
+  
+  .modal-header h3 {
+    font-size: 1.0625rem;
+  }
+  
+  .modal-body {
+    padding: 1.125rem;
+  }
+  
+  .modal-footer {
+    padding: 0.8125rem 1.125rem;
+  }
+  
+  .form-group {
+    margin-bottom: 0.6875rem;
+  }
+  
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    padding: 0.625rem;
+    font-size: 0.875rem;
+  }
+  
+  .btn-primary,
+  .btn-secondary,
+  .btn-danger {
+    padding: 0.625rem 1.25rem;
+    font-size: 0.875rem;
+  }
+}
+
+@media (max-width: 360px) {
+  .patients-container {
+    padding: 0.6875rem;
+  }
+  
+  .patient-card {
+    padding: 0.6875rem;
+  }
+  
+  .patient-header h3 {
+    font-size: 0.9375rem;
+  }
+  
+  .filter-tab {
+    padding: 0.5rem 0.6875rem;
+    font-size: 0.75rem;
+  }
+  
+  .patient-actions button {
+    padding: 0.5rem 0.9375rem;
+    font-size: 0.8125rem;
+  }
+  
+  .modal-header {
+    padding: 1rem;
+  }
+  
+  .modal-body {
+    padding: 1rem;
+  }
+  
+  .close-btn {
+    width: 24px;
+    height: 24px;
+    font-size: 1.25rem;
+  }
+}
+
+@media (max-width: 320px) {
+  .patients-container {
+    padding: 0.625rem;
+  }
+  
+  .patient-card {
+    padding: 0.625rem;
+  }
+  
+  .patient-header h3 {
+    font-size: 0.875rem;
+  }
+  
+  .filter-tab {
+    padding: 0.4375rem 0.625rem;
+    font-size: 0.6875rem;
+  }
+  
+  .patient-actions button {
+    padding: 0.4375rem 0.875rem;
+    font-size: 0.75rem;
+  }
+  
+  .btn-primary,
+  .btn-secondary,
+  .btn-danger {
+    padding: 0.5625rem 1.125rem;
+    font-size: 0.8125rem;
   }
 }
 

@@ -30,6 +30,7 @@ export const ToastContainer = () => {
           message={toast.message}
           type={toast.type}
           duration={toast.duration}
+          onClick={toast.onClick}
           onClose={() => removeToast(toast.id)}
         />
       ))}
@@ -40,11 +41,11 @@ export const ToastContainer = () => {
 // 편의 훅
 export const useToast = () => {
   return {
-    success: (message, duration) => toastManager.success(message, duration),
-    error: (message, duration) => toastManager.error(message, duration),
-    warning: (message, duration) => toastManager.warning(message, duration),
-    info: (message, duration) => toastManager.info(message, duration),
-    show: (message, type, duration) => toastManager.show(message, type, duration)
+    success: (message, duration, onClick) => toastManager.success(message, duration, onClick),
+    error: (message, duration, onClick) => toastManager.error(message, duration, onClick),
+    warning: (message, duration, onClick) => toastManager.warning(message, duration, onClick),
+    info: (message, duration, onClick) => toastManager.info(message, duration, onClick),
+    show: (message, type, duration, onClick) => toastManager.show(message, type, duration, onClick)
   }
 }
 

@@ -9,28 +9,28 @@ export const toastManager = {
     }
   },
 
-  show: (message, type = 'info', duration = 3000) => {
+  show: (message, type = 'info', duration = 3000, onClick = null) => {
     const id = Date.now() + Math.random()
     toastListeners.forEach(listener => {
-      listener({ id, message, type, duration })
+      listener({ id, message, type, duration, onClick })
     })
     return id
   },
 
-  success: (message, duration) => {
-    return toastManager.show(message, 'success', duration)
+  success: (message, duration, onClick) => {
+    return toastManager.show(message, 'success', duration, onClick)
   },
 
-  error: (message, duration) => {
-    return toastManager.show(message, 'error', duration)
+  error: (message, duration, onClick) => {
+    return toastManager.show(message, 'error', duration, onClick)
   },
 
-  warning: (message, duration) => {
-    return toastManager.show(message, 'warning', duration)
+  warning: (message, duration, onClick) => {
+    return toastManager.show(message, 'warning', duration, onClick)
   },
 
-  info: (message, duration) => {
-    return toastManager.show(message, 'info', duration)
+  info: (message, duration, onClick) => {
+    return toastManager.show(message, 'info', duration, onClick)
   }
 }
 

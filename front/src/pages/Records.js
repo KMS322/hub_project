@@ -52,9 +52,26 @@ function Records() {
           if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`
           return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
         }
-        
-        const displayFileName = `${file.deviceName || file.device} - ${file.pet}`
-        
+
+        // 종료 시간 포맷팅 함수 (파일명용)
+        const formatEndTimeForFileName = (endTime) => {
+          if (!endTime) return null
+          const date = new Date(endTime)
+          const year = date.getFullYear()
+          const month = String(date.getMonth() + 1).padStart(2, '0')
+          const day = String(date.getDate()).padStart(2, '0')
+          const hours = String(date.getHours()).padStart(2, '0')
+          const minutes = String(date.getMinutes()).padStart(2, '0')
+          const seconds = String(date.getSeconds()).padStart(2, '0')
+          return `${year}-${month}-${day} ${hours}시${minutes}분${seconds}초`
+        }
+
+        // 파일명: "디바이스명 - 환자명 - 종료시간"
+        const endTimeStr = formatEndTimeForFileName(file.endTime)
+        const displayFileName = endTimeStr
+          ? `${file.deviceName || file.device} - ${file.pet} - ${endTimeStr}`
+          : `${file.deviceName || file.device} - ${file.pet}`
+
         return {
           id: index + 1,
           fileName: displayFileName,
@@ -209,10 +226,13 @@ function Records() {
   const handleDownload = async (record) => {
     try {
       setDownloading(true)
+      // 커스텀 파일명: "디바이스명 - 환자명 - 종료시간"
+      const customFileName = record.fileName // 이미 "디바이스명 - 환자명 - 종료시간" 형식
+
       if (record.relativePath) {
-        await recordsService.downloadCsvFile(record.relativePath)
+        await recordsService.downloadCsvFile(record.relativePath, customFileName)
       } else {
-        await recordsService.downloadFile(record.fileName)
+        await recordsService.downloadFile(record.originalFileName || record.fileName, customFileName)
       }
       success('파일이 다운로드되었습니다.')
     } catch (err) {
@@ -235,10 +255,13 @@ function Records() {
         const record = sortedRecords.find(r => r.id === recordId)
         if (record) {
           try {
+            // 커스텀 파일명: "디바이스명 - 환자명 - 종료시간"
+            const customFileName = record.fileName // 이미 "디바이스명 - 환자명 - 종료시간" 형식
+
             if (record.relativePath) {
-              await recordsService.downloadCsvFile(record.relativePath)
+              await recordsService.downloadCsvFile(record.relativePath, customFileName)
             } else {
-              await recordsService.downloadFile(record.fileName)
+              await recordsService.downloadFile(record.originalFileName || record.fileName, customFileName)
             }
             successCount++
           } catch (err) {
