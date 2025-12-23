@@ -6,6 +6,23 @@ const cors = require("cors");
 const { Server } = require("socket.io");
 const db = require("./models");
 const PORT = process.env.PORT || 5000;
+
+// #region agent log
+fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:8',message:'Server startup - checking JWT_SECRET',data:{hasJwtSecret:!!process.env.JWT_SECRET,jwtSecretLength:process.env.JWT_SECRET?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'startup',hypothesisId:'A'})}).catch(()=>{});
+// #endregion
+
+// Critical: JWT_SECRET 환경변수 검증
+if (!process.env.JWT_SECRET) {
+  console.error("❌ CRITICAL ERROR: JWT_SECRET environment variable is not set!");
+  console.error("   The server cannot securely verify JWT tokens.");
+  console.error("   Please set JWT_SECRET in your .env file.");
+  process.exit(1);
+}
+
+if (process.env.JWT_SECRET.length < 32) {
+  console.warn("⚠️  WARNING: JWT_SECRET is too short (less than 32 characters).");
+  console.warn("   For production, use a strong secret (at least 32 characters).");
+}
 const authRoutes = require("./routes/auth");
 const mqttRoutes = require("./routes/mqtt");
 const telemetryRoutes = require("./routes/telemetry");
@@ -147,4 +164,46 @@ db.sequelize
   })
   .catch((err) => {
     console.error("Unable to connect to database:", err);
+    process.exit(1);
   });
+
+// #region agent log
+fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:151',message:'Global error handler setup',data:{hasErrorHandler:true},timestamp:Date.now(),sessionId:'debug-session',runId:'startup',hypothesisId:'B'})}).catch(()=>{});
+// #endregion
+
+// 전역 에러 핸들러 추가 (처리되지 않은 에러 캐치)
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:unhandledRejection',message:'Unhandled promise rejection',data:{reason:String(reason)},timestamp:Date.now(),sessionId:'debug-session',runId:'runtime',hypothesisId:'B'})}).catch(()=>{});
+  // #endregion
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:uncaughtException',message:'Uncaught exception',data:{error:error.message,stack:error.stack},timestamp:Date.now(),sessionId:'debug-session',runId:'runtime',hypothesisId:'B'})}).catch(()=>{});
+  // #endregion
+  // 프로덕션에서는 서버를 재시작해야 함
+  if (process.env.NODE_ENV === 'production') {
+    process.exit(1);
+  }
+});
+
+// Express 전역 에러 핸들러
+app.use((err, req, res, next) => {
+  console.error('❌ Express Error:', err);
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:errorHandler',message:'Express error handler',data:{error:err.message,url:req.url,method:req.method},timestamp:Date.now(),sessionId:'debug-session',runId:'runtime',hypothesisId:'B'})}).catch(()=>{});
+  // #endregion
+  
+  if (res.headersSent) {
+    return next(err);
+  }
+  
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || 'Internal server error',
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+  });
+});

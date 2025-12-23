@@ -3,6 +3,7 @@ const router = express.Router();
 const { verifyToken } = require('../middlewares/auth');
 const db = require('../models');
 const mqttClient = require('../mqtt/client');
+const { validateMacAddress } = require('../utils/validation');
 
 /**
  * 허브 목록 조회
@@ -69,6 +70,15 @@ router.get('/:hubAddress', verifyToken, async (req, res) => {
   try {
     const { hubAddress } = req.params;
 
+    // MAC 주소 형식 검증
+    const macValidation = validateMacAddress(hubAddress);
+    if (!macValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: macValidation.message,
+      });
+    }
+
     const hub = await db.Hub.findOne({
       where: {
         address: hubAddress,
@@ -126,11 +136,11 @@ router.post('/', verifyToken, async (req, res) => {
     }
 
     // MAC 주소 형식 검증
-    const macPattern = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
-    if (!macPattern.test(mac_address)) {
+    const macValidation = validateMacAddress(mac_address);
+    if (!macValidation.valid) {
       return res.status(400).json({
         success: false,
-        message: '올바른 MAC 주소 형식이 아닙니다. (예: AA:BB:CC:DD:EE:01)'
+        message: macValidation.message,
       });
     }
 
@@ -232,6 +242,15 @@ router.put('/:hubAddress', verifyToken, async (req, res) => {
     const { hubAddress } = req.params;
     const { name } = req.body;
 
+    // MAC 주소 형식 검증
+    const macValidation = validateMacAddress(hubAddress);
+    if (!macValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: macValidation.message,
+      });
+    }
+
     const hub = await db.Hub.findOne({
       where: {
         address: hubAddress,
@@ -281,6 +300,15 @@ router.delete('/:hubAddress', verifyToken, async (req, res) => {
   try {
     const { hubAddress } = req.params;
 
+    // MAC 주소 형식 검증
+    const macValidation = validateMacAddress(hubAddress);
+    if (!macValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: macValidation.message,
+      });
+    }
+
     const hub = await db.Hub.findOne({
       where: {
         address: hubAddress,
@@ -320,6 +348,15 @@ router.post('/:hubAddress/control', verifyToken, async (req, res) => {
   try {
     const { hubAddress } = req.params;
     const { deviceId, command } = req.body;
+
+    // MAC 주소 형식 검증
+    const macValidation = validateMacAddress(hubAddress);
+    if (!macValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: macValidation.message,
+      });
+    }
 
     if (!deviceId || !command) {
       return res.status(400).json({

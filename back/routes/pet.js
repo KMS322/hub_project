@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middlewares/auth');
 const db = require('../models');
+const { validateMacAddress } = require('../utils/validation');
 
 /**
  * 환자 목록 조회
@@ -156,8 +157,17 @@ router.post('/', verifyToken, async (req, res) => {
       });
     }
 
-    // device_address가 있으면 소유권 확인
+    // device_address가 있으면 형식 검증 및 소유권 확인
     if (device_address) {
+      // MAC 주소 형식 검증
+      const macValidation = validateMacAddress(device_address);
+      if (!macValidation.valid) {
+        return res.status(400).json({
+          success: false,
+          message: macValidation.message,
+        });
+      }
+
       const device = await db.Device.findOne({
         where: { 
           address: device_address,
@@ -243,9 +253,18 @@ router.put('/:petId', verifyToken, async (req, res) => {
       });
     }
 
-    // device_address 변경 시 소유권 확인
+    // device_address 변경 시 형식 검증 및 소유권 확인
     if (updateData.device_address !== undefined) {
       if (updateData.device_address) {
+        // MAC 주소 형식 검증
+        const macValidation = validateMacAddress(updateData.device_address);
+        if (!macValidation.valid) {
+          return res.status(400).json({
+            success: false,
+            message: macValidation.message,
+          });
+        }
+
         const device = await db.Device.findOne({
           where: { 
             address: updateData.device_address,

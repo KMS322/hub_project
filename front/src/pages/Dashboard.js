@@ -39,6 +39,7 @@ function Dashboard() {
   const hrErrorCountsRef = useRef({}); // 디바이스별 HR 에러 카운트 { deviceAddress: { count7: 0, count8: 0, count9: 0 } }
   const lastValidHrRef = useRef({}); // 디바이스별 마지막 유효한 HR 값 { deviceAddress: number }
   const lastToastTimeRef = useRef({}); // 디바이스별 마지막 토스트 표시 시간 { deviceAddress: { type7: timestamp, type8: timestamp, type9: timestamp } }
+  const hubTimeoutRefs = useRef({}); // 허브별 타임아웃 참조 (컴포넌트 상단으로 이동)
   // 데이터 로드
   useEffect(() => {
     loadData();
@@ -311,7 +312,6 @@ function Dashboard() {
   }, [isConnected, on, off, connectedDevices]);
   // 페이지 접속 시 허브 상태 체크 (한 번만)
   const hasCheckedRef = useRef(false);
-  const hubTimeoutRefs = useRef({}); // 허브별 타임아웃 참조
   useEffect(() => {
     if (!isConnected || hasCheckedRef.current) return;
     const checkHubStates = async () => {

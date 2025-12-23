@@ -4,7 +4,7 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const db = require("../models");
 const { verifyToken } = require("../middlewares/auth");
-const { validateRegisterData } = require("../utils/validation");
+const { validateRegisterData, validateEmail, validatePassword } = require("../utils/validation");
 
 const generateToken = (user) => {
   return jwt.sign(
@@ -35,6 +35,24 @@ router.post("/register", async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "필수 항목을 모두 입력해주세요.",
+      });
+    }
+
+    // 이메일 검증
+    const emailValidation = validateEmail(email);
+    if (!emailValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: emailValidation.message,
+      });
+    }
+
+    // 비밀번호 검증
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: passwordValidation.message,
       });
     }
 
@@ -112,6 +130,15 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "이메일과 비밀번호를 입력해주세요.",
+      });
+    }
+
+    // 이메일 형식 검증
+    const emailValidation = validateEmail(email);
+    if (!emailValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: emailValidation.message,
       });
     }
 
@@ -290,6 +317,15 @@ router.put("/update-password", verifyToken, async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "현재 비밀번호와 새 비밀번호를 입력해주세요.",
+      });
+    }
+
+    // 새 비밀번호 검증
+    const passwordValidation = validatePassword(newPassword);
+    if (!passwordValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: passwordValidation.message,
       });
     }
 

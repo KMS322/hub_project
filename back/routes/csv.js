@@ -5,6 +5,7 @@ const router = express.Router();
 
 const { verifyToken } = require('../middlewares/auth');
 const csvWriter = require('../utils/csvWriter');
+const { validateMacAddress } = require('../utils/validation');
 
 // 공통: 사용자별 CSV 루트 경로
 function getUserCsvRoot(userEmail) {
@@ -41,6 +42,16 @@ function existsFile(filePath) {
 router.get('/device/:deviceAddress', verifyToken, async (req, res) => {
   try {
     const { deviceAddress } = req.params;
+    
+    // MAC 주소 형식 검증
+    const macValidation = validateMacAddress(deviceAddress);
+    if (!macValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: macValidation.message,
+      });
+    }
+    
     const root = getUserCsvRoot(req.user.email);
 
     if (!existsDir(root)) {
@@ -286,12 +297,25 @@ router.get('/download', verifyToken, async (req, res) => {
       });
     }
 
-    const root = getUserCsvRoot(req.user.email);
-    const normalized = path.normalize(relativePath);
-    const fullPath = path.join(root, normalized);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'routes/csv.js:279',message:'CSV download request',data:{relativePath,userEmail:req.user.email},timestamp:Date.now(),sessionId:'debug-session',runId:'runtime',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
 
-    // 디렉터리 탈출 방지
-    if (!fullPath.startsWith(root)) {
+    const root = getUserCsvRoot(req.user.email);
+    
+    // 경로 조작 방지: 상대 경로에서 .. 제거
+    const normalized = path.normalize(relativePath).replace(/^(\.\.(\/|\\|$))+/, '');
+    
+    // 절대 경로 체크 강화
+    const fullPath = path.resolve(root, normalized);
+    const rootResolved = path.resolve(root);
+
+    // 디렉터리 탈출 방지 (절대 경로 비교)
+    if (!fullPath.startsWith(rootResolved + path.sep) && fullPath !== rootResolved) {
+      console.warn(`⚠️  Path traversal attempt detected: ${relativePath} by ${req.user.email}`);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'routes/csv.js:pathTraversal',message:'Path traversal attempt blocked',data:{relativePath,fullPath,rootResolved,userEmail:req.user.email},timestamp:Date.now(),sessionId:'debug-session',runId:'runtime',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
       return res.status(400).json({
         success: false,
         message: '잘못된 경로입니다.',

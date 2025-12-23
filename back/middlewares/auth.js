@@ -3,12 +3,27 @@ const db = require("../models");
 
 const verifyToken = async (req, res, next) => {
   try {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'middlewares/auth.js:5',message:'verifyToken called',data:{hasJwtSecret:!!process.env.JWT_SECRET,url:req.url},timestamp:Date.now(),sessionId:'debug-session',runId:'runtime',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    
     const token = req.headers.authorization?.split(" ")[1];
 
     if (!token) {
       return res.status(401).json({
         success: false,
         message: "인증 토큰이 없습니다.",
+      });
+    }
+
+    if (!process.env.JWT_SECRET) {
+      console.error("❌ CRITICAL: JWT_SECRET is not set in verifyToken middleware");
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'middlewares/auth.js:JWT_SECRET',message:'JWT_SECRET missing in verifyToken',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'runtime',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      return res.status(500).json({
+        success: false,
+        message: "서버 설정 오류입니다.",
       });
     }
 

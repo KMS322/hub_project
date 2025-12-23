@@ -3,6 +3,7 @@ const router = express.Router();
 const { verifyToken } = require('../middlewares/auth');
 const db = require('../models');
 const { Op } = require('sequelize');
+const { validateMacAddress } = require('../utils/validation');
 
 /**
  * 디바이스 목록 조회
@@ -86,6 +87,15 @@ router.get('/', verifyToken, async (req, res) => {
 router.get('/:deviceAddress', verifyToken, async (req, res) => {
   try {
     const { deviceAddress } = req.params;
+
+    // MAC 주소 형식 검증
+    const macValidation = validateMacAddress(deviceAddress);
+    if (!macValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: macValidation.message,
+      });
+    }
 
     const device = await db.Device.findOne({
       where: { 
@@ -227,6 +237,15 @@ router.put('/:deviceAddress', verifyToken, async (req, res) => {
     const { deviceAddress } = req.params;
     const { name } = req.body;
 
+    // MAC 주소 형식 검증
+    const macValidation = validateMacAddress(deviceAddress);
+    if (!macValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: macValidation.message,
+      });
+    }
+
     const device = await db.Device.findOne({
       where: { 
         address: deviceAddress,
@@ -274,6 +293,15 @@ router.delete('/:deviceAddress', verifyToken, async (req, res) => {
   try {
     const { deviceAddress } = req.params;
 
+    // MAC 주소 형식 검증
+    const macValidation = validateMacAddress(deviceAddress);
+    if (!macValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: macValidation.message,
+      });
+    }
+
     const device = await db.Device.findOne({
       where: { address: deviceAddress },
       include: [{
@@ -314,6 +342,15 @@ router.put('/:deviceAddress/patient', verifyToken, async (req, res) => {
   try {
     const { deviceAddress } = req.params;
     const { petId } = req.body; // null이면 해제
+
+    // MAC 주소 형식 검증
+    const macValidation = validateMacAddress(deviceAddress);
+    if (!macValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: macValidation.message,
+      });
+    }
 
     const device = await db.Device.findOne({
       where: { 

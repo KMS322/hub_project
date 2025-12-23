@@ -78,6 +78,19 @@ class TelemetryWorker {
       return;
     }
 
+    // 큐 크기 제한 체크 (메모리 보호)
+    const MAX_QUEUE_SIZE = 10000; // 최대 10,000개 항목
+    if (this.queue.length > MAX_QUEUE_SIZE) {
+      console.warn(`⚠️  Telemetry queue size exceeded limit: ${this.queue.length}. Dropping oldest items.`);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'workers/telemetryWorker.js:76',message:'Queue size exceeded',data:{queueLength:this.queue.length,maxSize:MAX_QUEUE_SIZE},timestamp:Date.now(),sessionId:'debug-session',runId:'runtime',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
+      // 오래된 항목 제거 (최신 5000개만 유지)
+      const itemsToKeep = this.queue.slice(-5000);
+      this.queue.length = 0;
+      this.queue.push(...itemsToKeep);
+    }
+
     const batch = [];
     const batchSize = Math.min(this.batchSize, this.queue.length);
 
@@ -92,6 +105,10 @@ class TelemetryWorker {
     if (batch.length === 0) {
       return;
     }
+
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'workers/telemetryWorker.js:processBatch',message:'Processing batch',data:{batchSize:batch.length,queueRemaining:this.queue.length},timestamp:Date.now(),sessionId:'debug-session',runId:'runtime',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
 
       try {
         const processStartTime = Date.now();

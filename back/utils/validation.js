@@ -137,6 +137,76 @@ const validatePhone = (phone) => {
 };
 
 /**
+ * MAC 주소 검증
+ * 형식: XX:XX:XX:XX:XX:XX 또는 XX-XX-XX-XX-XX-XX 또는 XXXXXXXXXXXX
+ */
+const validateMacAddress = (macAddress) => {
+  if (!macAddress || typeof macAddress !== 'string') {
+    return { valid: false, message: 'MAC 주소를 입력해주세요.' };
+  }
+
+  const trimmedMac = macAddress.trim().toUpperCase();
+  
+  // 다양한 형식 지원: XX:XX:XX:XX:XX:XX, XX-XX-XX-XX-XX-XX, XXXXXXXXXXXX
+  const macPatterns = [
+    /^([0-9A-F]{2}[:-]){5}([0-9A-F]{2})$/,
+    /^[0-9A-F]{12}$/
+  ];
+  
+  const isValid = macPatterns.some(pattern => pattern.test(trimmedMac));
+  
+  if (!isValid) {
+    return { 
+      valid: false, 
+      message: '올바른 MAC 주소 형식이 아닙니다. (예: AA:BB:CC:DD:EE:FF 또는 AA-BB-CC-DD-EE-FF)' 
+    };
+  }
+
+  return { valid: true, normalized: trimmedMac.replace(/[:-]/g, ':') };
+};
+
+/**
+ * 이메일 검증
+ */
+const validateEmail = (email) => {
+  if (!email || typeof email !== 'string') {
+    return { valid: false, message: '이메일을 입력해주세요.' };
+  }
+
+  const trimmedEmail = email.trim().toLowerCase();
+  
+  if (trimmedEmail.length > 255) {
+    return { valid: false, message: '이메일은 최대 255자까지 입력 가능합니다.' };
+  }
+
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailPattern.test(trimmedEmail)) {
+    return { valid: false, message: '올바른 이메일 형식이 아닙니다.' };
+  }
+
+  return { valid: true };
+};
+
+/**
+ * 비밀번호 검증
+ */
+const validatePassword = (password) => {
+  if (!password || typeof password !== 'string') {
+    return { valid: false, message: '비밀번호를 입력해주세요.' };
+  }
+
+  if (password.length < 8) {
+    return { valid: false, message: '비밀번호는 최소 8자 이상이어야 합니다.' };
+  }
+
+  if (password.length > 128) {
+    return { valid: false, message: '비밀번호는 최대 128자까지 입력 가능합니다.' };
+  }
+
+  return { valid: true };
+};
+
+/**
  * 회원가입 데이터 검증
  */
 const validateRegisterData = (data) => {
@@ -179,6 +249,9 @@ module.exports = {
   validateAddress,
   validateDetailAddress,
   validatePhone,
+  validateMacAddress,
+  validateEmail,
+  validatePassword,
   validateRegisterData
 };
 

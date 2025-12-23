@@ -114,6 +114,12 @@ class SocketService {
       return;
     }
 
+    // 중복 리스너 방지: 같은 이벤트에 이미 리스너가 있으면 먼저 제거
+    if (this.listeners.has(event)) {
+      const existingCallback = this.listeners.get(event);
+      this.socket.off(event, existingCallback);
+    }
+
     this.socket.on(event, callback);
     this.listeners.set(event, callback);
   }

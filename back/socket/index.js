@@ -12,12 +12,24 @@ const db = require("../models");
 module.exports = (io) => {
   io.use(async (socket, next) => {
     try {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'socket/index.js:13',message:'Socket auth middleware',data:{hasJwtSecret:!!process.env.JWT_SECRET},timestamp:Date.now(),sessionId:'debug-session',runId:'runtime',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      
       const token =
         socket.handshake.auth.token ||
         socket.handshake.headers.authorization?.split(" ")[1];
 
       if (!token) {
         return next(new Error("Authentication error: No token provided"));
+      }
+
+      if (!process.env.JWT_SECRET) {
+        console.error("❌ CRITICAL: JWT_SECRET is not set in Socket.IO middleware");
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'socket/index.js:JWT_SECRET',message:'JWT_SECRET missing in socket auth',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'runtime',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+        return next(new Error("Authentication error: Server configuration error"));
       }
 
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
