@@ -357,3 +357,69 @@
   }
 }
 
+/* 반응형 디자인 */
+@media (max-width: 1024px) {
+  .dashboard-container {
+    padding: 1.5rem;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .dashboard-container {
+    padding: 1rem;
+  }
+
+  .stats-section,
+  .monitoring-section,
+  .guide-section {
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .stats-section h2,
+  .monitoring-section h2 {
+    font-size: 1.1rem;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+  }
+
+  .stat-card {
+    padding: 0.5rem 0.75rem;
+  }
+
+  .device-list {
+    grid-template-columns: 1fr;
+  }
+
+  .device-card {
+    padding: 1rem;
+  }
+
+  .guide-btn {
+    padding: 0.75rem 1.5rem;
+    font-size: 0.9rem;
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .dashboard-container {
+    padding: 0.75rem;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stat-card {
+    padding: 0.75rem;
+  }
+}
+

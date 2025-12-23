@@ -12,6 +12,7 @@ import { useSocket } from "../hooks/useSocket";
 import axiosInstance from "../api/axios";
 import { detectHardwareError } from "../utils/hardwareErrorDetector";
 import "./Hardware.css";
+import deviceImage from "../assets/device.png";
 
 function Hardware() {
   const [searchParams] = useSearchParams();
@@ -2803,11 +2804,12 @@ function Hardware() {
                 <p className="device-register-instruction">
                   디바이스를 등록하세요.
                 </p>
-
                 <div className="scan-section">
+                  <p className="scan-instruction">1 . 디바이스 전원을 켜주세요.</p>
                   <p className="scan-instruction">
-                    연결하고자 하는 모든 디바이스를 켜주세요.
+                    2 . 연결하고자 하는 디바이스 버튼을 두번 눌러 연결 모드로 전환해주세요.
                   </p>
+                  <img src={deviceImage} alt="디바이스 검색" style={{ width: "150px", height: "auto", margin: "0 auto" }} />
                   <button
                     className="btn-primary scan-device-btn"
                     onClick={handleScanDevices}

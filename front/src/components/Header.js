@@ -53,6 +53,12 @@ function Header() {
           >
             기록 관리
           </Link>
+          <Link
+            to="/hrv-analysis"
+            className={`nav-link ${isActive("/hrv-analysis") ? "active" : ""}`}
+          >
+            HRV 분석
+          </Link>
           {/* {process.env.NODE_ENV === "development" && (
             <>
               <Link

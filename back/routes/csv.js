@@ -163,6 +163,7 @@ router.get('/all', verifyToken, async (req, res) => {
 
     const dates = fs.readdirSync(root);
     const results = [];
+    const db = require('../models');
 
     for (const date of dates) {
       const dateDir = path.join(root, date);
@@ -173,6 +174,17 @@ router.get('/all', verifyToken, async (req, res) => {
         const deviceDir = path.join(dateDir, deviceDirName);
         if (!existsDir(deviceDir)) continue;
 
+        // 디바이스 MAC 주소 복원 (deviceDirName은 _로 변환된 상태)
+        const deviceAddress = deviceDirName.replace(/_/g, ':');
+        
+        // 디바이스 정보 조회
+        const device = await db.Device.findOne({
+          where: {
+            address: deviceAddress,
+            user_email: req.user.email
+          }
+        });
+
         const pets = fs.readdirSync(deviceDir);
         for (const petName of pets) {
           const petDir = path.join(deviceDir, petName);
@@ -182,14 +194,66 @@ router.get('/all', verifyToken, async (req, res) => {
           for (const file of files) {
             const fullPath = path.join(petDir, file);
             const stat = fs.statSync(fullPath);
+            
+            // CSV 파일 내용 읽어서 시작/종료 시간 및 레코드 수 추출
+            let startTime = null;
+            let endTime = null;
+            let recordCount = 0;
+            
+            try {
+              const content = fs.readFileSync(fullPath, 'utf8');
+              const lines = content.trim().split('\n');
+              
+              if (lines.length > 1) {
+                // 헤더 제외한 데이터 라인 수
+                recordCount = lines.length - 1;
+                
+                // 첫 번째 데이터 라인에서 시작 시간 추출 (time 컬럼은 첫 번째)
+                const firstDataLine = lines[1];
+                const firstValues = firstDataLine.split(',');
+                if (firstValues.length > 0 && firstValues[0]) {
+                  const timeStr = firstValues[0].trim();
+                  // HH:mm:ss:SSS 형식을 Date로 변환
+                  const timeMatch = timeStr.match(/^(\d{2}):(\d{2}):(\d{2}):(\d{3})$/);
+                  if (timeMatch) {
+                    const [, hours, minutes, seconds, milliseconds] = timeMatch.map(Number);
+                    const today = new Date();
+                    today.setHours(hours, minutes, seconds, milliseconds);
+                    startTime = today.toISOString();
+                  }
+                }
+                
+                // 마지막 데이터 라인에서 종료 시간 추출
+                const lastDataLine = lines[lines.length - 1];
+                const lastValues = lastDataLine.split(',');
+                if (lastValues.length > 0 && lastValues[0]) {
+                  const timeStr = lastValues[0].trim();
+                  const timeMatch = timeStr.match(/^(\d{2}):(\d{2}):(\d{2}):(\d{3})$/);
+                  if (timeMatch) {
+                    const [, hours, minutes, seconds, milliseconds] = timeMatch.map(Number);
+                    const today = new Date();
+                    today.setHours(hours, minutes, seconds, milliseconds);
+                    endTime = today.toISOString();
+                  }
+                }
+              }
+            } catch (error) {
+              console.error(`[CSV API] Error reading file ${fullPath}:`, error);
+            }
+            
             results.push({
               date,
               device: deviceDirName,
+              deviceAddress: deviceAddress,
+              deviceName: device?.name || deviceDirName,
               pet: petName,
               filename: file,
               size: stat.size,
               mtime: stat.mtime,
               relativePath: path.relative(root, fullPath),
+              startTime,
+              endTime,
+              recordCount,
             });
           }
         }

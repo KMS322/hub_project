@@ -406,10 +406,19 @@ function Patients() {
     }
   }
 
-  // 가용 디바이스 목록
+  // 가용 디바이스 목록 (연결되지 않은 디바이스)
   const availableDevices = devices.filter(d =>
     d.status === 'connected' && !d.connectedPatient
   )
+  
+  // 모든 디바이스 목록 (연결된 디바이스 포함, 환자 정보 포함)
+  const allDevicesWithPatients = devices.map(device => {
+    const connectedPatient = patients.find(p => p.device_address === device.address)
+    return {
+      ...device,
+      connectedPatientName: connectedPatient?.name || null
+    }
+  })
 
   if (loading) {
     return (
@@ -555,14 +564,7 @@ function Patients() {
                   <>
                     <button
                       className="btn-secondary"
-                      onClick={() => {
-                        const newDevice = availableDevices[0]
-                        if (newDevice) {
-                          handleDeviceChange(patient.id, newDevice.address)
-                        } else {
-                          setAlertModal({ isOpen: true, title: '알림', message: '가용한 디바이스가 없습니다.' })
-                        }
-                      }}
+                      onClick={() => setDeviceSelectModal({ isOpen: true, patientId: patient.id, isChange: true })}
                     >
                       디바이스 변경
                     </button>
@@ -666,8 +668,8 @@ function Patients() {
         message={confirmModal.message}
       />
 
-      {/* 디바이스 선택 모달 */}
-      {deviceSelectModal.isOpen && (
+      {/* 디바이스 선택 모달 (연결용) */}
+      {deviceSelectModal.isOpen && !deviceSelectModal.isChange && (
         <div className="modal-overlay" onClick={() => setDeviceSelectModal({ isOpen: false, patientId: null })}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
@@ -687,7 +689,7 @@ function Patients() {
                         setDeviceSelectModal({ isOpen: false, patientId: null });
                       }}
                     >
-                      {device.name} ({device.address})
+                      {device.name}
                     </button>
                   ))}
                 </div>
@@ -699,6 +701,63 @@ function Patients() {
               <button
                 className="btn-secondary"
                 onClick={() => setDeviceSelectModal({ isOpen: false, patientId: null })}
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 디바이스 변경 모달 */}
+      {deviceSelectModal.isOpen && deviceSelectModal.isChange && (
+        <div className="modal-overlay" onClick={() => setDeviceSelectModal({ isOpen: false, patientId: null, isChange: false })}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>디바이스 변경</h3>
+              <button onClick={() => setDeviceSelectModal({ isOpen: false, patientId: null, isChange: false })}>×</button>
+            </div>
+            <div className="modal-body">
+              {allDevicesWithPatients.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {allDevicesWithPatients.map(device => {
+                    const isConnected = !!device.connectedPatient
+                    const displayName = device.connectedPatientName 
+                      ? `${device.name} (${device.connectedPatientName})`
+                      : device.name
+                    
+                    return (
+                      <button
+                        key={device.address}
+                        className={isConnected ? "btn-secondary" : "btn-secondary"}
+                        style={{ 
+                          width: '100%', 
+                          textAlign: 'left', 
+                          padding: '0.75rem',
+                          opacity: isConnected ? 0.5 : 1,
+                          cursor: isConnected ? 'not-allowed' : 'pointer'
+                        }}
+                        disabled={isConnected}
+                        onClick={() => {
+                          if (!isConnected) {
+                            handleDeviceChange(deviceSelectModal.patientId, device.address);
+                            setDeviceSelectModal({ isOpen: false, patientId: null, isChange: false });
+                          }
+                        }}
+                      >
+                        {displayName}
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div>사용 가능한 디바이스가 없습니다.</div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button
+                className="btn-secondary"
+                onClick={() => setDeviceSelectModal({ isOpen: false, patientId: null, isChange: false })}
               >
                 취소
               </button>

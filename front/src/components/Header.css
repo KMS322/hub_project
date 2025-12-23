@@ -102,3 +102,75 @@
 .logout-btn:hover {
   background-color: #c0392b;
 }
+
+.logout-btn:focus {
+  outline: 2px solid white;
+  outline-offset: 2px;
+}
+
+.nav-link:focus {
+  outline: 2px solid white;
+  outline-offset: 2px;
+}
+
+/* 반응형 디자인 */
+@media (max-width: 1024px) {
+  .header-container {
+    padding: 0 1.5rem;
+  }
+
+  .header-nav {
+    gap: 1.5rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .header-container {
+    padding: 0 1rem;
+    flex-wrap: wrap;
+  }
+
+  .header-logo {
+    flex: 1;
+  }
+
+  .logo-image {
+    height: 60px;
+  }
+
+  .header-nav {
+    display: none; /* 모바일에서는 숨김 (햄버거 메뉴로 대체 예정) */
+  }
+
+  .header-actions {
+    gap: 0.5rem;
+  }
+
+  .hospital-name {
+    display: none; /* 모바일에서 숨김 */
+  }
+
+  .nav-link {
+    padding: 0.4rem 0.75rem;
+    font-size: 0.85rem;
+  }
+
+  .logout-btn {
+    padding: 0.4rem 0.75rem;
+    font-size: 0.85rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .header-container {
+    padding: 0 0.75rem;
+  }
+
+  .logo-image {
+    height: 50px;
+  }
+
+  .header-actions {
+    gap: 0.25rem;
+  }
+}

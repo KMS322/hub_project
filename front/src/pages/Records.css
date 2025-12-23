@@ -158,11 +158,288 @@
   background-color: #c0392b;
 }
 
-.no-data {
-  text-align: center;
-  padding: 3rem;
-  color: #999;
+.page-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #2c3e50;
+  margin: 0;
+}
+
+.header-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.btn-reset-filter {
+  font-size: 0.9rem;
+  padding: 0.5rem 1rem;
+}
+
+.table-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #e0e0e0;
+  font-size: 0.9rem;
+  color: #666;
+}
+
+.table-wrapper {
+  overflow-x: auto;
+}
+
+.sortable-header {
+  background: none;
+  border: none;
+  padding: 0;
+  font-weight: 600;
+  color: #2c3e50;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  transition: color 0.2s;
+  font-size: inherit;
+  font-family: inherit;
+}
+
+.sortable-header:hover {
+  color: #3498db;
+}
+
+.sortable-header:focus {
+  outline: 2px solid #3498db;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.records-table tbody tr.selected {
+  background-color: #e3f2fd;
+}
+
+.records-table tbody tr.selected:hover {
+  background-color: #bbdefb;
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  border-top: 1px solid #e0e0e0;
+}
+
+.pagination-btn {
+  padding: 0.5rem 1rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
   background-color: white;
-  border-radius: 8px;
+  color: #333;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+}
+
+.pagination-btn:hover:not(:disabled) {
+  background-color: #f8f9fa;
+  border-color: #3498db;
+}
+
+.pagination-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pagination-info {
+  font-size: 0.9rem;
+  color: #666;
+}
+
+.btn-download:disabled,
+.btn-delete:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 반응형 디자인 */
+@media (max-width: 1024px) {
+  .records-container {
+    padding: 1.5rem;
+  }
+
+  .records-table th,
+  .records-table td {
+    padding: 0.75rem;
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .records-container {
+    padding: 1rem;
+  }
+
+  .records-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+
+  .page-title {
+    font-size: 1.25rem;
+  }
+
+  .header-actions {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .header-actions button {
+    width: 100%;
+  }
+
+  .records-controls {
+    padding: 0.75rem;
+  }
+
+  .sort-controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+
+  .filter-control {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .filter-control label {
+    font-size: 0.9rem;
+  }
+
+  .search-input {
+    min-width: auto;
+    width: 100%;
+  }
+
+  .patient-select,
+  .device-select {
+    min-width: auto;
+    width: 100%;
+  }
+
+  .records-table-container {
+    border-radius: 4px;
+  }
+
+  /* 모바일에서 테이블을 카드 형태로 변환 */
+  .table-wrapper {
+    overflow-x: visible;
+  }
+
+  .records-table {
+    display: block;
+  }
+
+  .records-table thead {
+    display: none;
+  }
+
+  .records-table tbody {
+    display: block;
+  }
+
+  .records-table tbody tr {
+    display: block;
+    margin-bottom: 1rem;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 1rem;
+    background-color: white;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  .records-table tbody tr.selected {
+    border-color: #3498db;
+    background-color: #e3f2fd;
+  }
+
+  .records-table tbody td {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid #f0f0f0;
+    white-space: normal;
+    max-width: none;
+    text-overflow: unset;
+    overflow: visible;
+  }
+
+  .records-table tbody td:last-child {
+    border-bottom: none;
+  }
+
+  .records-table tbody td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: #2c3e50;
+    margin-right: 1rem;
+    flex-shrink: 0;
+    min-width: 100px;
+  }
+
+  .records-table tbody td:first-child {
+    border-bottom: 2px solid #e0e0e0;
+    padding-bottom: 0.75rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .action-buttons {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .action-buttons button {
+    width: 100%;
+  }
+
+  .table-info {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.75rem;
+  }
+
+  .pagination {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .pagination-btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .records-container {
+    padding: 0.75rem;
+  }
+
+  .records-controls {
+    padding: 0.5rem;
+  }
+
+  .records-table tbody tr {
+    padding: 0.75rem;
+  }
+
+  .records-table tbody td {
+    font-size: 0.85rem;
+  }
 }
 

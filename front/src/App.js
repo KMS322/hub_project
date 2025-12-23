@@ -11,6 +11,7 @@ import { useAuthStore } from './stores/useAuthStore'
 import hubService from './api/hubService'
 import deviceService from './api/deviceService'
 import ConfirmModal from './components/ConfirmModal'
+import { ToastContainer } from './components/ToastContainer'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
@@ -22,6 +23,7 @@ import Monitoring from './pages/Monitoring'
 import Guide from './pages/Guide'
 import SerialMonitor from './pages/SerialMonitor'
 import HardwareErrorTest from './pages/HardwareErrorTest'
+import HrvAnalysis from './pages/HrvAnalysis'
 import './App.css'
 
 function AppContent() {
@@ -128,6 +130,10 @@ function AppContent() {
           element={isAuthenticated ? <Records /> : <Navigate to="/login" />}
         />
         <Route
+          path="/hrv-analysis"
+          element={isAuthenticated ? <HrvAnalysis /> : <Navigate to="/login" />}
+        />
+        <Route
           path="/profile"
           element={isAuthenticated ? <Profile /> : <Navigate to="/login" />}
         />
@@ -157,6 +163,8 @@ function AppContent() {
         onClose={handleModalClose}
         onConfirm={handleModalConfirm}
       />
+      
+      <ToastContainer />
     </div>
   )
 }

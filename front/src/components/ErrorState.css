@@ -1,0 +1,59 @@
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 2rem;
+  text-align: center;
+  background-color: white;
+  border-radius: 8px;
+  min-height: 300px;
+  border: 2px solid #f8d7da;
+  background-color: #fff5f5;
+}
+
+.error-state-icon {
+  font-size: 4rem;
+  margin-bottom: 1.5rem;
+}
+
+.error-state-title {
+  font-size: 1.5rem;
+  color: #e74c3c;
+  margin: 0 0 0.75rem 0;
+  font-weight: 600;
+}
+
+.error-state-message {
+  font-size: 1rem;
+  color: #666;
+  margin: 0 0 1.5rem 0;
+  max-width: 500px;
+  line-height: 1.6;
+}
+
+.error-state-retry {
+  margin-top: 1rem;
+}
+
+/* 반응형 */
+@media (max-width: 768px) {
+  .error-state {
+    padding: 2rem 1rem;
+    min-height: 250px;
+  }
+
+  .error-state-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+  }
+
+  .error-state-title {
+    font-size: 1.25rem;
+  }
+
+  .error-state-message {
+    font-size: 0.9rem;
+  }
+}
+

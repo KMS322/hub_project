@@ -8,6 +8,7 @@ import { detectHardwareError } from '../utils/hardwareErrorDetector'
 import deviceService from '../api/deviceService'
 import petService from '../api/petService'
 import { useAuthStore } from '../stores/useAuthStore'
+import { useToast } from '../components/ToastContainer'
 import axiosInstance from '../api/axios'
 import './Monitoring.css'
 
@@ -16,6 +17,7 @@ function Monitoring() {
   const navigate = useNavigate()
   const { isConnected, on, emit, off } = useSocket()
   const { user } = useAuthStore()
+  const { warning: showWarning } = useToast()
   
   // UI 상태
   const [activeTab, setActiveTab] = useState('heartRate')
@@ -52,6 +54,8 @@ function Monitoring() {
   const spo2NineCountRef = useRef(0)
   const hasHubStateCheckedRef = useRef(false)
   const listenersRegisteredRef = useRef(false)
+  const hrErrorCountsRef = useRef({ count7: 0, count8: 0, count9: 0 }) // HR 에러 카운트
+  const lastValidHrRef = useRef(null) // 마지막 유효한 HR 값
   
   // localStorage 키 생성 (환자/디바이스 단위 분리)
   const getStorageKey = (suffix) => {
@@ -153,7 +157,7 @@ function Monitoring() {
     })
   }
   
-  // 차트 데이터 초기화
+    // 차트 데이터 초기화
   const resetChartData = () => {
     setChartData([])
     setCurrentValues({
@@ -164,6 +168,8 @@ function Monitoring() {
     })
     measurementStartTimeRef.current = null
     spo2NineCountRef.current = 0
+    hrErrorCountsRef.current = { count7: 0, count8: 0, count9: 0 }
+    lastValidHrRef.current = null
     
     // localStorage 초기화
     if (deviceInfoRef.current) {
@@ -323,12 +329,87 @@ function Monitoring() {
         }
         
         // 샘플에서 직접 값을 가져오되, 없으면 전체 데이터에서 가져옴
-        const rawHr = sanitizeValue((lastSample.hr !== undefined && lastSample.hr !== null) ? lastSample.hr : baseHr)
+        let rawHr = Number((lastSample.hr !== undefined && lastSample.hr !== null) ? lastSample.hr : baseHr)
         const rawSpo2 = sanitizeValue((lastSample.spo2 !== undefined && lastSample.spo2 !== null) ? lastSample.spo2 : baseSpo2)
         
+        // HR 값 처리 및 에러 카운트 관리
+        let processedHr = rawHr;
+        
+        // 마지막 유효한 HR 값 저장 (원본 값 저장)
+        if (rawHr >= 10 && rawHr < 50) {
+          lastValidHrRef.current = rawHr;
+        } else if (rawHr >= 50) {
+          lastValidHrRef.current = rawHr;
+        }
+        
+        // HR 값 처리
+        const rawHrInt = Math.floor(rawHr);
+        console.log('[Monitoring] HR 처리 (배치):', { rawHr, rawHrInt, lastValid: lastValidHrRef.current });
+        
+        if (rawHrInt === 7) {
+          // 배터리 부족: 이전 값에서 ±5로 랜덤
+          const lastValid = lastValidHrRef.current || currentValues.heartRate || 70;
+          const randomOffset = Math.floor(Math.random() * 11) - 5; // -5 ~ +5
+          processedHr = Math.max(0, lastValid + randomOffset);
+          console.log('[Monitoring] HR 7 처리:', { lastValid, processedHr, count: hrErrorCountsRef.current.count7 });
+          
+          // 토스트 표시 (한 번만)
+          hrErrorCountsRef.current.count7 += 1;
+          if (hrErrorCountsRef.current.count7 === 1) {
+            console.log('[Monitoring] 배터리 부족 토스트 표시');
+            showWarning("배터리 부족");
+          }
+        } else if (rawHrInt === 8) {
+          // 신호불량: 이전 값에서 ±5로 랜덤
+          const lastValid = lastValidHrRef.current || currentValues.heartRate || 70;
+          const randomOffset = Math.floor(Math.random() * 11) - 5; // -5 ~ +5
+          processedHr = Math.max(0, lastValid + randomOffset);
+          console.log('[Monitoring] HR 8 처리:', { lastValid, processedHr, count: hrErrorCountsRef.current.count8 });
+          
+          // 5번마다 토스트 표시
+          hrErrorCountsRef.current.count8 += 1;
+          if (hrErrorCountsRef.current.count8 % 5 === 0) {
+            console.log('[Monitoring] 신호불량 토스트 표시');
+            showWarning("신호불량");
+          }
+        } else if (rawHrInt === 9) {
+          // 움직임 감지: 이전 값에서 ±5로 랜덤
+          const lastValid = lastValidHrRef.current || currentValues.heartRate || 70;
+          const randomOffset = Math.floor(Math.random() * 11) - 5; // -5 ~ +5
+          processedHr = Math.max(0, lastValid + randomOffset);
+          console.log('[Monitoring] HR 9 처리:', { lastValid, processedHr, count: hrErrorCountsRef.current.count9 });
+          
+          // 3번 이상이면 토스트 표시
+          hrErrorCountsRef.current.count9 += 1;
+          if (hrErrorCountsRef.current.count9 >= 3) {
+            const petName = petInfoRef.current?.name || "환자";
+            const patientSuffix = petName.endsWith('이') || petName.endsWith('가') 
+              ? petName 
+              : (petName.match(/[가-힣]$/) ? `${petName}이` : `${petName}가`);
+            console.log('[Monitoring] 움직임 감지 토스트 표시');
+            showWarning(`${patientSuffix} 움직이고 있습니다.`);
+            hrErrorCountsRef.current.count9 = 0; // 리셋
+          }
+        } else if (rawHr >= 10 && rawHr < 50) {
+          // 10 이상 50 미만: * 1.6, 소수점 제거
+          processedHr = Math.floor(rawHr * 1.6);
+        } else {
+          // 정상 값: 그대로 사용
+          processedHr = rawHr;
+          // 정상 값이 오면 에러 카운트 리셋
+          hrErrorCountsRef.current = { count7: 0, count8: 0, count9: 0 };
+        }
+        
+        console.log('[Monitoring] 최종 HR 값 (배치):', { rawHr, processedHr });
+        
         // 화면 표시: spo2를 심박수에, hr을 산포도에
-        const heartRateDisplay = sanitizeValue(rawSpo2)
-        const spo2Display = sanitizeValue(rawHr)
+        // HR 값이 7, 8, 9일 때는 처리된 값을 심박수로 표시
+        let heartRateDisplay = rawSpo2;
+        if (rawHrInt === 7 || rawHrInt === 8 || rawHrInt === 9) {
+          // HR 에러일 때는 처리된 HR 값을 심박수로 표시
+          heartRateDisplay = processedHr;
+        }
+        const spo2Display = sanitizeValue(processedHr)
         
         // elapsedSeconds는 측정 시작 시간 기준으로 계산 (표시용)
         const elapsedSeconds = measurementStartTimeRef.current 
@@ -372,17 +453,7 @@ function Monitoring() {
           ? lastSample.spo2
           : (data.data.spo2 || 0)
           
-        // SpO2 경고
-        if (lastRawSpo2 === 9) {
-          spo2NineCountRef.current += 1
-          if (spo2NineCountRef.current >= 2) {
-            const petName = petInfoRef.current?.name || '강아지'
-            alert(`현재 연결된 ${petName}가 많이 움직이고 있어 정확한 측정이 어렵습니다.`)
-            spo2NineCountRef.current = 0
-          }
-        } else {
-          spo2NineCountRef.current = 0
-        }
+        // SpO2 경고는 제거 (HR 9 처리로 대체됨)
         
         // 하드웨어 오류 감지
         const hrForErrorDetection = data.data.processedHR !== undefined && data.data.processedHR !== null
@@ -403,14 +474,89 @@ function Monitoring() {
         }
       } else {
         // 단일 샘플 처리
-        const rawHr = data.data?.hr || 0
+        let rawHr = Number(data.data?.hr || 0)
         const rawSpo2 = data.data?.spo2 || 0
         
-        const heartRateDisplay = (data.data?.processedHR !== undefined && data.data?.processedHR !== null)
-          ? data.data.processedHR
-          : rawSpo2
+        // HR 값 처리 및 에러 카운트 관리
+        let processedHr = rawHr;
         
-        const spo2Display = rawHr
+        // 마지막 유효한 HR 값 저장 (원본 값 저장)
+        if (rawHr >= 10 && rawHr < 50) {
+          lastValidHrRef.current = rawHr;
+        } else if (rawHr >= 50) {
+          lastValidHrRef.current = rawHr;
+        }
+        
+        // HR 값 처리
+        const rawHrInt = Math.floor(rawHr);
+        console.log('[Monitoring] HR 처리 (단일):', { rawHr, rawHrInt, lastValid: lastValidHrRef.current });
+        
+        if (rawHrInt === 7) {
+          // 배터리 부족: 이전 값에서 ±5로 랜덤
+          const lastValid = lastValidHrRef.current || currentValues.heartRate || 70;
+          const randomOffset = Math.floor(Math.random() * 11) - 5; // -5 ~ +5
+          processedHr = Math.max(0, lastValid + randomOffset);
+          console.log('[Monitoring] HR 7 처리 (단일):', { lastValid, processedHr, count: hrErrorCountsRef.current.count7 });
+          
+          // 토스트 표시 (한 번만)
+          hrErrorCountsRef.current.count7 += 1;
+          if (hrErrorCountsRef.current.count7 === 1) {
+            console.log('[Monitoring] 배터리 부족 토스트 표시 (단일)');
+            showWarning("배터리 부족");
+          }
+        } else if (rawHrInt === 8) {
+          // 신호불량: 이전 값에서 ±5로 랜덤
+          const lastValid = lastValidHrRef.current || currentValues.heartRate || 70;
+          const randomOffset = Math.floor(Math.random() * 11) - 5; // -5 ~ +5
+          processedHr = Math.max(0, lastValid + randomOffset);
+          console.log('[Monitoring] HR 8 처리 (단일):', { lastValid, processedHr, count: hrErrorCountsRef.current.count8 });
+          
+          // 5번마다 토스트 표시
+          hrErrorCountsRef.current.count8 += 1;
+          if (hrErrorCountsRef.current.count8 % 5 === 0) {
+            console.log('[Monitoring] 신호불량 토스트 표시 (단일)');
+            showWarning("신호불량");
+          }
+        } else if (rawHrInt === 9) {
+          // 움직임 감지: 이전 값에서 ±5로 랜덤
+          const lastValid = lastValidHrRef.current || currentValues.heartRate || 70;
+          const randomOffset = Math.floor(Math.random() * 11) - 5; // -5 ~ +5
+          processedHr = Math.max(0, lastValid + randomOffset);
+          console.log('[Monitoring] HR 9 처리 (단일):', { lastValid, processedHr, count: hrErrorCountsRef.current.count9 });
+          
+          // 3번 이상이면 토스트 표시
+          hrErrorCountsRef.current.count9 += 1;
+          if (hrErrorCountsRef.current.count9 >= 3) {
+            const petName = petInfoRef.current?.name || "환자";
+            const patientSuffix = petName.endsWith('이') || petName.endsWith('가') 
+              ? petName 
+              : (petName.match(/[가-힣]$/) ? `${petName}이` : `${petName}가`);
+            console.log('[Monitoring] 움직임 감지 토스트 표시 (단일)');
+            showWarning(`${patientSuffix} 움직이고 있습니다.`);
+            hrErrorCountsRef.current.count9 = 0; // 리셋
+          }
+        } else if (rawHr >= 10 && rawHr < 50) {
+          // 10 이상 50 미만: * 1.6, 소수점 제거
+          processedHr = Math.floor(rawHr * 1.6);
+        } else {
+          // 정상 값: 그대로 사용
+          processedHr = rawHr;
+          // 정상 값이 오면 에러 카운트 리셋
+          hrErrorCountsRef.current = { count7: 0, count8: 0, count9: 0 };
+        }
+        
+        console.log('[Monitoring] 최종 HR 값 (단일):', { rawHr, processedHr });
+        
+        // 화면 표시: spo2를 심박수에, hr을 산포도에
+        // HR 값이 7, 8, 9일 때는 처리된 값을 심박수로 표시
+        let heartRateDisplay = (data.data?.processedHR !== undefined && data.data?.processedHR !== null)
+          ? data.data.processedHR
+          : rawSpo2;
+        if (rawHrInt === 7 || rawHrInt === 8 || rawHrInt === 9) {
+          // HR 에러일 때는 처리된 HR 값을 심박수로 표시
+          heartRateDisplay = processedHr;
+        }
+        const spo2Display = processedHr
         
         const now = Date.now()
         if (!measurementStartTimeRef.current) {
@@ -436,17 +582,7 @@ function Monitoring() {
           battery: newPoint.battery !== 0 ? newPoint.battery : currentValues.battery
         })
         
-        // 경고/오류 감지
-        if (rawSpo2 === 9) {
-          spo2NineCountRef.current += 1
-          if (spo2NineCountRef.current >= 2) {
-            const petName = petInfoRef.current?.name || '강아지'
-            alert(`현재 연결된 ${petName}가 많이 움직이고 있어 정확한 측정이 어렵습니다.`)
-            spo2NineCountRef.current = 0
-          }
-        } else {
-          spo2NineCountRef.current = 0
-        }
+        // SpO2 경고는 제거 (HR 9 처리로 대체됨)
         
         const hrForError = (data.data?.processedHR !== undefined && data.data?.processedHR !== null)
           ? data.data.processedHR

@@ -17,6 +17,7 @@ const csvRoutes = require("./routes/csv");
 const mqttTestRoutes = require("./routes/mqtt-test");
 const checkRoutes = require("./routes/check");
 const measurementRoutes = require("./routes/measurement");
+const hrvRoutes = require("./routes/hrv");
 const initializeDatabase = require("./seeders/init");
 const MQTTService = require("./mqtt/service");
 const TelemetryWorker = require("./workers/telemetryWorker");
@@ -56,6 +57,7 @@ app.use("/api/records", recordsRoutes);
 app.use("/api/csv", csvRoutes);
 app.use("/api/mqtt-test", mqttTestRoutes);
 app.use("/api/measurement", measurementRoutes);
+app.use("/api/hrv", hrvRoutes);
 // check 라우트에 Socket.IO 인스턴스 전달
 checkRoutes.setIOInstance(io);
 app.use("/api/check", checkRoutes);
