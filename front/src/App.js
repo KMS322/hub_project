@@ -46,11 +46,32 @@ function AppContent() {
     '/guide'
   ])
 
+  // 경로가 변경될 때 처리
+  useEffect(() => {
+    // Guide 페이지로 이동하면 모달 닫기
+    if (HARDWARE_CHECK_EXCLUDE_PATHS.has(location.pathname)) {
+      setConfirmModal({
+        isOpen: false,
+        title: '',
+        message: '',
+        onNavigate: null
+      })
+      setCheckCompleted(true)
+    } else {
+      // 다른 페이지로 이동하면 체크 상태 리셋
+      setCheckCompleted(false)
+    }
+  }, [location.pathname])
+
   useEffect(() => {
     const checkHardware = async () => {
       if (!isAuthenticated) return
       if (checkCompleted) return
-      if (HARDWARE_CHECK_EXCLUDE_PATHS.has(location.pathname)) return
+      if (HARDWARE_CHECK_EXCLUDE_PATHS.has(location.pathname)) {
+        // Guide 페이지에서는 체크를 완료 상태로 설정 (체크하지 않음)
+        setCheckCompleted(true)
+        return
+      }
 
       try {
         const [hubs, devices] = await Promise.all([
@@ -157,7 +178,7 @@ function AppContent() {
       </Routes>
 
       <ConfirmModal
-        isOpen={confirmModal.isOpen}
+        isOpen={confirmModal.isOpen && !HARDWARE_CHECK_EXCLUDE_PATHS.has(location.pathname)}
         title={confirmModal.title}
         message={confirmModal.message}
         onClose={handleModalClose}

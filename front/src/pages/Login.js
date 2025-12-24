@@ -19,7 +19,17 @@ function Login() {
 
     if (result.success) {
       console.log('로그인 성공:', result.user)
-      navigate('/dashboard')
+      // 첫 로그인 여부 확인
+      const isFirstLogin = localStorage.getItem(`first_login_${result.user?.email}`)
+      console.log('[Login] First login flag:', isFirstLogin, 'for user:', result.user?.email)
+      if (isFirstLogin === 'true') {
+        // user 정보가 store에 반영될 시간을 주기 위해 약간의 지연
+        setTimeout(() => {
+          navigate('/guide')
+        }, 100)
+      } else {
+        navigate('/dashboard')
+      }
     }
   }
 

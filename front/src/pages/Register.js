@@ -49,7 +49,17 @@ function Register() {
 
     if (result.success) {
       console.log('회원가입 성공:', result.user)
-      navigate('/dashboard')
+      // 첫 로그인 플래그 설정
+      if (result.user?.email) {
+        localStorage.setItem(`first_login_${result.user.email}`, 'true')
+        console.log('[Register] First login flag set for:', result.user.email)
+        // user 정보가 store에 반영될 시간을 주기 위해 약간의 지연
+        setTimeout(() => {
+          navigate('/guide')
+        }, 100)
+      } else {
+        navigate('/dashboard')
+      }
     }
   }
 

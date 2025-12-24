@@ -1539,11 +1539,11 @@ function Hardware() {
 
         setIsRegistered(true);
 
-        console.log("[Hub Register] 등록 완료 감지됨, 목록 새로고침 시작");
+        console.log("[Hub Register] 등록 완료 감지됨, Socket.IO 이벤트 대기 중");
 
         setSearchStatus({
           type: "success",
-          message: "허브 등록이 완료되었습니다! 목록을 새로고침합니다.",
+          message: "WiFi 설정이 전송되었습니다. 허브가 연결될 때까지 기다려주세요...",
         });
 
         // 즉시 새로고침 (조건 없이)
@@ -1578,38 +1578,9 @@ function Hardware() {
             });
         }, 2000);
 
-        // 2초 후 디바이스 등록 모달 열기 (USB 연결은 유지)
-        setTimeout(() => {
-          // 허브 등록 모달만 닫기 (USB 연결은 유지)
-          setHubRegisterModal({ isOpen: false });
-          setAvailableDevices([]);
-          setSelectedDevice(null);
-          setWifiId("");
-          setWifiPassword("");
-          setIsSearching(false);
-          setSearchStatus({ type: null, message: "" });
-          setReceivedData("");
-          setRegistrationStep(1);
-          setPortInfo(null);
-          setIsRegistered(false);
-          // detectedMacAddress는 유지 (디바이스 등록에 필요)
-
-          // 모달이 닫힌 후 한 번 더 새로고침
-          setTimeout(() => {
-            loadData()
-              .then(() => {
-                console.log("[Hub Register] 모달 닫힌 후 새로고침 완료");
-              })
-              .catch((err) => {
-                console.error("[Hub Register] 새로고침 오류:", err);
-              });
-          }, 500);
-
-          // 디바이스 등록 모달 자동 열기
-          setTimeout(() => {
-            handleOpenDeviceRegister();
-          }, 500);
-        }, 2000);
+        // 참고: 이후 허브가 /check/hub로 요청을 보내면
+        // Socket.IO HUB_ACTIVITY 이벤트가 발생하고,
+        // handleHubActivity 함수에서 디바이스 등록 모달을 자동으로 엽니다.
       }
     }
   };
@@ -2119,15 +2090,21 @@ function Hardware() {
             delete hubTimeoutRefs.current[hubAddress];
           }
         }
-        
-        setAlertModal({ 
-          isOpen: true, 
-          title: '등록 완료', 
-          message: `${successful}개의 디바이스가 성공적으로 등록되었습니다.${failed > 0 ? ` (${failed}개 실패)` : ''}` 
+
+        setAlertModal({
+          isOpen: true,
+          title: '등록 완료',
+          message: `${successful}개의 디바이스가 성공적으로 등록되었습니다.${failed > 0 ? ` (${failed}개 실패)` : ''}\n\n페이지를 새로고침합니다.`
         })
         handleCloseDeviceRegister()
+
         // 디바이스 목록 자동 새로고침
         await loadData()
+
+        // 1초 후 페이지 새로고침 (허브 상태 업데이트를 위해)
+        setTimeout(() => {
+          window.location.reload()
+        }, 1000)
       } else {
         const errorMessages = registrationResults
           .filter((r) => r.status === "rejected")

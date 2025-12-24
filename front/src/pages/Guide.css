@@ -1,97 +1,590 @@
+/* ==================== Guide Page ==================== */
 .guide-page {
   min-height: 100vh;
   background-color: #f5f5f5;
-  padding: 3rem 1rem;
 }
 
 .guide-container {
-  max-width: 900px;
+  max-width: 1400px;
   margin: 0 auto;
-  background-color: white;
-  border-radius: 12px;
-  padding: 3rem;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  padding: 2rem;
 }
 
-.guide-title {
-  font-size: 2rem;
-  color: #2c3e50;
-  margin: 0 0 3rem 0;
+/* ==================== 제목 섹션 ==================== */
+.guide-title-section {
+  background-color: white;
+  padding: 2rem;
+  border-radius: 8px;
+  margin-bottom: 2rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
   text-align: center;
+}
+
+.guide-title-section h1 {
+  margin: 0 0 0.5rem 0;
+  color: #2c3e50;
+  font-size: 1.8rem;
   font-weight: 700;
 }
 
-.guide-steps {
-  display: flex;
-  flex-direction: column;
-  gap: 2.5rem;
+.guide-title-section p {
+  margin: 0;
+  color: #666;
+  font-size: 1rem;
 }
 
-.guide-step {
-  display: flex;
-  gap: 2rem;
-  align-items: flex-start;
-  padding: 2rem;
-  background-color: #f8f9fa;
+/* ==================== 섹션 공통 스타일 ==================== */
+.quick-start-section,
+.detailed-guide-section,
+.led-guide-section,
+.faq-section,
+.contact-section {
+  background-color: white;
+  padding: 1.5rem;
   border-radius: 8px;
-  border-left: 4px solid #3498db;
-  transition: transform 0.2s, box-shadow 0.2s;
+  margin-bottom: 2rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
-.guide-step:hover {
+.quick-start-section h2,
+.detailed-guide-section h2,
+.led-guide-section h2,
+.faq-section h2 {
+  margin: 0 0 1.5rem 0;
+  color: #2c3e50;
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+
+/* ==================== 빠른 시작 그리드 ==================== */
+.quick-start-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+}
+
+.quick-start-card {
+  background-color: #f8f9fa;
+  padding: 1.5rem;
+  border-radius: 8px;
+  text-align: center;
+  border: 1px solid #e0e0e0;
+  position: relative;
+  transition: transform 0.2s;
+}
+
+.quick-start-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
 }
 
-.step-number {
-  width: 60px;
-  height: 60px;
+.card-number {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 30px;
+  height: 30px;
   background-color: #3498db;
   color: white;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.8rem;
   font-weight: bold;
+  font-size: 0.95rem;
+}
+
+.quick-start-card h3 {
+  margin: 0.5rem 0;
+  color: #2c3e50;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.quick-start-card p {
+  margin: 0 0 1rem 0;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.btn-link {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  background-color: #3498db;
+  color: white;
+  text-decoration: none;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  transition: background-color 0.2s;
+}
+
+.btn-link:hover {
+  background-color: #2980b9;
+}
+
+/* ==================== 상세 가이드 카드 ==================== */
+.guide-card {
+  background-color: #f8f9fa;
+  padding: 1.5rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  border: 1px solid #e0e0e0;
+}
+
+.guide-card-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.guide-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
   flex-shrink: 0;
 }
 
-.step-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
+.guide-icon.hub {
+  background-color: #e74c3c;
 }
 
-.step-content h2 {
-  margin: 0;
-  font-size: 1.4rem;
+.guide-icon.device {
+  background-color: #3498db;
+}
+
+.guide-icon.dashboard {
+  background-color: #27ae60;
+}
+
+.guide-card-header h3 {
+  margin: 0 0 0.25rem 0;
   color: #2c3e50;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.guide-card-header p {
+  margin: 0;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.guide-card-content {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 2rem;
+}
+
+.guide-card-content.single-column {
+  grid-template-columns: 1fr;
+}
+
+.guide-visual {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 1rem;
+  background-color: white;
+  border-radius: 8px;
+}
+
+.guide-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.guide-step {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.step-num {
+  width: 28px;
+  height: 28px;
+  background-color: #3498db;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.step-content h4 {
+  margin: 0 0 0.5rem 0;
+  color: #2c3e50;
+  font-size: 1rem;
   font-weight: 600;
 }
 
 .step-content p {
-  margin: 0;
+  margin: 0 0 0.5rem 0;
   color: #666;
-  font-size: 1rem;
+  font-size: 0.9rem;
   line-height: 1.6;
 }
 
-.step-link {
-  display: inline-block;
-  padding: 0.75rem 1.5rem;
-  background-color: #3498db;
-  color: white;
-  text-decoration: none;
-  border-radius: 6px;
-  font-weight: 500;
-  transition: background-color 0.2s;
-  width: fit-content;
-  margin-top: 0.5rem;
+.step-content p:last-child {
+  margin-bottom: 0;
 }
 
-.step-link:hover {
+/* ==================== Tip 박스 ==================== */
+.tip-box {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 4px;
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.tip-box.info {
+  background-color: #e3f2fd;
+  border: 1px solid #90caf9;
+  color: #1976d2;
+}
+
+.tip-box.warning {
+  background-color: #fff7e6;
+  border: 1px solid #ffa726;
+  color: #e65100;
+}
+
+.tip-box span:first-child {
+  flex-shrink: 0;
+}
+
+/* ==================== LED 가이드 ==================== */
+.led-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+}
+
+.led-card {
+  background-color: #f8f9fa;
+  padding: 1.5rem;
+  border-radius: 8px;
+  text-align: center;
+  border: 1px solid #e0e0e0;
+}
+
+.led-light {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  margin: 0 auto 1rem auto;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.led-light.green {
+  background-color: #4caf50;
+}
+
+.led-light.green.blink {
+  animation: blink 1s infinite;
+}
+
+.led-light.blue {
+  background-color: #2196f3;
+}
+
+.led-light.blue.blink {
+  animation: blink 1s infinite;
+}
+
+.led-light.red {
+  background-color: #f44336;
+}
+
+.led-light.red.blink {
+  animation: blink 1s infinite;
+}
+
+.led-light.rgb {
+  animation: rgbBlink 1.5s infinite;
+}
+
+@keyframes blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0.3; }
+}
+
+@keyframes rgbBlink {
+  0%, 30% {
+    background-color: #f44336; /* 빨강 */
+  }
+  33%, 63% {
+    background-color: #4caf50; /* 초록 */
+  }
+  66%, 100% {
+    background-color: #2196f3; /* 파랑 */
+  }
+}
+
+.led-card h4 {
+  margin: 0 0 0.5rem 0;
+  color: #2c3e50;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.led-card p {
+  margin: 0;
+  color: #666;
+  font-size: 0.85rem;
+}
+
+/* ==================== FAQ ==================== */
+.faq-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.faq-item {
+  background-color: #f8f9fa;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.faq-item:hover {
+  background-color: #f0f0f0;
+}
+
+.faq-header {
+  padding: 1rem 1.25rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.faq-header h4 {
+  margin: 0;
+  color: #2c3e50;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.faq-icon {
+  width: 28px;
+  height: 28px;
+  background-color: #3498db;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.faq-body {
+  padding: 0 1.25rem 1rem 1.25rem;
+  animation: slideDown 0.3s ease;
+}
+
+.faq-body p {
+  margin: 0;
+  color: #666;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ==================== 고객 지원 ==================== */
+.contact-section {
+  text-align: center;
+  padding: 2rem;
+}
+
+.contact-section h3 {
+  margin: 0 0 0.75rem 0;
+  color: #2c3e50;
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+
+.contact-section p {
+  margin: 0 0 1.5rem 0;
+  color: #666;
+  font-size: 0.95rem;
+}
+
+.contact-buttons {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+}
+
+.contact-buttons .btn-primary,
+.contact-buttons .btn-secondary {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.contact-buttons .btn-primary {
+  background-color: #3498db;
+  color: white;
+}
+
+.contact-buttons .btn-primary:hover {
   background-color: #2980b9;
 }
 
+.contact-buttons .btn-secondary {
+  background-color: #95a5a6;
+  color: white;
+}
+
+.contact-buttons .btn-secondary:hover {
+  background-color: #7f8c8d;
+}
+
+/* ==================== 반응형 디자인 ==================== */
+@media (max-width: 1024px) {
+  .quick-start-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+  }
+
+  .guide-card-content {
+    grid-template-columns: 1fr;
+  }
+
+  .led-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .guide-container {
+    padding: 1rem;
+  }
+
+  .guide-title-section {
+    padding: 1.5rem;
+  }
+
+  .guide-title-section h1 {
+    font-size: 1.5rem;
+  }
+
+  .quick-start-section,
+  .detailed-guide-section,
+  .led-guide-section,
+  .faq-section,
+  .contact-section {
+    padding: 1rem;
+  }
+
+  .quick-start-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .guide-card {
+    padding: 1rem;
+  }
+
+  .guide-card-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .guide-step {
+    flex-direction: column;
+  }
+
+  .led-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .contact-buttons {
+    flex-direction: column;
+  }
+
+  .contact-buttons .btn-primary,
+  .contact-buttons .btn-secondary {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .guide-title-section h1 {
+    font-size: 1.3rem;
+  }
+
+  .quick-start-section h2,
+  .detailed-guide-section h2,
+  .led-guide-section h2,
+  .faq-section h2 {
+    font-size: 1.1rem;
+  }
+
+  .card-number {
+    width: 26px;
+    height: 26px;
+    font-size: 0.85rem;
+  }
+
+  .quick-start-card h3 {
+    font-size: 1rem;
+  }
+
+  .guide-card-header h3 {
+    font-size: 1.05rem;
+  }
+
+  .step-num {
+    width: 24px;
+    height: 24px;
+    font-size: 0.8rem;
+  }
+
+  .step-content h4 {
+    font-size: 0.95rem;
+  }
+
+  .step-content p {
+    font-size: 0.85rem;
+  }
+
+  .faq-header h4 {
+    font-size: 0.9rem;
+  }
+
+  .faq-icon {
+    width: 24px;
+    height: 24px;
+    font-size: 1rem;
+  }
+}
