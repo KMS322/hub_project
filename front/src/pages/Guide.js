@@ -77,6 +77,14 @@ function Guide() {
             </div>
 
             <div className="quick-start-card">
+              <div className="card-number">2</div>
+              <PatientsIconSVG />
+              <h3>환자 등록</h3>
+              <p>환자를 등록합니다.</p>
+              <Link to="/patients" className="btn-link">환자 관리 →</Link>
+            </div>
+
+            <div className="quick-start-card">
               <div className="card-number">3</div>
               <DashboardSVG />
               <h3>실시간 모니터링</h3>
@@ -307,8 +315,8 @@ function Guide() {
           <h3>추가 지원이 필요하신가요?</h3>
           <p>위의 가이드로 해결되지 않는 문제가 있다면 고객 지원팀에 문의해 주세요.</p>
           <div className="contact-buttons">
-            <a href="mailto:support@example.com" className="btn-primary">이메일 문의</a>
-            <a href="tel:1588-0000" className="btn-secondary">전화 문의</a>
+            <a href="mailto:creamoff2021@creamoff.co.kr" className="btn-primary">이메일 문의</a>
+            <a href="tel:010-4898-5955" className="btn-secondary">전화 문의</a>
           </div>
         </div>
 
@@ -427,8 +435,18 @@ function GuideWrapper() {
 function HubIcon() {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-      <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>
-      <circle cx="12" cy="12" r="2" fill="white"/>
+      <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" />
+      <circle cx="12" cy="12" r="2" fill="white" />
+      <text
+        x="12"
+        y="16"
+        textAnchor="middle"
+        fontSize="10"
+        fontWeight="700"
+        fill="white"
+      >
+        1
+      </text>
     </svg>
   )
 }
@@ -436,10 +454,20 @@ function HubIcon() {
 function DeviceIcon() {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-      <rect x="8" y="4" width="8" height="16" rx="2" fill="currentColor"/>
-      <circle cx="12" cy="17" r="1" fill="white"/>
-      <rect x="10" y="7" width="4" height="0.5" rx="0.25" fill="white"/>
-      <rect x="10" y="9" width="4" height="0.5" rx="0.25" fill="white"/>
+      <rect x="8" y="4" width="8" height="16" rx="2" fill="currentColor" />
+      <circle cx="12" cy="17" r="1" fill="white" />
+      <rect x="10" y="7" width="4" height="0.5" rx="0.25" fill="white" />
+      <rect x="10" y="9" width="4" height="0.5" rx="0.25" fill="white" />
+      <text
+        x="12"
+        y="14"
+        textAnchor="middle"
+        fontSize="10"
+        fontWeight="700"
+        fill="white"
+      >
+        2
+      </text>
     </svg>
   )
 }
@@ -447,10 +475,20 @@ function DeviceIcon() {
 function DashboardIcon() {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-      <rect x="4" y="4" width="7" height="7" rx="1" fill="currentColor"/>
-      <rect x="13" y="4" width="7" height="7" rx="1" fill="currentColor" opacity="0.6"/>
-      <rect x="4" y="13" width="7" height="7" rx="1" fill="currentColor" opacity="0.6"/>
-      <rect x="13" y="13" width="7" height="7" rx="1" fill="currentColor"/>
+      <rect x="4" y="4" width="7" height="7" rx="1" fill="currentColor" />
+      <rect x="13" y="4" width="7" height="7" rx="1" fill="currentColor" opacity="0.6" />
+      <rect x="4" y="13" width="7" height="7" rx="1" fill="currentColor" opacity="0.6" />
+      <rect x="13" y="13" width="7" height="7" rx="1" fill="currentColor" />
+      <text
+        x="12"
+        y="15"
+        textAnchor="middle"
+        fontSize="10"
+        fontWeight="700"
+        fill="white"
+      >
+        3
+      </text>
     </svg>
   )
 }
@@ -491,6 +529,15 @@ function DashboardSVG() {
       <rect x="55" y="10" width="35" height="35" rx="3" fill="#3498db" opacity="0.5"/>
       <rect x="10" y="55" width="35" height="35" rx="3" fill="#3498db" opacity="0.5"/>
       <rect x="55" y="55" width="35" height="35" rx="3" fill="#3498db" opacity="0.8"/>
+    </svg>
+  )
+}
+
+function PatientsIconSVG() {
+  return (
+    <svg width="60" height="60" viewBox="0 0 100 100">
+      <rect x="-10" y="36" width="120" height="25" rx="3" fill="#34db87ff" opacity="1"/>
+      <rect x="36" y="0" width="25" height="120" rx="3" fill="#34db87ff" opacity="1"/>
     </svg>
   )
 }
