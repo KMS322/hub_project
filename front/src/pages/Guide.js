@@ -240,9 +240,18 @@ function Guide() {
           <h2>LED 상태 표시 가이드</h2>
           <div className="led-grid">
             <div className="led-card">
-              <div className="led-light green"></div>
-              <h4>초록색 LED</h4>
-              <p>측정 모드 (정상 동작 중)</p>
+              <div className="led-light blue"></div>
+              <h4>파란색 LED (측정 모드)</h4>
+              <p>파란불이 들어와있고 블루투스가 잡힌 상태 (측정 중)</p>
+            </div>
+
+            <div className="led-card">
+              <div style={{ display: 'flex', gap: '4px', justifyContent: 'center', marginBottom: '1rem', alignItems: 'center' }}>
+                <div className="led-light blue" style={{ width: '20px', height: '20px' }}></div>
+                <div className="led-light green blink" style={{ width: '20px', height: '20px' }}></div>
+              </div>
+              <h4>파란색 + 초록색 깜빡임 (대기 모드)</h4>
+              <p>파란불이 켜져있고 초록불이 깜빡이는 상태 (대기 중)</p>
             </div>
 
             <div className="led-card">
@@ -334,12 +343,13 @@ function Guide() {
   )
 }
 
-// 첫 로그인이 아닌 경우 렌더링하지 않음
+// Guide 페이지 래퍼 - 첫 로그인 사용자와 일반 사용자 모두 접근 가능
 function GuideWrapper() {
   const navigate = useNavigate()
   const { user, isAuthenticated } = useAuthStore()
   const [shouldRender, setShouldRender] = useState(false)
   const [isChecking, setIsChecking] = useState(true)
+  const [isFirstLogin, setIsFirstLogin] = useState(false)
 
   useEffect(() => {
     // user 정보가 로드될 때까지 기다림
@@ -367,26 +377,29 @@ function GuideWrapper() {
     console.log('[Guide] First login flag:', firstLoginFlag, 'for user:', user.email)
     
     if (firstLoginFlag === 'true') {
-      // 첫 로그인인 경우 Guide 표시
+      // 첫 로그인인 경우 Guide 표시하고 플래그 표시
       console.log('[Guide] Showing guide for first login user')
+      setIsFirstLogin(true)
       setShouldRender(true)
       setIsChecking(false)
     } else {
-      // 첫 로그인이 아닌 경우 대시보드로 리다이렉트
-      console.log('[Guide] Not first login, redirecting to dashboard')
-      navigate('/dashboard')
+      // 첫 로그인이 아닌 경우에도 Guide 표시 (일반 사용자가 "사용 가이드 보기" 버튼을 눌렀을 때)
+      console.log('[Guide] Showing guide for regular user')
+      setIsFirstLogin(false)
+      setShouldRender(true)
+      setIsChecking(false)
     }
   }, [user, isAuthenticated, navigate])
 
-  // Guide 컴포넌트가 언마운트될 때 플래그 제거
+  // 첫 로그인 사용자의 경우 Guide 컴포넌트가 언마운트될 때 플래그 제거
   useEffect(() => {
     return () => {
-      if (user?.email && shouldRender) {
+      if (user?.email && isFirstLogin) {
         console.log('[Guide] Removing first login flag for:', user.email)
         localStorage.removeItem(`first_login_${user.email}`)
       }
     }
-  }, [user?.email, shouldRender])
+  }, [user?.email, isFirstLogin])
 
   if (isChecking) {
     return (
