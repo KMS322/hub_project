@@ -51,12 +51,26 @@ function Register() {
       console.log('회원가입 성공:', result.user)
       // 첫 로그인 플래그 설정
       if (result.user?.email) {
-        localStorage.setItem(`first_login_${result.user.email}`, 'true')
-        console.log('[Register] First login flag set for:', result.user.email)
-        // user 정보가 store에 반영될 시간을 주기 위해 약간의 지연
-        setTimeout(() => {
-          navigate('/guide')
-        }, 100)
+        try {
+          localStorage.setItem(`first_login_${result.user.email}`, 'true')
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Register.js:54',message:'First login flag set',data:{userEmail:result.user.email},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+          console.log('[Register] First login flag set for:', result.user.email)
+          // user 정보가 store에 반영될 시간을 주기 위해 약간의 지연
+          setTimeout(() => {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Register.js:59',message:'Navigating to guide after delay',data:{userEmail:result.user.email},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+            // #endregion
+            navigate('/guide')
+          }, 100)
+        } catch (error) {
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Register.js:63',message:'localStorage setItem error',data:{error:error.message,userEmail:result.user?.email},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+          // #endregion
+          console.error('[Register] Failed to set first login flag:', error)
+          navigate('/dashboard')
+        }
       } else {
         navigate('/dashboard')
       }

@@ -20,11 +20,30 @@ function Login() {
     if (result.success) {
       console.log('로그인 성공:', result.user)
       // 첫 로그인 여부 확인
-      const isFirstLogin = localStorage.getItem(`first_login_${result.user?.email}`)
-      console.log('[Login] First login flag:', isFirstLogin, 'for user:', result.user?.email)
+      let isFirstLogin = null
+      try {
+        isFirstLogin = localStorage.getItem(`first_login_${result.user?.email}`)
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Login.js:23',message:'First login flag checked',data:{userEmail:result.user?.email,isFirstLogin},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+        console.log('[Login] First login flag:', isFirstLogin, 'for user:', result.user?.email)
+      } catch (error) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Login.js:28',message:'localStorage getItem error',data:{error:error.message,userEmail:result.user?.email},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+        // #endregion
+        console.error('[Login] Failed to check first login flag:', error)
+        isFirstLogin = null
+      }
+      
       if (isFirstLogin === 'true') {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Login.js:35',message:'First login detected, navigating to guide',data:{userEmail:result.user?.email},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
         // user 정보가 store에 반영될 시간을 주기 위해 약간의 지연
         setTimeout(() => {
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Login.js:38',message:'Navigating to guide after delay',data:{userEmail:result.user?.email},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+          // #endregion
           navigate('/guide')
         }, 100)
       } else {

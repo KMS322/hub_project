@@ -77,7 +77,7 @@ function Guide() {
             </div>
 
             <div className="quick-start-card">
-              <div className="card-number">2</div>
+              <div className="card-number">3</div>
               <PatientsIconSVG />
               <h3>환자 등록</h3>
               <p>환자를 등록합니다.</p>
@@ -85,7 +85,7 @@ function Guide() {
             </div>
 
             <div className="quick-start-card">
-              <div className="card-number">3</div>
+              <div className="card-number">4</div>
               <DashboardSVG />
               <h3>실시간 모니터링</h3>
               <p>대시보드에서 데이터 확인</p>
@@ -324,9 +324,22 @@ function Guide() {
         <div className="guide-start-section">
           <button 
             onClick={() => {
+              // #region agent log
+              fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Guide.js:328',message:'Start button clicked',data:{userEmail:user?.email},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+              // #endregion
               // 플래그 제거 후 대시보드로 이동
               if (user?.email) {
-                localStorage.removeItem(`first_login_${user.email}`)
+                try {
+                  localStorage.removeItem(`first_login_${user.email}`)
+                  // #region agent log
+                  fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Guide.js:332',message:'Start button: flag removed',data:{userEmail:user.email},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                  // #endregion
+                } catch (error) {
+                  // #region agent log
+                  fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Guide.js:335',message:'Start button: localStorage error',data:{error:error.message,userEmail:user.email},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+                  // #endregion
+                  console.error('[Guide] Failed to remove flag on start button:', error)
+                }
               }
               navigate('/dashboard')
             }} 
@@ -360,8 +373,15 @@ function GuideWrapper() {
   const [isFirstLogin, setIsFirstLogin] = useState(false)
 
   useEffect(() => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Guide.js:362',message:'GuideWrapper useEffect entry',data:{isAuthenticated,hasUser:!!user,userEmail:user?.email},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+    
     // user 정보가 로드될 때까지 기다림
     if (!isAuthenticated) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Guide.js:367',message:'Not authenticated, redirecting',data:{isAuthenticated},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
       // 인증되지 않은 경우 로그인 페이지로 리다이렉트
       console.log('[Guide] Not authenticated, redirecting to login')
       navigate('/login')
@@ -370,9 +390,15 @@ function GuideWrapper() {
 
     // user 정보가 아직 로드되지 않은 경우 잠시 대기
     if (!user?.email) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Guide.js:375',message:'User email not loaded, waiting',data:{hasUser:!!user},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
       console.log('[Guide] Waiting for user info...')
       const timer = setTimeout(() => {
         if (!user?.email) {
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Guide.js:378',message:'User email timeout, redirecting',data:{hasUser:!!user},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+          // #endregion
           console.log('[Guide] User info not loaded, redirecting to login')
           navigate('/login')
         }
@@ -381,16 +407,39 @@ function GuideWrapper() {
     }
 
     // 첫 로그인 플래그 확인
-    const firstLoginFlag = localStorage.getItem(`first_login_${user.email}`)
+    let firstLoginFlag = null
+    try {
+      firstLoginFlag = localStorage.getItem(`first_login_${user.email}`)
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Guide.js:388',message:'First login flag checked',data:{userEmail:user.email,firstLoginFlag,flagExists:firstLoginFlag!==null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+    } catch (error) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Guide.js:391',message:'localStorage access error',data:{error:error.message,userEmail:user.email},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+      // #endregion
+      console.error('[Guide] localStorage access error:', error)
+      // localStorage 접근 실패 시에도 Guide 표시 (일반 사용자로 처리)
+      setIsFirstLogin(false)
+      setShouldRender(true)
+      setIsChecking(false)
+      return
+    }
+    
     console.log('[Guide] First login flag:', firstLoginFlag, 'for user:', user.email)
     
     if (firstLoginFlag === 'true') {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Guide.js:400',message:'First login user detected',data:{userEmail:user.email},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
       // 첫 로그인인 경우 Guide 표시하고 플래그 표시
       console.log('[Guide] Showing guide for first login user')
       setIsFirstLogin(true)
       setShouldRender(true)
       setIsChecking(false)
     } else {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Guide.js:407',message:'Regular user detected',data:{userEmail:user.email,firstLoginFlag},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
       // 첫 로그인이 아닌 경우에도 Guide 표시 (일반 사용자가 "사용 가이드 보기" 버튼을 눌렀을 때)
       console.log('[Guide] Showing guide for regular user')
       setIsFirstLogin(false)
@@ -403,8 +452,21 @@ function GuideWrapper() {
   useEffect(() => {
     return () => {
       if (user?.email && isFirstLogin) {
-        console.log('[Guide] Removing first login flag for:', user.email)
-        localStorage.removeItem(`first_login_${user.email}`)
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Guide.js:415',message:'Cleanup: removing first login flag',data:{userEmail:user.email,isFirstLogin},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
+        try {
+          console.log('[Guide] Removing first login flag for:', user.email)
+          localStorage.removeItem(`first_login_${user.email}`)
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Guide.js:420',message:'Cleanup: flag removed successfully',data:{userEmail:user.email},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+          // #endregion
+        } catch (error) {
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Guide.js:423',message:'Cleanup: localStorage remove error',data:{error:error.message,userEmail:user.email},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+          // #endregion
+          console.error('[Guide] Failed to remove first login flag:', error)
+        }
       }
     }
   }, [user?.email, isFirstLogin])
