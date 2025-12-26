@@ -140,15 +140,11 @@ function Dashboard() {
                   console.log('[Dashboard] ✅ showWarning 호출 완료');
                 }
               } else if (rawSpo2Int === 8) {
-                // 신호불량: 이전 값에서 ±5로 랜덤
-                // spo2가 심박수로 표시되므로 spo2 값을 기준으로 사용
-                const lastValid = lastValidHrRef.current[deviceAddress] || device.currentData?.spo2 || 70;
-                const randomOffset = Math.floor(Math.random() * 11) - 5; // -5 ~ +5
-                processedHr = Math.max(0, lastValid + randomOffset);
-                console.log('[Dashboard] SpO2 8 처리:', { lastValid, processedHr, count: hrErrorCountsRef.current[deviceAddress].count8 });
+                // 신호불량: 심박수에 0 표시
+                processedHr = 0;
+                console.log('[Dashboard] SpO2 8 처리: 심박수 0으로 설정');
                 
-                // 연속으로 3번 이상 나오면 토스트 표시 (5초 내 중복 방지)
-                hrErrorCountsRef.current[deviceAddress].count8 += 1;
+                // 토스트 표시 (5초 내 중복 방지)
                 if (!lastToastTimeRef.current[deviceAddress]) {
                   lastToastTimeRef.current[deviceAddress] = {};
                 }
@@ -156,12 +152,11 @@ function Dashboard() {
                 const lastToastTime = lastToastTimeRef.current[deviceAddress].type8 || 0;
                 const timeSinceLastToast = now - lastToastTime;
                 
-                console.log(`[Dashboard] 📡 SpO2=8 카운트 증가: ${hrErrorCountsRef.current[deviceAddress].count8}, 마지막 토스트: ${timeSinceLastToast}ms 전`);
-                if (hrErrorCountsRef.current[deviceAddress].count8 >= 3 && timeSinceLastToast > 5000) {
+                console.log(`[Dashboard] 📡 SpO2=8 감지, 마지막 토스트: ${timeSinceLastToast}ms 전`);
+                if (timeSinceLastToast > 5000) {
                   console.log('[Dashboard] 🔔🔔🔔 신호불량 토스트 호출!');
                   showWarning("신호가 불량합니다");
                   lastToastTimeRef.current[deviceAddress].type8 = now;
-                  hrErrorCountsRef.current[deviceAddress].count8 = 0; // 리셋
                   console.log('[Dashboard] ✅ showWarning 호출 완료');
                 }
               } else if (rawSpo2Int === 9) {
@@ -201,7 +196,7 @@ function Dashboard() {
                 hrErrorCountsRef.current[deviceAddress] = { count7: 0, count8: 0, count9: 0 };
               }
               
-              console.log('[Dashboard] 최종 HR 값:', { rawHr, processedHr });
+              console.log('[Dashboard] 최종 HR 값:', { rawHr, processedHr, rawSpo2Int });
               // 화면 표시: spo2를 심박수로, hr을 산포도로 사용
               // SpO2 값이 7, 8, 9일 때는 처리된 값을 spo2(심박수)에 저장
               let displaySpo2 = rawSpo2;
@@ -209,11 +204,17 @@ function Dashboard() {
                 // SpO2 에러일 때는 처리된 HR 값을 심박수로 표시
                 displaySpo2 = processedHr;
               }
+              // 0도 유효한 값이므로 || 연산자 대신 명시적으로 처리
+              const finalSpo2 = (rawSpo2Int === 7 || rawSpo2Int === 8 || rawSpo2Int === 9) 
+                ? displaySpo2 
+                : (displaySpo2 !== undefined && displaySpo2 !== null ? displaySpo2 : device.currentData?.spo2 || 0);
+              
+              console.log('[Dashboard] 최종 표시 값:', { displaySpo2, finalSpo2, rawSpo2Int });
               return {
                 ...device,
                 currentData: {
                   heartRate: processedHr, // 처리된 HR (산포도로 표시)
-                  spo2: displaySpo2 || device.currentData?.spo2 || 0, // 처리된 spo2 (심박수로 표시)
+                  spo2: finalSpo2, // 처리된 spo2 (심박수로 표시)
                   temperature:
                     latest.temp ||
                     data.data?.temp ||

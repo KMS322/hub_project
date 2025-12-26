@@ -41,6 +41,15 @@ function AppContent() {
 
   const [checkCompleted, setCheckCompleted] = useState(false)
 
+  // 하드웨어 체크를 수행할 경로 (하드웨어관리, 대시보드, 모니터링만)
+  const HARDWARE_CHECK_PATHS = new Set([
+    '/hardware',
+    '/dashboard'
+  ])
+  
+  // 모니터링 페이지 체크 (동적 경로)
+  const isMonitoringPage = location.pathname.startsWith('/monitoring/')
+
   // 하드웨어 체크 제외 경로
   const HARDWARE_CHECK_EXCLUDE_PATHS = new Set([
     '/guide'
@@ -58,10 +67,15 @@ function AppContent() {
       })
       setCheckCompleted(true)
     } else {
-      // 다른 페이지로 이동하면 체크 상태 리셋
-      setCheckCompleted(false)
+      // 하드웨어 체크가 필요한 페이지로 이동하면 체크 상태 리셋
+      if (HARDWARE_CHECK_PATHS.has(location.pathname) || isMonitoringPage) {
+        setCheckCompleted(false)
+      } else {
+        // 다른 페이지로 이동하면 체크 완료 상태로 설정 (체크하지 않음)
+        setCheckCompleted(true)
+      }
     }
-  }, [location.pathname])
+  }, [location.pathname, isMonitoringPage])
 
   useEffect(() => {
     const checkHardware = async () => {
@@ -69,6 +83,13 @@ function AppContent() {
       if (checkCompleted) return
       if (HARDWARE_CHECK_EXCLUDE_PATHS.has(location.pathname)) {
         // Guide 페이지에서는 체크를 완료 상태로 설정 (체크하지 않음)
+        setCheckCompleted(true)
+        return
+      }
+      
+      // 하드웨어 체크가 필요한 페이지에서만 체크 수행
+      const shouldCheck = HARDWARE_CHECK_PATHS.has(location.pathname) || isMonitoringPage
+      if (!shouldCheck) {
         setCheckCompleted(true)
         return
       }
@@ -109,7 +130,7 @@ function AppContent() {
     }
 
     checkHardware()
-  }, [isAuthenticated, checkCompleted, location.pathname])
+  }, [isAuthenticated, checkCompleted, location.pathname, isMonitoringPage])
 
   const handleModalClose = () => {
     setConfirmModal({
