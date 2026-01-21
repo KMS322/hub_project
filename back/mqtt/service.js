@@ -177,9 +177,16 @@ class MQTTService {
     }
 
     console.log(`[MQTT Service] 📨 Hub send message from ${topic}: ${messageStr}`);
+    console.log(`[MQTT Service] 📨 Raw message details:`, {
+      topic,
+      hubId,
+      messageLength: messageStr.length,
+      messagePreview: messageStr.slice(0, 200),
+      timestamp: new Date().toISOString(),
+    });
 
     // ✅ 문자열 형식 텔레메트리 처리 (device_mac_address-sampling_rate, hr, spo2, temp, battery)
-    // 예: "d4:d5:3f:28:e1:f4-50.11,81,90,34.06,8"
+    // 예: "d4:d5:3f:28:e1:f4-50.11,81,90,34.06,8" 또는 "d4:d5:3f:28:e1:f4-50.45,80,95,28.65,7"
     const parsedString = this.parseTestTelemetryLine(messageStr);
     if (parsedString) {
       console.log(`[MQTT Service] 📊 String format telemetry detected from hub ${hubId}, device ${parsedString.device_mac_address}`);
@@ -232,11 +239,13 @@ class MQTTService {
       try {
         // ✅ 모든 클라이언트에 브로드캐스트
         this.io.emit('TELEMETRY', telemetryPayload);
-        console.log(`[MQTT Service] ✅ Emitted TELEMETRY (string format) for device ${deviceMac}`, {
+        console.log(`[MQTT Service] ✅ Socket.IO TELEMETRY emitted (string format)`, {
+          event: 'TELEMETRY',
           hubId,
           deviceId: deviceMac,
           data: telemetryPayload.data,
           timestamp: telemetryPayload.timestamp,
+          payloadString: JSON.stringify(telemetryPayload, null, 2),
         });
       } catch (error) {
         console.error(`[MQTT Service] ❌ Failed to emit TELEMETRY for device ${deviceMac}:`, error);
@@ -380,7 +389,8 @@ class MQTTService {
             } else {
               try {
                 this.io.emit('TELEMETRY', telemetryPayload);
-                console.log(`[MQTT Service] ✅ Emitted TELEMETRY for device ${data.device_mac_address} (battery: ${batteryToUse}%)`, {
+                console.log(`[MQTT Service] ✅ Socket.IO TELEMETRY emitted (JSON format)`, {
+                  event: 'TELEMETRY',
                   hubId,
                   deviceId: data.device_mac_address,
                   data: {
@@ -388,7 +398,12 @@ class MQTTService {
                     spo2: telemetryPayload.data.spo2,
                     temp: telemetryPayload.data.temp,
                     battery: telemetryPayload.data.battery,
+                    start_time: telemetryPayload.data.start_time,
+                    sampling_rate: telemetryPayload.data.sampling_rate,
+                    dataArrLength: telemetryPayload.data.dataArr?.length || 0,
                   },
+                  timestamp: telemetryPayload.timestamp,
+                  payloadString: JSON.stringify(telemetryPayload, null, 2).slice(0, 1000), // 처음 1000자만
                 });
               } catch (error) {
                 console.error(`[MQTT Service] ❌ Failed to emit TELEMETRY for device ${data.device_mac_address}:`, error);
@@ -587,15 +602,14 @@ class MQTTService {
     try {
       // ✅ 모든 클라이언트에 브로드캐스트
       this.io.emit('TELEMETRY', telemetryPayload);
-      console.log(
-        `[MQTT Service] 🧪✅ Emitted TELEMETRY(test) hub=${hubId} dev=${deviceMac} (sr=${samplingRate})`,
-        {
-          hubId,
-          deviceId: deviceMac,
-          data: telemetryPayload.data,
-          timestamp: telemetryPayload.timestamp,
-        },
-      );
+      console.log(`[MQTT Service] ✅ Socket.IO TELEMETRY emitted (test format)`, {
+        event: 'TELEMETRY',
+        hubId,
+        deviceId: deviceMac,
+        data: telemetryPayload.data,
+        timestamp: telemetryPayload.timestamp,
+        payloadString: JSON.stringify(telemetryPayload, null, 2),
+      });
     } catch (error) {
       console.error(`[MQTT Service] ❌ Failed to emit TELEMETRY(test) for device ${deviceMac}:`, error);
     }
