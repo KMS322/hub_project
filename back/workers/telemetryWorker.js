@@ -240,13 +240,92 @@ class TelemetryWorker {
    */
   async saveToCSV(batch) {
     try {
+      const db = require('../models');
+      
       for (const item of batch) {
         const { hubId, deviceId, data } = item;
         
-        // 허브에서 보낸 250개 배치 데이터인지 확인
+        // ✅ 배치 데이터 형식 (250개 샘플)
         if (data.device_mac_address && data.data && Array.isArray(data.data) && data.data.length > 0) {
-          // CSV Writer에 배치 데이터 전달
-          await this.csvWriter.writeBatch(data);
+          // 디바이스 정보 조회하여 CSV 세션 시작 확인
+          try {
+            const device = await db.Device.findOne({
+              where: { address: data.device_mac_address },
+              include: [{ model: db.Pet, as: 'Pet' }],
+            });
+
+            // CSV 저장은 디바이스가 허브에 연결되어 있고 펫이 연결된 경우에만
+            if (device && device.user_email) {
+              const userEmail = device.user_email;
+              const petName = device.Pet?.name || 'Unknown';
+              
+              // 펫이 연결된 경우에만 CSV 저장
+              if (device.Pet) {
+                // CSV 세션이 없으면 시작
+                if (!this.csvWriter.hasActiveSession(data.device_mac_address)) {
+                  const startTime = data.start_time || '000000000';
+                  const samplingRate = data.sampling_rate || 50;
+                  this.csvWriter.startSession(data.device_mac_address, userEmail, petName, startTime, samplingRate);
+                  console.log(`[Telemetry Worker] Started CSV session for ${data.device_mac_address}`);
+                }
+                
+                // CSV Writer에 배치 데이터 전달
+                await this.csvWriter.writeBatch(data);
+              }
+            }
+          } catch (error) {
+            console.error(`[Telemetry Worker] Error processing CSV for device ${data.device_mac_address}:`, error);
+          }
+        }
+        // ✅ 단일 샘플 형식 (문자열 파싱된 데이터: device_mac_address-sampling_rate, hr, spo2, temp, battery)
+        else if (data.device_mac_address && data.dataArr && Array.isArray(data.dataArr) && data.dataArr.length > 0) {
+          // 디바이스 정보 조회하여 CSV 세션 시작 확인
+          try {
+            const device = await db.Device.findOne({
+              where: { address: data.device_mac_address },
+              include: [{ model: db.Pet, as: 'Pet' }],
+            });
+
+            // CSV 저장은 디바이스가 허브에 연결되어 있고 펫이 연결된 경우에만
+            if (device && device.user_email) {
+              const userEmail = device.user_email;
+              const petName = device.Pet?.name || 'Unknown';
+              
+              // 펫이 연결된 경우에만 CSV 저장
+              if (device.Pet) {
+                // CSV 세션이 없으면 시작
+                if (!this.csvWriter.hasActiveSession(data.device_mac_address)) {
+                  const startTime = data.start_time || '000000000';
+                  const samplingRate = data.sampling_rate || 50;
+                  this.csvWriter.startSession(data.device_mac_address, userEmail, petName, startTime, samplingRate);
+                  console.log(`[Telemetry Worker] Started CSV session for ${data.device_mac_address} (single sample)`);
+                }
+                
+                // 단일 샘플을 배치 형식으로 변환하여 CSV 저장
+                const batchData = {
+                  device_mac_address: data.device_mac_address,
+                  sampling_rate: data.sampling_rate || 50,
+                  data: ['0,0,0'], // ir, red, green은 없으므로 0으로 채움
+                  dataArr: data.dataArr,
+                  hr: data.hr || 0,
+                  spo2: data.spo2 || 0,
+                  temp: data.temp || 0,
+                  battery: data.battery || 0,
+                  start_time: data.start_time || '000000000',
+                };
+                
+                await this.csvWriter.writeBatch(batchData);
+                console.log(`[Telemetry Worker] ✅ Single sample saved to CSV for ${data.device_mac_address}`, {
+                  hr: data.hr,
+                  spo2: data.spo2,
+                  temp: data.temp,
+                  battery: data.battery,
+                });
+              }
+            }
+          } catch (error) {
+            console.error(`[Telemetry Worker] Error processing CSV for device ${data.device_mac_address}:`, error);
+          }
         }
       }
     } catch (error) {

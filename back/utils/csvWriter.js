@@ -48,7 +48,7 @@ class CSVWriter {
 
   startSession(deviceAddress, userEmail, petName, startTime, samplingRate = 50) {
     const now = new Date();
-    const date = now.toISOString().split('T')[0];
+    const date = now.toISOString().split('T')[0]; // YYYY-MM-DD 형식
 
     // Windows에서는 폴더명과 파일명에 : 사용 불가하므로 _로 변환
     // 이메일은 @와 .을 그대로 유지 (폴더명에 사용 가능)
@@ -56,38 +56,6 @@ class CSVWriter {
     // MAC 주소의 :를 _로 변환 (예: ec:81:f7:f3:54:6f -> ec_81_f7_f3_54_6f)
     const safeDevice = deviceAddress.replace(/:/g, '_');
     const safePet = this.sanitizeForPath(petName);
-
-    // 측정 시작 시간 계산: start_time + 1 / sampling_rate * 250 (밀리초)
-    let calculatedStartTime = startTime;
-    if (startTime && samplingRate > 0) {
-      // start_time을 밀리초로 변환
-      const [h, m, s, ms] = this.parseStartTime(startTime);
-      const today = new Date();
-      today.setHours(h, m, s, ms);
-      let startTimeMs = today.getTime();
-      
-      // 1 / sampling_rate * 250 밀리초 추가
-      const offsetMs = (1 / samplingRate) * 250 * 1000;
-      startTimeMs += offsetMs;
-      
-      // HH:mm:ss:SSS 형식으로 변환
-      const calculatedDate = new Date(startTimeMs);
-      const hours = String(calculatedDate.getHours()).padStart(2, '0');
-      const minutes = String(calculatedDate.getMinutes()).padStart(2, '0');
-      const seconds = String(calculatedDate.getSeconds()).padStart(2, '0');
-      const milliseconds = String(calculatedDate.getMilliseconds()).padStart(3, '0');
-      calculatedStartTime = `${hours}:${minutes}:${seconds}:${milliseconds}`;
-    }
-
-    // 시간 형식 변환: HH:mm:ss:SSS -> HH_mm_ss_SSS (Windows 호환)
-    let safeTime = calculatedStartTime;
-    if (calculatedStartTime && !calculatedStartTime.includes(':') && !calculatedStartTime.includes('_') && calculatedStartTime.length === 9) {
-      // HHmmssSSS 형식을 HH_mm_ss_SSS로 변환
-      safeTime = `${calculatedStartTime.slice(0, 2)}_${calculatedStartTime.slice(2, 4)}_${calculatedStartTime.slice(4, 6)}_${calculatedStartTime.slice(6, 9)}`;
-    } else if (calculatedStartTime && calculatedStartTime.includes(':')) {
-      // HH:mm:ss:SSS 형식을 HH_mm_ss_SSS로 변환
-      safeTime = calculatedStartTime.replace(/:/g, '_');
-    }
 
     const dirPath = path.join(
       process.cwd(),
@@ -101,25 +69,50 @@ class CSVWriter {
     // 🔥 핵심: 중간 경로 포함 전부 생성
     fs.mkdirSync(dirPath, { recursive: true });
 
-    // 파일명: device_mac_address_pet_name_HH_mm_ss_SSS.csv (Windows 호환)
+    // ✅ 파일명: device_mac_address_pet_name_YYYY-MM-DD.csv (날짜만 사용, 같은 날짜면 같은 파일)
     const filePath = path.join(
       dirPath,
-      `${safeDevice}_${safePet}_${safeTime}.csv`
+      `${safeDevice}_${safePet}_${date}.csv`
     );
 
-    fs.writeFileSync(filePath, this.csvHeaders, 'utf8');
+    // ✅ 기존 세션이 있는지 확인
+    const existingSession = this.activeSessions.get(deviceAddress);
+    if (existingSession) {
+      if (existingSession.date === date && fs.existsSync(existingSession.filePath)) {
+        // 같은 날짜의 세션이 있고 파일이 존재하면 기존 파일 사용 (append 모드)
+        console.log(`[CSV Writer] Using existing session for ${deviceAddress} on ${date}`);
+        return; // 기존 세션 사용
+      } else if (existingSession.date !== date) {
+        // 날짜가 바뀌었으면 기존 세션 종료
+        console.log(`[CSV Writer] Date changed for ${deviceAddress}: ${existingSession.date} -> ${date}, ending previous session`);
+        this.endSession(deviceAddress);
+      }
+    }
+
+    // ✅ 새 세션이거나 날짜가 바뀐 경우: 파일이 없으면 헤더만 작성, 있으면 append
+    if (!fs.existsSync(filePath)) {
+      // 파일이 없으면 헤더 작성
+      fs.writeFileSync(filePath, this.csvHeaders, 'utf8');
+      console.log(`[CSV Writer] New CSV file created: ${filePath}`);
+    } else {
+      // 파일이 이미 있으면 헤더 없이 append (기존 파일에 이어서 작성)
+      console.log(`[CSV Writer] Appending to existing CSV file: ${filePath}`);
+    }
 
     this.activeSessions.set(deviceAddress, {
       filePath,
-      startTime: calculatedStartTime, // 계산된 시작 시간 저장
+      date, // 날짜 정보 저장 (날짜 변경 감지용)
       baseTimestamp: now.getTime(),
     });
 
-    this.dataCounters.set(deviceAddress, {
-      total: 0,
-    });
+    // 카운터 초기화 (새 세션인 경우만)
+    if (!this.dataCounters.has(deviceAddress)) {
+      this.dataCounters.set(deviceAddress, {
+        total: 0,
+      });
+    }
 
-    console.log(`[CSV Writer] Session started: ${filePath}`);
+    console.log(`[CSV Writer] Session started/updated: ${filePath} (Date: ${date})`);
   }
 
   endSession(deviceAddress) {

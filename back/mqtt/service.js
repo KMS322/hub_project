@@ -215,6 +215,49 @@ class MQTTService {
         this.temperatureCache.set(deviceMac, currentTemp);
       }
 
+      // ✅ TelemetryWorker 큐에 추가 (CSV 저장을 위해)
+      const telemetryData = {
+        device_mac_address: deviceMac,
+        sampling_rate: samplingRate,
+        hr: parsedString.hr || 0,
+        spo2: parsedString.spo2 || 0,
+        temp: tempToUse,
+        battery: batteryToUse,
+        // 단일 샘플 형식: data 배열에 하나의 샘플만 포함
+        data: [`0,0,0`], // ir, red, green은 없으므로 0으로 채움
+        dataArr: [{
+          ir: null,
+          red: null,
+          green: null,
+          hr: parsedString.hr || 0,
+          spo2: parsedString.spo2 || 0,
+          temp: tempToUse,
+          battery: batteryToUse,
+        }],
+        timestamp: Date.now(),
+        start_time: new Date().toISOString().split('T')[1].replace(/\.\d{3}Z$/, '').replace(/:/g, '').slice(0, 9), // HHmmssSSS 형식
+      };
+
+      // 큐에 추가 (Worker가 CSV 저장 및 처리)
+      if (this.telemetryQueue) {
+        this.telemetryQueue.push({
+          hubId,
+          deviceId: deviceMac,
+          data: telemetryData,
+          timestamp: new Date(),
+          topic,
+          receiveStartTime: Date.now(),
+        });
+        console.log(`[MQTT Service] ✅ String format telemetry queued for CSV save`, {
+          hubId,
+          deviceId: deviceMac,
+          hr: parsedString.hr,
+          spo2: parsedString.spo2,
+          temp: tempToUse,
+          battery: batteryToUse,
+        });
+      }
+
       // Socket.IO로 전송 (요청된 형식: { device_mac_address, samplingrate, hr, spo2, temp, battery })
       if (!this.io) {
         console.warn(`[MQTT Service] ⚠️ Socket.IO instance not available, cannot emit TELEMETRY for device ${deviceMac}`);
@@ -576,6 +619,49 @@ class MQTTService {
       }
     } else {
       this.temperatureCache.set(deviceMac, currentTemp);
+    }
+
+    // ✅ TelemetryWorker 큐에 추가 (CSV 저장을 위해)
+    const telemetryData = {
+      device_mac_address: deviceMac,
+      sampling_rate: samplingRate,
+      hr: parsed.hr || 0,
+      spo2: parsed.spo2 || 0,
+      temp: tempToUse,
+      battery: batteryToUse,
+      // 단일 샘플 형식: data 배열에 하나의 샘플만 포함
+      data: [`0,0,0`], // ir, red, green은 없으므로 0으로 채움
+      dataArr: [{
+        ir: null,
+        red: null,
+        green: null,
+        hr: parsed.hr || 0,
+        spo2: parsed.spo2 || 0,
+        temp: tempToUse,
+        battery: batteryToUse,
+      }],
+      timestamp: Date.now(),
+      start_time: new Date().toISOString().split('T')[1].replace(/\.\d{3}Z$/, '').replace(/:/g, '').slice(0, 9), // HHmmssSSS 형식
+    };
+
+    // 큐에 추가 (Worker가 CSV 저장 및 처리)
+    if (this.telemetryQueue) {
+      this.telemetryQueue.push({
+        hubId,
+        deviceId: deviceMac,
+        data: telemetryData,
+        timestamp: new Date(),
+        topic,
+        receiveStartTime: Date.now(),
+      });
+      console.log(`[MQTT Service] ✅ Test format telemetry queued for CSV save`, {
+        hubId,
+        deviceId: deviceMac,
+        hr: parsed.hr,
+        spo2: parsed.spo2,
+        temp: tempToUse,
+        battery: batteryToUse,
+      });
     }
 
     // 실시간 소켓 이벤트로 전송 (요청된 형식: { device_mac_address, samplingrate, hr, spo2, temp, battery })
