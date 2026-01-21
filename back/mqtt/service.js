@@ -209,23 +209,37 @@ class MQTTService {
       }
 
       // Socket.IO로 전송 (요청된 형식: { device_mac_address, samplingrate, hr, spo2, temp, battery })
-      if (this.io) {
-        const telemetryPayload = {
-          type: 'sensor_data',
+      if (!this.io) {
+        console.warn(`[MQTT Service] ⚠️ Socket.IO instance not available, cannot emit TELEMETRY for device ${deviceMac}`);
+        return; // 문자열 형식 처리 완료
+      }
+      
+      const telemetryPayload = {
+        type: 'sensor_data',
+        hubId,
+        deviceId: deviceMac,
+        data: {
+          device_mac_address: deviceMac,
+          samplingrate: samplingRate,
+          hr: parsedString.hr || 0,
+          spo2: parsedString.spo2 || 0,
+          temp: tempToUse,
+          battery: batteryToUse,
+        },
+        timestamp: new Date().toISOString(),
+      };
+      
+      try {
+        // ✅ 모든 클라이언트에 브로드캐스트
+        this.io.emit('TELEMETRY', telemetryPayload);
+        console.log(`[MQTT Service] ✅ Emitted TELEMETRY (string format) for device ${deviceMac}`, {
           hubId,
           deviceId: deviceMac,
-          data: {
-            device_mac_address: deviceMac,
-            samplingrate: samplingRate,
-            hr: parsedString.hr || 0,
-            spo2: parsedString.spo2 || 0,
-            temp: tempToUse,
-            battery: batteryToUse,
-          },
-          timestamp: new Date().toISOString(),
-        };
-        this.io.emit('TELEMETRY', telemetryPayload);
-        console.log(`[MQTT Service] ✅ Emitted TELEMETRY (string format) for device ${deviceMac}`, telemetryPayload.data);
+          data: telemetryPayload.data,
+          timestamp: telemetryPayload.timestamp,
+        });
+      } catch (error) {
+        console.error(`[MQTT Service] ❌ Failed to emit TELEMETRY for device ${deviceMac}:`, error);
       }
       return; // 문자열 형식 처리 완료
     }
@@ -361,8 +375,25 @@ class MQTTService {
               timestamp: new Date().toISOString()
             };
 
-            this.io.emit('TELEMETRY', telemetryPayload);
-            console.log(`[MQTT Service] ✅ Emitted TELEMETRY for device ${data.device_mac_address} (battery: ${batteryToUse}%)`);
+            if (!this.io) {
+              console.warn(`[MQTT Service] ⚠️ Socket.IO instance not available, cannot emit TELEMETRY for device ${data.device_mac_address}`);
+            } else {
+              try {
+                this.io.emit('TELEMETRY', telemetryPayload);
+                console.log(`[MQTT Service] ✅ Emitted TELEMETRY for device ${data.device_mac_address} (battery: ${batteryToUse}%)`, {
+                  hubId,
+                  deviceId: data.device_mac_address,
+                  data: {
+                    hr: telemetryPayload.data.hr,
+                    spo2: telemetryPayload.data.spo2,
+                    temp: telemetryPayload.data.temp,
+                    battery: telemetryPayload.data.battery,
+                  },
+                });
+              } catch (error) {
+                console.error(`[MQTT Service] ❌ Failed to emit TELEMETRY for device ${data.device_mac_address}:`, error);
+              }
+            }
           }
         } catch (error) {
           console.error(`[MQTT Service] Error processing measurement data:`, error);
@@ -533,26 +564,40 @@ class MQTTService {
     }
 
     // 실시간 소켓 이벤트로 전송 (요청된 형식: { device_mac_address, samplingrate, hr, spo2, temp, battery })
-    if (this.io) {
-      const telemetryPayload = {
-        type: 'sensor_data',
-        hubId,
-        deviceId: deviceMac,
-        data: {
-          device_mac_address: deviceMac,
-          samplingrate: samplingRate,
-          hr: parsed.hr || 0,
-          spo2: parsed.spo2 || 0,
-          temp: tempToUse,
-          battery: batteryToUse,
-        },
-        timestamp: new Date().toISOString(),
-      };
+    if (!this.io) {
+      console.warn(`[MQTT Service] ⚠️ Socket.IO instance not available, cannot emit TELEMETRY(test) for device ${deviceMac}`);
+      return;
+    }
+    
+    const telemetryPayload = {
+      type: 'sensor_data',
+      hubId,
+      deviceId: deviceMac,
+      data: {
+        device_mac_address: deviceMac,
+        samplingrate: samplingRate,
+        hr: parsed.hr || 0,
+        spo2: parsed.spo2 || 0,
+        temp: tempToUse,
+        battery: batteryToUse,
+      },
+      timestamp: new Date().toISOString(),
+    };
+    
+    try {
+      // ✅ 모든 클라이언트에 브로드캐스트
       this.io.emit('TELEMETRY', telemetryPayload);
       console.log(
         `[MQTT Service] 🧪✅ Emitted TELEMETRY(test) hub=${hubId} dev=${deviceMac} (sr=${samplingRate})`,
-        telemetryPayload.data,
+        {
+          hubId,
+          deviceId: deviceMac,
+          data: telemetryPayload.data,
+          timestamp: telemetryPayload.timestamp,
+        },
       );
+    } catch (error) {
+      console.error(`[MQTT Service] ❌ Failed to emit TELEMETRY(test) for device ${deviceMac}:`, error);
     }
   }
 
