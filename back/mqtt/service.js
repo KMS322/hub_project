@@ -17,6 +17,7 @@ class MQTTService {
     this.hubCallbacks = new Map(); // 허브별 콜백 저장
     this.batteryCache = new Map(); // 디바이스별 마지막 배터리 값 저장
     this.temperatureCache = new Map(); // 디바이스별 마지막 온도 값 저장
+    this.hubTopicMode = new Map(); // hubId -> 'prod' | 'test' (test/hub 토픽을 쓰는지 추적)
   }
 
   /**
@@ -51,6 +52,13 @@ class MQTTService {
     mqttClient.subscribe('hub/+/send', (message, topic) => {
       this.handleHubSendMessage(message, topic);
     }, 1); // QoS 1
+
+    // ✅ 테스트 허브 토픽 구독: test/hub/{hubId}/send
+    // - 포맷: device_mac_address-sampling_rate, hr, spo2, temp, battery
+    // - 예: "ec:81:f7:f3:54:6f-50, 78, 97, 36.5, 88"
+    mqttClient.subscribe('test/hub/+/send', (message, topic) => {
+      this.handleTestHubSendMessage(message, topic);
+    }, 1);
 
     // 테스트 토픽 구독: test/# (ESP32 통신 테스트용)
     mqttClient.subscribe('test/#', (message, topic) => {
@@ -156,6 +164,7 @@ class MQTTService {
   async handleHubSendMessage(message, topic) {
     const parts = topic.split('/');
     const hubId = parts[1]; // hub/80:b5:4e:db:44:9a/send에서 허브 ID 추출
+    this.setHubTopicMode(hubId, 'prod');
     
     let messageStr;
     try {
@@ -169,7 +178,59 @@ class MQTTService {
 
     console.log(`[MQTT Service] 📨 Hub send message from ${topic}: ${messageStr}`);
 
-    // JSON 형식의 측정 데이터 처리
+    // ✅ 문자열 형식 텔레메트리 처리 (device_mac_address-sampling_rate, hr, spo2, temp, battery)
+    // 예: "d4:d5:3f:28:e1:f4-50.11,81,90,34.06,8"
+    const parsedString = this.parseTestTelemetryLine(messageStr);
+    if (parsedString) {
+      console.log(`[MQTT Service] 📊 String format telemetry detected from hub ${hubId}, device ${parsedString.device_mac_address}`);
+      
+      const deviceMac = parsedString.device_mac_address;
+      const samplingRate = parsedString.sampling_rate || 50;
+
+      // 배터리/온도 캐시 정책 적용
+      const currentBattery = parsedString.battery || 0;
+      let batteryToUse = currentBattery;
+      if (currentBattery === 0) {
+        if (this.batteryCache.has(deviceMac)) {
+          batteryToUse = this.batteryCache.get(deviceMac);
+        }
+      } else {
+        this.batteryCache.set(deviceMac, currentBattery);
+      }
+
+      const currentTemp = parsedString.temp || 0;
+      let tempToUse = currentTemp;
+      if (currentTemp === 0) {
+        if (this.temperatureCache.has(deviceMac)) {
+          tempToUse = this.temperatureCache.get(deviceMac);
+        }
+      } else {
+        this.temperatureCache.set(deviceMac, currentTemp);
+      }
+
+      // Socket.IO로 전송 (요청된 형식: { device_mac_address, samplingrate, hr, spo2, temp, battery })
+      if (this.io) {
+        const telemetryPayload = {
+          type: 'sensor_data',
+          hubId,
+          deviceId: deviceMac,
+          data: {
+            device_mac_address: deviceMac,
+            samplingrate: samplingRate,
+            hr: parsedString.hr || 0,
+            spo2: parsedString.spo2 || 0,
+            temp: tempToUse,
+            battery: batteryToUse,
+          },
+          timestamp: new Date().toISOString(),
+        };
+        this.io.emit('TELEMETRY', telemetryPayload);
+        console.log(`[MQTT Service] ✅ Emitted TELEMETRY (string format) for device ${deviceMac}`, telemetryPayload.data);
+      }
+      return; // 문자열 형식 처리 완료
+    }
+
+    // JSON 형식의 측정 데이터 처리 (기존 방식)
     try {
       const data = JSON.parse(messageStr);
       
@@ -345,6 +406,44 @@ class MQTTService {
             macList,
           );
 
+          // ✅ 연결된 디바이스 목록을 DB에 등록/업데이트 (connect:devices, state:hub 응답 공통)
+          // - DB에 없으면 생성
+          // - 있으면 hub_address/updatedAt 갱신
+          try {
+            const db = require('../models');
+            const hub = await db.Hub.findByPk(hubId, { attributes: ['address', 'user_email'] });
+            if (hub && Array.isArray(macList) && macList.length > 0) {
+              for (const deviceMac of macList) {
+                try {
+                  const existing = await db.Device.findByPk(deviceMac);
+                  if (existing) {
+                    const next = {
+                      hub_address: hub.address,
+                      user_email: hub.user_email,
+                    };
+                    // user_email/hub_address가 다르면 업데이트
+                    if (existing.hub_address !== next.hub_address || existing.user_email !== next.user_email) {
+                      await existing.update(next);
+                    }
+                    // 활동 시간 업데이트
+                    await existing.update({ updatedAt: new Date() });
+                  } else {
+                    await db.Device.create({
+                      address: deviceMac,
+                      name: `디바이스 ${deviceMac}`,
+                      hub_address: hub.address,
+                      user_email: hub.user_email,
+                    });
+                  }
+                } catch (e) {
+                  console.error(`[MQTT Service] Error upserting device ${deviceMac}:`, e.message);
+                }
+              }
+            }
+          } catch (e) {
+            console.error(`[MQTT Service] Error syncing connected devices to DB for hub ${hubId}:`, e.message);
+          }
+
           if (this.io && macList.length > 0) {
             this.io.emit('CONNECTED_DEVICES', {
               hubAddress: hubId,
@@ -370,6 +469,145 @@ class MQTTService {
   }
 
   /**
+   * test/hub/{hubId}/send 메시지 처리
+   * - 데이터 형식: device_mac_address-sampling_rate, hr, spo2, temp, battery
+   * - 또한 state:hub 응답(device:[...])이 이 토픽으로 올 수도 있으므로 같이 처리
+   */
+  async handleTestHubSendMessage(message, topic) {
+    const parts = topic.split('/');
+    // test/hub/{hubId}/send
+    const hubId = parts[2];
+    this.setHubTopicMode(hubId, 'test');
+
+    let messageStr;
+    try {
+      messageStr = Buffer.isBuffer(message)
+        ? message.toString('utf8')
+        : typeof message === 'string'
+          ? message
+          : JSON.stringify(message);
+    } catch (e) {
+      console.error(`[MQTT Service] Failed to parse test hub send message from ${topic}:`, e);
+      return;
+    }
+
+    const line = String(messageStr).trim();
+    console.log(`[MQTT Service] 🧪 Hub(test) send message from ${topic}: ${line}`);
+
+    // 1) state:hub/connected devices 포맷도 허용
+    if (line.includes('device:[')) {
+      // 기존 핸들러 로직을 재사용하기 위해 토픽만 hub/{hubId}/send 형태로 변환해서 처리
+      await this.handleHubSendMessage(line, `hub/${hubId}/send`);
+      return;
+    }
+
+    // 2) 요청된 테스트 텔레메트리 포맷 파싱
+    const parsed = this.parseTestTelemetryLine(line);
+    if (!parsed) {
+      console.warn(`[MQTT Service] 🧪 Unrecognized test telemetry format from ${topic}: ${line}`);
+      return;
+    }
+
+    const deviceMac = parsed.device_mac_address;
+    const samplingRate = parsed.sampling_rate || 50;
+
+    // 배터리/온도 캐시 정책 동일 적용 (0이면 캐시 사용)
+    const currentBattery = parsed.battery || 0;
+    let batteryToUse = currentBattery;
+    if (currentBattery === 0) {
+      if (this.batteryCache.has(deviceMac)) {
+        batteryToUse = this.batteryCache.get(deviceMac);
+      }
+    } else {
+      this.batteryCache.set(deviceMac, currentBattery);
+    }
+
+    const currentTemp = parsed.temp || 0;
+    let tempToUse = currentTemp;
+    if (currentTemp === 0) {
+      if (this.temperatureCache.has(deviceMac)) {
+        tempToUse = this.temperatureCache.get(deviceMac);
+      }
+    } else {
+      this.temperatureCache.set(deviceMac, currentTemp);
+    }
+
+    // 실시간 소켓 이벤트로 전송 (요청된 형식: { device_mac_address, samplingrate, hr, spo2, temp, battery })
+    if (this.io) {
+      const telemetryPayload = {
+        type: 'sensor_data',
+        hubId,
+        deviceId: deviceMac,
+        data: {
+          device_mac_address: deviceMac,
+          samplingrate: samplingRate,
+          hr: parsed.hr || 0,
+          spo2: parsed.spo2 || 0,
+          temp: tempToUse,
+          battery: batteryToUse,
+        },
+        timestamp: new Date().toISOString(),
+      };
+      this.io.emit('TELEMETRY', telemetryPayload);
+      console.log(
+        `[MQTT Service] 🧪✅ Emitted TELEMETRY(test) hub=${hubId} dev=${deviceMac} (sr=${samplingRate})`,
+        telemetryPayload.data,
+      );
+    }
+  }
+
+  /**
+   * test/hub 토픽 텔레메트리 문자열 파싱
+   * 형식: device_mac_address-sampling_rate, hr, spo2, temp, battery
+   */
+  parseTestTelemetryLine(line) {
+    if (!line || typeof line !== 'string') return null;
+    const parts = line.split(',').map(p => p.trim()).filter(Boolean);
+    if (parts.length < 5) return null;
+
+    const head = parts[0];
+    const dashIdx = head.lastIndexOf('-');
+    if (dashIdx <= 0) return null;
+
+    const device_mac_address = head.substring(0, dashIdx).trim();
+    const sampling_rate = Number(head.substring(dashIdx + 1).trim());
+    if (!device_mac_address) return null;
+
+    const hr = Number(parts[1]);
+    const spo2 = Number(parts[2]);
+    const temp = Number(parts[3]);
+    const battery = Number(parts[4]);
+
+    return {
+      device_mac_address,
+      sampling_rate: Number.isFinite(sampling_rate) ? sampling_rate : 50,
+      hr: Number.isFinite(hr) ? hr : 0,
+      spo2: Number.isFinite(spo2) ? spo2 : 0,
+      temp: Number.isFinite(temp) ? temp : 0,
+      battery: Number.isFinite(battery) ? battery : 0,
+    };
+  }
+
+  setHubTopicMode(hubId, mode) {
+    if (!hubId) return;
+    const prev = this.hubTopicMode.get(hubId);
+    if (prev !== mode) {
+      this.hubTopicMode.set(hubId, mode);
+      console.log(`[MQTT Service] 🔁 Hub topic mode set: hub=${hubId} mode=${mode}`);
+    }
+  }
+
+  /**
+   * 현재 허브의 토픽 모드에 맞는 receive 토픽 반환
+   * - prod: hub/{hubId}/receive
+   * - test: test/hub/{hubId}/receive
+   */
+  getHubReceiveTopic(hubId) {
+    const mode = this.hubTopicMode.get(hubId) || 'prod';
+    return mode === 'test' ? `test/hub/${hubId}/receive` : `hub/${hubId}/receive`;
+  }
+
+  /**
    * Telemetry 데이터 메시지 처리 (대량 데이터)
    * @param {Object|string} message - 수신된 메시지
    * @param {string} topic - 메시지가 수신된 토픽
@@ -377,6 +615,7 @@ class MQTTService {
   async handleTelemetry(message, topic) {
     const receiveStartTime = Date.now(); // 성능 측정 시작 (MQTT 수신 시간)
     const { hubId, deviceId } = this.extractHubDeviceId(topic);
+    this.setHubTopicMode(hubId, 'prod');
     
     // 허브와 디바이스의 마지막 활동 시간 업데이트 (온라인 상태 표시용)
     try {
@@ -453,6 +692,7 @@ class MQTTService {
    */
   handleCommandResponse(message, topic) {
     const { hubId, deviceId } = this.extractHubDeviceId(topic);
+    this.setHubTopicMode(hubId, 'prod');
     
     let responseData;
     try {

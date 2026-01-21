@@ -303,7 +303,7 @@ router.post("/hub", async (req, res) => {
 
               // 허브에서 연결된 디바이스 목록을 보내온 경우
             if (data && Array.isArray(data.connected_devices) && ioInstance) {
-              // 기존 디바이스만 업데이트 (등록하지 않고 연결만)
+              // ✅ 디바이스 등록/업데이트 (DB에 없으면 생성)
               data.connected_devices.forEach(async (deviceMac) => {
                 try {
                   // 허브의 user_email 조회
@@ -317,26 +317,23 @@ router.post("/hub", async (req, res) => {
                     return;
                   }
 
-                  // 기존 디바이스만 찾아서 업데이트 (같은 사용자의 디바이스만)
-                  const device = await db.Device.findOne({
-                    where: { 
-                      address: deviceMac,
-                      user_email: hub.user_email
+                  const existing = await db.Device.findByPk(deviceMac);
+                  if (existing) {
+                    // 기존 디바이스가 있으면 소유자/허브 주소/활동 시간 업데이트
+                    const next = { hub_address: mac_address, user_email: hub.user_email };
+                    if (existing.hub_address !== next.hub_address || existing.user_email !== next.user_email) {
+                      await existing.update(next);
                     }
-                  });
-                  
-                  if (device) {
-                    // 기존 디바이스가 있으면 허브 주소와 활동 시간만 업데이트
-                    if (device.hub_address !== mac_address) {
-                      device.hub_address = mac_address;
-                      await device.save();
-                    }
-                    
-                    // 마지막 활동 시간 업데이트 (온라인 상태 표시용)
-                    await device.update({ updatedAt: new Date() });
+                    await existing.update({ updatedAt: new Date() });
                   } else {
-                    // DB에 없는 디바이스는 등록하지 않고 로그만 남김
-                    log(`[Hub Check] Device ${deviceMac} not found in DB, skipping registration`);
+                    // DB에 없으면 생성
+                    await db.Device.create({
+                      address: deviceMac,
+                      name: `디바이스 ${deviceMac}`,
+                      hub_address: mac_address,
+                      user_email: hub.user_email,
+                    });
+                    log(`[Hub Check] ✅ Device registered: ${deviceMac} (hub=${mac_address})`);
                   }
                 } catch (error) {
                   console.error(`[Hub Check] Error updating device ${deviceMac}:`, error);

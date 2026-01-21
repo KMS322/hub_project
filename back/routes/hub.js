@@ -323,11 +323,26 @@ router.delete('/:hubAddress', verifyToken, async (req, res) => {
       });
     }
 
-    await hub.destroy();
+    // ✅ 허브 삭제 시 해당 허브에 연결된 디바이스도 함께 삭제되도록 보장
+    // - FK cascade 설정이 없더라도 서버 레벨에서 연쇄 삭제를 수행
+    const result = await db.sequelize.transaction(async (t) => {
+      const deletedDevices = await db.Device.destroy({
+        where: {
+          hub_address: hubAddress,
+          user_email: req.user.email,
+        },
+        transaction: t,
+      });
+
+      await hub.destroy({ transaction: t });
+
+      return { deletedDevices };
+    });
 
     res.json({
       success: true,
-      message: '허브가 삭제되었습니다.'
+      message: '허브가 삭제되었습니다.',
+      deletedDevices: result.deletedDevices,
     });
   } catch (error) {
     console.error('[Hub API] Error:', error);

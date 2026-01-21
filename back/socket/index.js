@@ -108,9 +108,15 @@ module.exports = (io) => {
           return;
         }
 
+        // 허브 토픽 모드(prod/test)에 맞는 receive 토픽 선택
+        const receiveTopic =
+          typeof mqttService.getHubReceiveTopic === 'function'
+            ? mqttService.getHubReceiveTopic(hubId)
+            : `hub/${hubId}/receive`;
+
         // connect:devices → hub/{hubId}/receive 에 문자열로 전송
         if (command.action === 'connect_devices') {
-          const topic = `hub/${hubId}/receive`;
+          const topic = receiveTopic;
           const payload = 'connect:devices';
           console.log(`[Socket] 📤 Sending MQTT connect:devices to ${topic}`);
           const success = mqttService.publish(topic, payload, { qos: 1, retain: false });
@@ -139,7 +145,7 @@ module.exports = (io) => {
 
         // blink:device_mac_address → hub/{hubId}/receive 에 문자열로 전송
         if (command.action === 'blink' && command.mac_address) {
-          const topic = `hub/${hubId}/receive`;
+          const topic = receiveTopic;
           const payload = `blink:${command.mac_address}`;
           console.log(`[Socket] 📤 Sending MQTT blink to ${topic}: ${payload}`);
           const success = mqttService.publish(topic, payload, { qos: 1, retain: false });
@@ -168,7 +174,7 @@ module.exports = (io) => {
 
         // start_measurement: start:device_mac_address
         if (command.action === 'start_measurement') {
-          const topic = `hub/${hubId}/receive`;
+          const topic = receiveTopic;
           const payload = command.raw_command || `start:${deviceId}`;
           console.log(`[Socket] 📤 Sending MQTT start measurement to ${topic}: ${payload}`);
           const success = mqttService.publish(topic, payload, { qos: 1, retain: false });
@@ -197,7 +203,7 @@ module.exports = (io) => {
 
         // stop_measurement: stop:device_mac_address
         if (command.action === 'stop_measurement') {
-          const topic = `hub/${hubId}/receive`;
+          const topic = receiveTopic;
           const payload = command.raw_command || `stop:${deviceId}`;
           console.log(`[Socket] 📤 Sending MQTT stop measurement to ${topic}: ${payload}`);
           const success = mqttService.publish(topic, payload, { qos: 1, retain: false });
@@ -227,7 +233,7 @@ module.exports = (io) => {
         // state:hub 명령 처리 (허브 상태 및 연결된 디바이스 조회)
         // command.raw_command가 "state:hub"인 경우 또는 action이 'check_hub_state'인 경우
         if (command.raw_command === 'state:hub' || command.action === 'check_hub_state') {
-          const topic = `hub/${hubId}/receive`;
+          const topic = receiveTopic;
           const payload = 'state:hub';
           console.log(`[Socket] 📤 Sending MQTT state:hub to ${topic}`);
           const success = mqttService.publish(topic, payload, { qos: 1, retain: false });
