@@ -297,23 +297,43 @@ class MQTTService {
           const room = this.io.sockets.adapter.rooms.get(roomName);
           const socketCount = room ? room.size : 0;
           
+          // ✅ 모든 rooms 확인 (디버깅용)
+          const allRooms = Array.from(this.io.sockets.adapter.rooms.keys());
+          const userRooms = allRooms.filter(r => r.startsWith('user:'));
+          
           console.log(`[MQTT Service] 📤 Emitting to room "${roomName}"`, {
             roomExists: !!room,
             socketCount,
-            payload: JSON.stringify(telemetryPayload, null, 2),
-          });
-          
-          this.io.to(roomName).emit('TELEMETRY', telemetryPayload);
-          
-          console.log(`[MQTT Service] ✅ Socket.IO TELEMETRY emitted (string format) to user ${hub.user_email}`, {
-            event: 'TELEMETRY',
-            hubId,
-            deviceId: deviceMac,
-            roomName,
-            socketCount,
+            allRoomsCount: allRooms.length,
+            userRoomsCount: userRooms.length,
+            userRooms: userRooms.slice(0, 10), // 처음 10개만
+            targetRoom: roomName,
+            payloadSize: JSON.stringify(telemetryPayload).length,
             data: telemetryPayload.data,
-            timestamp: telemetryPayload.timestamp,
           });
+          
+          // ✅ emit 전송 및 확인
+          try {
+            this.io.to(roomName).emit('TELEMETRY', telemetryPayload);
+            
+            // ✅ emit 후 즉시 확인
+            const roomAfterEmit = this.io.sockets.adapter.rooms.get(roomName);
+            const socketCountAfter = roomAfterEmit ? roomAfterEmit.size : 0;
+            
+            console.log(`[MQTT Service] ✅ Socket.IO TELEMETRY emitted (string format) to user ${hub.user_email}`, {
+              event: 'TELEMETRY',
+              hubId,
+              deviceId: deviceMac,
+              roomName,
+              socketCount,
+              socketCountAfter,
+              data: telemetryPayload.data,
+              timestamp: telemetryPayload.timestamp,
+            });
+          } catch (emitError) {
+            console.error(`[MQTT Service] ❌ Error during emit:`, emitError);
+            throw emitError;
+          }
         } else {
           // 허브 정보를 찾을 수 없으면 모든 클라이언트에 브로드캐스트 (fallback)
           const connectedSockets = this.io.sockets.sockets.size;
