@@ -280,18 +280,31 @@ class MQTTService {
       };
       
       try {
-        // ✅ 모든 클라이언트에 브로드캐스트
-        this.io.emit('TELEMETRY', telemetryPayload);
-        console.log(`[MQTT Service] ✅ Socket.IO TELEMETRY emitted (string format)`, {
-          event: 'TELEMETRY',
-          hubId,
-          deviceId: deviceMac,
-          data: telemetryPayload.data,
-          timestamp: telemetryPayload.timestamp,
-          payloadString: JSON.stringify(telemetryPayload, null, 2),
-        });
+        // ✅ 허브 소유자에게만 TELEMETRY 이벤트 전송
+        const db = require('../models');
+        const hub = await db.Hub.findByPk(hubId);
+        if (hub && hub.user_email) {
+          this.io.to(`user:${hub.user_email}`).emit('TELEMETRY', telemetryPayload);
+          console.log(`[MQTT Service] ✅ Socket.IO TELEMETRY emitted (string format) to user ${hub.user_email}`, {
+            event: 'TELEMETRY',
+            hubId,
+            deviceId: deviceMac,
+            data: telemetryPayload.data,
+            timestamp: telemetryPayload.timestamp,
+          });
+        } else {
+          // 허브 정보를 찾을 수 없으면 모든 클라이언트에 브로드캐스트 (fallback)
+          this.io.emit('TELEMETRY', telemetryPayload);
+          console.log(`[MQTT Service] ⚠️ Socket.IO TELEMETRY broadcasted (hub not found) for hub ${hubId}`);
+        }
       } catch (error) {
         console.error(`[MQTT Service] ❌ Failed to emit TELEMETRY for device ${deviceMac}:`, error);
+        // 에러 발생 시 fallback으로 브로드캐스트
+        try {
+          this.io.emit('TELEMETRY', telemetryPayload);
+        } catch (emitError) {
+          console.error(`[MQTT Service] ❌ Failed to broadcast TELEMETRY:`, emitError);
+        }
       }
       return; // 문자열 형식 처리 완료
     }
@@ -431,25 +444,38 @@ class MQTTService {
               console.warn(`[MQTT Service] ⚠️ Socket.IO instance not available, cannot emit TELEMETRY for device ${data.device_mac_address}`);
             } else {
               try {
-                this.io.emit('TELEMETRY', telemetryPayload);
-                console.log(`[MQTT Service] ✅ Socket.IO TELEMETRY emitted (JSON format)`, {
-                  event: 'TELEMETRY',
-                  hubId,
-                  deviceId: data.device_mac_address,
-                  data: {
-                    hr: telemetryPayload.data.hr,
-                    spo2: telemetryPayload.data.spo2,
-                    temp: telemetryPayload.data.temp,
-                    battery: telemetryPayload.data.battery,
-                    start_time: telemetryPayload.data.start_time,
-                    sampling_rate: telemetryPayload.data.sampling_rate,
-                    dataArrLength: telemetryPayload.data.dataArr?.length || 0,
-                  },
-                  timestamp: telemetryPayload.timestamp,
-                  payloadString: JSON.stringify(telemetryPayload, null, 2).slice(0, 1000), // 처음 1000자만
-                });
+                // ✅ 허브 소유자에게만 TELEMETRY 이벤트 전송
+                const hub = await db.Hub.findByPk(hubId);
+                if (hub && hub.user_email) {
+                  this.io.to(`user:${hub.user_email}`).emit('TELEMETRY', telemetryPayload);
+                  console.log(`[MQTT Service] ✅ Socket.IO TELEMETRY emitted (JSON format) to user ${hub.user_email}`, {
+                    event: 'TELEMETRY',
+                    hubId,
+                    deviceId: data.device_mac_address,
+                    data: {
+                      hr: telemetryPayload.data.hr,
+                      spo2: telemetryPayload.data.spo2,
+                      temp: telemetryPayload.data.temp,
+                      battery: telemetryPayload.data.battery,
+                      start_time: telemetryPayload.data.start_time,
+                      sampling_rate: telemetryPayload.data.sampling_rate,
+                      dataArrLength: telemetryPayload.data.dataArr?.length || 0,
+                    },
+                    timestamp: telemetryPayload.timestamp,
+                  });
+                } else {
+                  // 허브 정보를 찾을 수 없으면 모든 클라이언트에 브로드캐스트 (fallback)
+                  this.io.emit('TELEMETRY', telemetryPayload);
+                  console.log(`[MQTT Service] ⚠️ Socket.IO TELEMETRY broadcasted (hub not found) for hub ${hubId}`);
+                }
               } catch (error) {
                 console.error(`[MQTT Service] ❌ Failed to emit TELEMETRY for device ${data.device_mac_address}:`, error);
+                // 에러 발생 시 fallback으로 브로드캐스트
+                try {
+                  this.io.emit('TELEMETRY', telemetryPayload);
+                } catch (emitError) {
+                  console.error(`[MQTT Service] ❌ Failed to broadcast TELEMETRY:`, emitError);
+                }
               }
             }
           }
@@ -534,14 +560,40 @@ class MQTTService {
           }
 
           if (this.io && macList.length > 0) {
-            this.io.emit('CONNECTED_DEVICES', {
-              hubAddress: hubId,
-              connected_devices: macList,
-              timestamp: new Date().toISOString(),
-            });
-            console.log(
-              `[MQTT Service] ✅ CONNECTED_DEVICES emitted for hub ${hubId}`,
-            );
+            // ✅ 허브 소유자에게만 CONNECTED_DEVICES 이벤트 전송
+            try {
+              const db = require('../models');
+              const hub = await db.Hub.findByPk(hubId);
+              if (hub && hub.user_email) {
+                // 특정 사용자에게만 전송
+                this.io.to(`user:${hub.user_email}`).emit('CONNECTED_DEVICES', {
+                  hubAddress: hubId,
+                  connected_devices: macList,
+                  timestamp: new Date().toISOString(),
+                });
+                console.log(
+                  `[MQTT Service] ✅ CONNECTED_DEVICES emitted for hub ${hubId} to user ${hub.user_email}`,
+                );
+              } else {
+                // 허브 정보를 찾을 수 없으면 모든 클라이언트에 브로드캐스트 (fallback)
+                this.io.emit('CONNECTED_DEVICES', {
+                  hubAddress: hubId,
+                  connected_devices: macList,
+                  timestamp: new Date().toISOString(),
+                });
+                console.log(
+                  `[MQTT Service] ⚠️ CONNECTED_DEVICES broadcasted (hub not found) for hub ${hubId}`,
+                );
+              }
+            } catch (error) {
+              console.error(`[MQTT Service] ❌ Error emitting CONNECTED_DEVICES for hub ${hubId}:`, error);
+              // 에러 발생 시 fallback으로 브로드캐스트
+              this.io.emit('CONNECTED_DEVICES', {
+                hubAddress: hubId,
+                connected_devices: macList,
+                timestamp: new Date().toISOString(),
+              });
+            }
           }
         } else {
           console.warn(

@@ -463,7 +463,7 @@ class TelemetryWorker {
   /**
    * 버퍼된 데이터를 Socket.IO로 브로드캐스트
    */
-  broadcastBuffered() {
+  async broadcastBuffered() {
     if (!this.io || this.broadcastBuffer.size === 0) {
       return;
     }
@@ -498,20 +498,60 @@ class TelemetryWorker {
       const publishStartTime = latestData.publishStartTime;
       const totalProcessingTime = publishStartTime ? Date.now() - publishStartTime : null;
 
-      // Socket.IO로 전송
-      this.io.emit('TELEMETRY', {
-        type: 'sensor_data',
-        hubId,
-        deviceId,
-        data: telemetryData,
-        timestamp: new Date().toISOString(),
-        performance: {
-          endToEndTime: endToEndTime, // MQTT 수신부터 프론트 전송까지
-          receivedAt: receiveTime,
-          totalProcessingTime: totalProcessingTime, // 발행부터 프론트 수신까지 (CSV 저장 포함)
-          publishStartTime: publishStartTime // 발행 시작 시간
+      // ✅ 허브 소유자에게만 TELEMETRY 이벤트 전송
+      try {
+        const hub = await db.Hub.findByPk(hubId);
+        if (hub && hub.user_email) {
+          this.io.to(`user:${hub.user_email}`).emit('TELEMETRY', {
+            type: 'sensor_data',
+            hubId,
+            deviceId,
+            data: telemetryData,
+            timestamp: new Date().toISOString(),
+            performance: {
+              endToEndTime: endToEndTime, // MQTT 수신부터 프론트 전송까지
+              receivedAt: receiveTime,
+              totalProcessingTime: totalProcessingTime, // 발행부터 프론트 수신까지 (CSV 저장 포함)
+              publishStartTime: publishStartTime // 발행 시작 시간
+            }
+          });
+        } else {
+          // 허브 정보를 찾을 수 없으면 모든 클라이언트에 브로드캐스트 (fallback)
+          this.io.emit('TELEMETRY', {
+            type: 'sensor_data',
+            hubId,
+            deviceId,
+            data: telemetryData,
+            timestamp: new Date().toISOString(),
+            performance: {
+              endToEndTime: endToEndTime,
+              receivedAt: receiveTime,
+              totalProcessingTime: totalProcessingTime,
+              publishStartTime: publishStartTime
+            }
+          });
         }
-      });
+      } catch (error) {
+        console.error(`[Telemetry Worker] ❌ Error emitting TELEMETRY for hub ${hubId}:`, error);
+        // 에러 발생 시 fallback으로 브로드캐스트
+        try {
+          this.io.emit('TELEMETRY', {
+            type: 'sensor_data',
+            hubId,
+            deviceId,
+            data: telemetryData,
+            timestamp: new Date().toISOString(),
+            performance: {
+              endToEndTime: endToEndTime,
+              receivedAt: receiveTime,
+              totalProcessingTime: totalProcessingTime,
+              publishStartTime: publishStartTime
+            }
+          });
+        } catch (emitError) {
+          console.error(`[Telemetry Worker] ❌ Failed to broadcast TELEMETRY:`, emitError);
+        }
+      }
 
       broadcastCount++;
 

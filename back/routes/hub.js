@@ -325,7 +325,30 @@ router.delete('/:hubAddress', verifyToken, async (req, res) => {
 
     // ✅ 허브 삭제 시 해당 허브에 연결된 디바이스도 함께 삭제되도록 보장
     // - FK cascade 설정이 없더라도 서버 레벨에서 연쇄 삭제를 수행
+    // - 디바이스 삭제 전에 연결된 펫의 device_address도 null로 설정
     const result = await db.sequelize.transaction(async (t) => {
+      // 허브에 연결된 디바이스 조회 (펫 정보 포함)
+      const devices = await db.Device.findAll({
+        where: {
+          hub_address: hubAddress,
+          user_email: req.user.email,
+        },
+        include: [{
+          model: db.Pet,
+          as: 'Pet'
+        }],
+        transaction: t,
+      });
+
+      // 각 디바이스에 연결된 펫의 device_address를 null로 설정
+      for (const device of devices) {
+        if (device.Pet) {
+          device.Pet.device_address = null;
+          await device.Pet.save({ transaction: t });
+        }
+      }
+
+      // 디바이스 삭제
       const deletedDevices = await db.Device.destroy({
         where: {
           hub_address: hubAddress,
@@ -334,6 +357,7 @@ router.delete('/:hubAddress', verifyToken, async (req, res) => {
         transaction: t,
       });
 
+      // 허브 삭제
       await hub.destroy({ transaction: t });
 
       return { deletedDevices };

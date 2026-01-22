@@ -308,6 +308,9 @@ router.delete('/:deviceAddress', verifyToken, async (req, res) => {
         model: db.Hub,
         as: 'Hub',
         where: { user_email: req.user.email }
+      }, {
+        model: db.Pet,
+        as: 'Pet'
       }]
     });
 
@@ -318,7 +321,18 @@ router.delete('/:deviceAddress', verifyToken, async (req, res) => {
       });
     }
 
-    await device.destroy();
+    // ✅ 디바이스 삭제 전에 연결된 펫의 device_address를 null로 설정
+    // 트랜잭션으로 처리하여 데이터 일관성 보장
+    await db.sequelize.transaction(async (t) => {
+      // 연결된 펫이 있으면 device_address를 null로 설정
+      if (device.Pet) {
+        device.Pet.device_address = null;
+        await device.Pet.save({ transaction: t });
+      }
+
+      // 디바이스 삭제
+      await device.destroy({ transaction: t });
+    });
 
     res.json({
       success: true,
