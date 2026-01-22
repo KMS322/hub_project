@@ -283,27 +283,58 @@ class MQTTService {
         // ✅ 허브 소유자에게만 TELEMETRY 이벤트 전송
         const db = require('../models');
         const hub = await db.Hub.findByPk(hubId);
+        console.log(`[MQTT Service] 🔍 Emitting TELEMETRY (string format)`, {
+          hubId,
+          deviceId: deviceMac,
+          hubFound: !!hub,
+          hubUserEmail: hub?.user_email || 'N/A',
+          roomName: hub?.user_email ? `user:${hub.user_email}` : 'N/A',
+          socketIORooms: this.io ? Object.keys(this.io.sockets.adapter.rooms || {}).length : 0,
+        });
+        
         if (hub && hub.user_email) {
-          this.io.to(`user:${hub.user_email}`).emit('TELEMETRY', telemetryPayload);
+          const roomName = `user:${hub.user_email}`;
+          const room = this.io.sockets.adapter.rooms.get(roomName);
+          const socketCount = room ? room.size : 0;
+          
+          console.log(`[MQTT Service] 📤 Emitting to room "${roomName}"`, {
+            roomExists: !!room,
+            socketCount,
+            payload: JSON.stringify(telemetryPayload, null, 2),
+          });
+          
+          this.io.to(roomName).emit('TELEMETRY', telemetryPayload);
+          
           console.log(`[MQTT Service] ✅ Socket.IO TELEMETRY emitted (string format) to user ${hub.user_email}`, {
             event: 'TELEMETRY',
             hubId,
             deviceId: deviceMac,
+            roomName,
+            socketCount,
             data: telemetryPayload.data,
             timestamp: telemetryPayload.timestamp,
           });
         } else {
           // 허브 정보를 찾을 수 없으면 모든 클라이언트에 브로드캐스트 (fallback)
+          const connectedSockets = this.io.sockets.sockets.size;
+          console.log(`[MQTT Service] ⚠️ Hub not found, broadcasting to all ${connectedSockets} sockets`, {
+            hubId,
+            payload: JSON.stringify(telemetryPayload, null, 2),
+          });
           this.io.emit('TELEMETRY', telemetryPayload);
           console.log(`[MQTT Service] ⚠️ Socket.IO TELEMETRY broadcasted (hub not found) for hub ${hubId}`);
         }
       } catch (error) {
         console.error(`[MQTT Service] ❌ Failed to emit TELEMETRY for device ${deviceMac}:`, error);
+        console.error(`[MQTT Service] Error stack:`, error.stack);
         // 에러 발생 시 fallback으로 브로드캐스트
         try {
+          console.log(`[MQTT Service] 🔄 Attempting fallback broadcast`);
           this.io.emit('TELEMETRY', telemetryPayload);
+          console.log(`[MQTT Service] ✅ Fallback broadcast successful`);
         } catch (emitError) {
           console.error(`[MQTT Service] ❌ Failed to broadcast TELEMETRY:`, emitError);
+          console.error(`[MQTT Service] Broadcast error stack:`, emitError.stack);
         }
       }
       return; // 문자열 형식 처리 완료
@@ -446,12 +477,34 @@ class MQTTService {
               try {
                 // ✅ 허브 소유자에게만 TELEMETRY 이벤트 전송
                 const hub = await db.Hub.findByPk(hubId);
+                console.log(`[MQTT Service] 🔍 Emitting TELEMETRY (JSON format)`, {
+                  hubId,
+                  deviceId: data.device_mac_address,
+                  hubFound: !!hub,
+                  hubUserEmail: hub?.user_email || 'N/A',
+                  roomName: hub?.user_email ? `user:${hub.user_email}` : 'N/A',
+                  socketIORooms: this.io ? Object.keys(this.io.sockets.adapter.rooms || {}).length : 0,
+                });
+                
                 if (hub && hub.user_email) {
-                  this.io.to(`user:${hub.user_email}`).emit('TELEMETRY', telemetryPayload);
+                  const roomName = `user:${hub.user_email}`;
+                  const room = this.io.sockets.adapter.rooms.get(roomName);
+                  const socketCount = room ? room.size : 0;
+                  
+                  console.log(`[MQTT Service] 📤 Emitting to room "${roomName}"`, {
+                    roomExists: !!room,
+                    socketCount,
+                    payload: JSON.stringify(telemetryPayload, null, 2),
+                  });
+                  
+                  this.io.to(roomName).emit('TELEMETRY', telemetryPayload);
+                  
                   console.log(`[MQTT Service] ✅ Socket.IO TELEMETRY emitted (JSON format) to user ${hub.user_email}`, {
                     event: 'TELEMETRY',
                     hubId,
                     deviceId: data.device_mac_address,
+                    roomName,
+                    socketCount,
                     data: {
                       hr: telemetryPayload.data.hr,
                       spo2: telemetryPayload.data.spo2,
@@ -465,16 +518,25 @@ class MQTTService {
                   });
                 } else {
                   // 허브 정보를 찾을 수 없으면 모든 클라이언트에 브로드캐스트 (fallback)
+                  const connectedSockets = this.io.sockets.sockets.size;
+                  console.log(`[MQTT Service] ⚠️ Hub not found, broadcasting to all ${connectedSockets} sockets`, {
+                    hubId,
+                    payload: JSON.stringify(telemetryPayload, null, 2),
+                  });
                   this.io.emit('TELEMETRY', telemetryPayload);
                   console.log(`[MQTT Service] ⚠️ Socket.IO TELEMETRY broadcasted (hub not found) for hub ${hubId}`);
                 }
               } catch (error) {
                 console.error(`[MQTT Service] ❌ Failed to emit TELEMETRY for device ${data.device_mac_address}:`, error);
+                console.error(`[MQTT Service] Error stack:`, error.stack);
                 // 에러 발생 시 fallback으로 브로드캐스트
                 try {
+                  console.log(`[MQTT Service] 🔄 Attempting fallback broadcast`);
                   this.io.emit('TELEMETRY', telemetryPayload);
+                  console.log(`[MQTT Service] ✅ Fallback broadcast successful`);
                 } catch (emitError) {
                   console.error(`[MQTT Service] ❌ Failed to broadcast TELEMETRY:`, emitError);
+                  console.error(`[MQTT Service] Broadcast error stack:`, emitError.stack);
                 }
               }
             }

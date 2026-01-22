@@ -499,57 +499,76 @@ class TelemetryWorker {
       const totalProcessingTime = publishStartTime ? Date.now() - publishStartTime : null;
 
       // ✅ 허브 소유자에게만 TELEMETRY 이벤트 전송
+      const telemetryPayload = {
+        type: 'sensor_data',
+        hubId,
+        deviceId,
+        data: telemetryData,
+        timestamp: new Date().toISOString(),
+        performance: {
+          endToEndTime: endToEndTime, // MQTT 수신부터 프론트 전송까지
+          receivedAt: receiveTime,
+          totalProcessingTime: totalProcessingTime, // 발행부터 프론트 수신까지 (CSV 저장 포함)
+          publishStartTime: publishStartTime // 발행 시작 시간
+        }
+      };
+      
       try {
         const hub = await db.Hub.findByPk(hubId);
+        console.log(`[Telemetry Worker] 🔍 Emitting TELEMETRY`, {
+          hubId,
+          deviceId,
+          hubFound: !!hub,
+          hubUserEmail: hub?.user_email || 'N/A',
+          roomName: hub?.user_email ? `user:${hub.user_email}` : 'N/A',
+          socketIORooms: this.io ? Object.keys(this.io.sockets.adapter.rooms || {}).length : 0,
+          payload: JSON.stringify(telemetryPayload, null, 2),
+        });
+        
         if (hub && hub.user_email) {
-          this.io.to(`user:${hub.user_email}`).emit('TELEMETRY', {
-            type: 'sensor_data',
+          const roomName = `user:${hub.user_email}`;
+          const room = this.io.sockets.adapter.rooms.get(roomName);
+          const socketCount = room ? room.size : 0;
+          
+          console.log(`[Telemetry Worker] 📤 Emitting to room "${roomName}"`, {
+            roomExists: !!room,
+            socketCount,
+            payload: JSON.stringify(telemetryPayload, null, 2),
+          });
+          
+          this.io.to(roomName).emit('TELEMETRY', telemetryPayload);
+          
+          console.log(`[Telemetry Worker] ✅ TELEMETRY emitted to user ${hub.user_email}`, {
             hubId,
             deviceId,
-            data: telemetryData,
-            timestamp: new Date().toISOString(),
-            performance: {
-              endToEndTime: endToEndTime, // MQTT 수신부터 프론트 전송까지
-              receivedAt: receiveTime,
-              totalProcessingTime: totalProcessingTime, // 발행부터 프론트 수신까지 (CSV 저장 포함)
-              publishStartTime: publishStartTime // 발행 시작 시간
-            }
+            roomName,
+            socketCount,
+            hr: telemetryData.hr,
+            spo2: telemetryData.spo2,
+            temp: telemetryData.temp,
+            battery: telemetryData.battery,
           });
         } else {
           // 허브 정보를 찾을 수 없으면 모든 클라이언트에 브로드캐스트 (fallback)
-          this.io.emit('TELEMETRY', {
-            type: 'sensor_data',
+          const connectedSockets = this.io.sockets.sockets.size;
+          console.log(`[Telemetry Worker] ⚠️ Hub not found, broadcasting to all ${connectedSockets} sockets`, {
             hubId,
-            deviceId,
-            data: telemetryData,
-            timestamp: new Date().toISOString(),
-            performance: {
-              endToEndTime: endToEndTime,
-              receivedAt: receiveTime,
-              totalProcessingTime: totalProcessingTime,
-              publishStartTime: publishStartTime
-            }
+            payload: JSON.stringify(telemetryPayload, null, 2),
           });
+          this.io.emit('TELEMETRY', telemetryPayload);
+          console.log(`[Telemetry Worker] ⚠️ TELEMETRY broadcasted (hub not found) for hub ${hubId}`);
         }
       } catch (error) {
         console.error(`[Telemetry Worker] ❌ Error emitting TELEMETRY for hub ${hubId}:`, error);
+        console.error(`[Telemetry Worker] Error stack:`, error.stack);
         // 에러 발생 시 fallback으로 브로드캐스트
         try {
-          this.io.emit('TELEMETRY', {
-            type: 'sensor_data',
-            hubId,
-            deviceId,
-            data: telemetryData,
-            timestamp: new Date().toISOString(),
-            performance: {
-              endToEndTime: endToEndTime,
-              receivedAt: receiveTime,
-              totalProcessingTime: totalProcessingTime,
-              publishStartTime: publishStartTime
-            }
-          });
+          console.log(`[Telemetry Worker] 🔄 Attempting fallback broadcast`);
+          this.io.emit('TELEMETRY', telemetryPayload);
+          console.log(`[Telemetry Worker] ✅ Fallback broadcast successful`);
         } catch (emitError) {
           console.error(`[Telemetry Worker] ❌ Failed to broadcast TELEMETRY:`, emitError);
+          console.error(`[Telemetry Worker] Broadcast error stack:`, emitError.stack);
         }
       }
 

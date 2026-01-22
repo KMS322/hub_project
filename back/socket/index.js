@@ -52,14 +52,26 @@ module.exports = (io) => {
   });
 
   io.on("connection", (socket) => {
-    console.log(`User connected: ${socket.user.name} (${socket.id})`);
+    console.log(`[Socket] ✅ User connected: ${socket.user.name} (${socket.id})`);
+    console.log(`[Socket] 📧 User email: ${socket.user.email}`);
 
-    socket.join(`user:${socket.user.email}`);
+    const roomName = `user:${socket.user.email}`;
+    socket.join(roomName);
+    
+    const room = io.sockets.adapter.rooms.get(roomName);
+    const socketCount = room ? room.size : 0;
+    console.log(`[Socket] 🏠 User joined room: "${roomName}"`, {
+      roomExists: !!room,
+      socketCount,
+      totalRooms: io.sockets.adapter.rooms.size,
+    });
 
     socket.emit("connected", {
       message: "소켓 연결 성공",
       user: socket.user,
     });
+    
+    console.log(`[Socket] ✅ "connected" event emitted to socket ${socket.id}`);
 
     /**
      * CONTROL_REQUEST: 프론트에서 기기 제어 명령 전송
