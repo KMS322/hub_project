@@ -322,6 +322,7 @@ router.delete('/:deviceAddress', verifyToken, async (req, res) => {
     }
 
     // ✅ 디바이스 삭제 전에 연결된 펫의 device_address를 null로 설정
+    // ✅ 디바이스 삭제 전에 관련된 Telemetries 레코드 먼저 삭제 (외래 키 제약 조건 해결)
     // 트랜잭션으로 처리하여 데이터 일관성 보장
     await db.sequelize.transaction(async (t) => {
       // 연결된 펫이 있으면 device_address를 null로 설정
@@ -329,6 +330,15 @@ router.delete('/:deviceAddress', verifyToken, async (req, res) => {
         device.Pet.device_address = null;
         await device.Pet.save({ transaction: t });
       }
+
+      // ✅ 디바이스 삭제 전에 관련된 Telemetries 레코드 먼저 삭제
+      const deletedTelemetries = await db.Telemetry.destroy({
+        where: {
+          device_address: deviceAddress
+        },
+        transaction: t,
+      });
+      console.log(`[Device API] ✅ Deleted ${deletedTelemetries} telemetries for device ${deviceAddress}`);
 
       // 디바이스 삭제
       await device.destroy({ transaction: t });

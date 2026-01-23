@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middlewares/auth');
 const db = require('../models');
+const { Op } = require('sequelize');
 const mqttClient = require('../mqtt/client');
 const { validateMacAddress } = require('../utils/validation');
 
@@ -346,6 +347,20 @@ router.delete('/:hubAddress', verifyToken, async (req, res) => {
           device.Pet.device_address = null;
           await device.Pet.save({ transaction: t });
         }
+      }
+
+      // ✅ 디바이스 삭제 전에 관련된 Telemetries 레코드 먼저 삭제 (외래 키 제약 조건 해결)
+      const deviceAddresses = devices.map(d => d.address);
+      if (deviceAddresses.length > 0) {
+        const deletedTelemetries = await db.Telemetry.destroy({
+          where: {
+            device_address: {
+              [Op.in]: deviceAddresses
+            }
+          },
+          transaction: t,
+        });
+        console.log(`[Hub API] ✅ Deleted ${deletedTelemetries} telemetries for ${deviceAddresses.length} devices before device deletion`);
       }
 
       // 디바이스 삭제
