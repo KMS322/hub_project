@@ -13,12 +13,15 @@ class TelemetryWorker {
     this.isRunning = false;
     this.batchSize = options.batchSize || 100; // 배치 크기
     this.processInterval = options.processInterval || 50; // 처리 주기 (ms)
-    this.broadcastInterval = options.broadcastInterval || 100; // 브로드캐스트 주기 (ms)
+    this.broadcastInterval = options.broadcastInterval || 1000; // 브로드캐스트 주기 (ms) - 1초로 증가
     this.broadcastBuffer = new Map(); // 브로드캐스트 버퍼 (디바이스별)
     this.broadcastTimer = null;
     this.processTimer = null;
     this.csvWriter = csvWriter; // 싱글톤 CSV Writer 인스턴스 사용
     this.batteryCache = new Map(); // 디바이스별 마지막 배터리 값 저장
+    this.lastBroadcastTime = new Map(); // 디바이스별 마지막 브로드캐스트 시간 (throttling)
+    this.minBroadcastInterval = options.minBroadcastInterval || 500; // 최소 브로드캐스트 간격 (ms) - 500ms
+    this.measuringDevices = new Set(); // 측정 중인 디바이스 목록 (deviceId만 저장)
   }
 
   /**
@@ -461,6 +464,34 @@ class TelemetryWorker {
   }
 
   /**
+   * 측정 시작 (디바이스별)
+   */
+  startMeasurement(deviceId) {
+    if (deviceId) {
+      this.measuringDevices.add(deviceId);
+      console.log(`[Telemetry Worker] ✅ Measurement started for device: ${deviceId}`);
+    }
+  }
+
+  /**
+   * 측정 정지 (디바이스별)
+   */
+  stopMeasurement(deviceId) {
+    if (deviceId) {
+      this.measuringDevices.delete(deviceId);
+      // 버퍼도 정리
+      for (const key of this.broadcastBuffer.keys()) {
+        const [, devId] = key.split(':');
+        if (devId === deviceId) {
+          this.broadcastBuffer.delete(key);
+          this.lastBroadcastTime.delete(key);
+        }
+      }
+      console.log(`[Telemetry Worker] 🛑 Measurement stopped for device: ${deviceId}`);
+    }
+  }
+
+  /**
    * 버퍼된 데이터를 Socket.IO로 브로드캐스트
    */
   async broadcastBuffered() {
@@ -475,6 +506,20 @@ class TelemetryWorker {
       if (dataArray.length === 0) continue;
 
       const [hubId, deviceId] = key.split(':');
+      
+      // ✅ 측정 중이 아닌 디바이스는 전송하지 않음
+      if (!this.measuringDevices.has(deviceId)) {
+        // 측정 중이 아니면 버퍼에서 제거
+        this.broadcastBuffer.delete(key);
+        continue;
+      }
+      
+      // ✅ Throttling: 최소 간격 이내면 스킵
+      const lastBroadcast = this.lastBroadcastTime.get(key) || 0;
+      const timeSinceLastBroadcast = Date.now() - lastBroadcast;
+      if (timeSinceLastBroadcast < this.minBroadcastInterval) {
+        continue; // 최소 간격이 지나지 않았으면 스킵
+      }
       
       // 최신 데이터만 전송 (10~30Hz로 제한)
       const latestData = dataArray[dataArray.length - 1];
@@ -589,8 +634,9 @@ class TelemetryWorker {
               timestamp: telemetryPayload.timestamp,
             });
             
-            // ✅ 전송 성공 시에만 버퍼에서 제거
+            // ✅ 전송 성공 시에만 버퍼에서 제거 및 마지막 전송 시간 업데이트
             broadcastCount++;
+            this.lastBroadcastTime.set(key, Date.now());
             this.broadcastBuffer.set(key, []);
           } catch (emitError) {
             console.error(`[Telemetry Worker] ❌ Error during emit:`, emitError);

@@ -9,7 +9,7 @@ const db = require("../models");
  * - CONTROL_RESULT: 백엔드 → 프론트 (명령 실행 결과)
  * - TELEMETRY: 백엔드 → 프론트 (실시간 측정 데이터)
  */
-module.exports = (io) => {
+module.exports = (io, app) => {
   io.use(async (socket, next) => {
     try {
       // #region agent log
@@ -201,6 +201,12 @@ module.exports = (io) => {
               timestamp: new Date().toISOString(),
             });
           } else {
+            // ✅ TelemetryWorker에 측정 시작 알림
+            const telemetryWorker = io.telemetryWorker;
+            if (telemetryWorker && typeof telemetryWorker.startMeasurement === 'function') {
+              telemetryWorker.startMeasurement(deviceId);
+            }
+            
             socket.emit("CONTROL_RESULT", {
               requestId: requestId || `req_${Date.now()}`,
               hubId,
@@ -230,6 +236,12 @@ module.exports = (io) => {
               timestamp: new Date().toISOString(),
             });
           } else {
+            // ✅ TelemetryWorker에 측정 정지 알림
+            const telemetryWorker = io.telemetryWorker;
+            if (telemetryWorker && typeof telemetryWorker.stopMeasurement === 'function') {
+              telemetryWorker.stopMeasurement(deviceId);
+            }
+            
             socket.emit("CONTROL_RESULT", {
               requestId: requestId || `req_${Date.now()}`,
               hubId,

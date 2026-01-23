@@ -258,124 +258,17 @@ class MQTTService {
         });
       }
 
-      // Socket.IO로 전송 (요청된 형식: { device_mac_address, samplingrate, hr, spo2, temp, battery })
-      if (!this.io) {
-        console.warn(`[MQTT Service] ⚠️ Socket.IO instance not available, cannot emit TELEMETRY for device ${deviceMac}`);
-        return; // 문자열 형식 처리 완료
-      }
-      
-      const telemetryPayload = {
-        type: 'sensor_data',
+      // ✅ Socket.IO로 즉시 전송하지 않고 TelemetryWorker 큐로만 처리
+      // (중복 전송 방지 및 서버 부하 감소)
+      console.log(`[MQTT Service] ✅ String format telemetry queued for TelemetryWorker processing`, {
         hubId,
         deviceId: deviceMac,
-        data: {
-          device_mac_address: deviceMac,
-          samplingrate: samplingRate,
-          hr: parsedString.hr || 0,
-          spo2: parsedString.spo2 || 0,
-          temp: tempToUse,
-          battery: batteryToUse,
-        },
-        timestamp: new Date().toISOString(),
-      };
-      
-      try {
-        // ✅ 허브 소유자에게만 TELEMETRY 이벤트 전송
-        const db = require('../models');
-        const hub = await db.Hub.findByPk(hubId);
-        console.log(`[MQTT Service] 🔍 Emitting TELEMETRY (string format)`, {
-          hubId,
-          deviceId: deviceMac,
-          hubFound: !!hub,
-          hubUserEmail: hub?.user_email || 'N/A',
-          roomName: hub?.user_email ? `user:${hub.user_email}` : 'N/A',
-          socketIORooms: this.io ? Object.keys(this.io.sockets.adapter.rooms || {}).length : 0,
-        });
-        
-        if (hub && hub.user_email) {
-          const roomName = `user:${hub.user_email}`;
-          const room = this.io.sockets.adapter.rooms.get(roomName);
-          const socketCount = room ? room.size : 0;
-          
-          // ✅ 모든 rooms 확인 (디버깅용)
-          const allRooms = Array.from(this.io.sockets.adapter.rooms.keys());
-          const userRooms = allRooms.filter(r => r.startsWith('user:'));
-          
-          console.log(`[MQTT Service] 📤 Emitting to room "${roomName}"`, {
-            roomExists: !!room,
-            socketCount,
-            allRoomsCount: allRooms.length,
-            userRoomsCount: userRooms.length,
-            userRooms: userRooms.slice(0, 10), // 처음 10개만
-            targetRoom: roomName,
-            payloadSize: JSON.stringify(telemetryPayload).length,
-            data: telemetryPayload.data,
-          });
-          
-          // ✅ Socket.IO 인스턴스 및 Room 유효성 확인
-          if (!this.io || !this.io.sockets) {
-            console.error(`[MQTT Service] ❌ Socket.IO instance not available`);
-            return;
-          }
-          
-          // ✅ Room에 socket이 없으면 경고 (연결 문제 가능성)
-          if (socketCount === 0) {
-            console.warn(`[MQTT Service] ⚠️ No sockets in room "${roomName}" - user may be disconnected`, {
-              hubId,
-              deviceId: deviceMac,
-              hubUserEmail: hub.user_email,
-              allRoomsCount: allRooms.length,
-              userRooms: userRooms,
-            });
-            return;
-          }
-          
-          // ✅ emit 전송 및 확인
-          try {
-            this.io.to(roomName).emit('TELEMETRY', telemetryPayload);
-            
-            // ✅ emit 후 즉시 확인
-            const roomAfterEmit = this.io.sockets.adapter.rooms.get(roomName);
-            const socketCountAfter = roomAfterEmit ? roomAfterEmit.size : 0;
-            
-            console.log(`[MQTT Service] ✅ Socket.IO TELEMETRY emitted (string format) to user ${hub.user_email}`, {
-              event: 'TELEMETRY',
-              hubId,
-              deviceId: deviceMac,
-              roomName,
-              socketCount,
-              socketCountAfter,
-              data: telemetryPayload.data,
-              timestamp: telemetryPayload.timestamp,
-            });
-          } catch (emitError) {
-            console.error(`[MQTT Service] ❌ Error during emit:`, emitError);
-            throw emitError;
-          }
-        } else {
-          // 허브 정보를 찾을 수 없으면 모든 클라이언트에 브로드캐스트 (fallback)
-          const connectedSockets = this.io.sockets.sockets.size;
-          console.log(`[MQTT Service] ⚠️ Hub not found, broadcasting to all ${connectedSockets} sockets`, {
-            hubId,
-            payload: JSON.stringify(telemetryPayload, null, 2),
-          });
-          this.io.emit('TELEMETRY', telemetryPayload);
-          console.log(`[MQTT Service] ⚠️ Socket.IO TELEMETRY broadcasted (hub not found) for hub ${hubId}`);
-        }
-      } catch (error) {
-        console.error(`[MQTT Service] ❌ Failed to emit TELEMETRY for device ${deviceMac}:`, error);
-        console.error(`[MQTT Service] Error stack:`, error.stack);
-        // 에러 발생 시 fallback으로 브로드캐스트
-        try {
-          console.log(`[MQTT Service] 🔄 Attempting fallback broadcast`);
-          this.io.emit('TELEMETRY', telemetryPayload);
-          console.log(`[MQTT Service] ✅ Fallback broadcast successful`);
-        } catch (emitError) {
-          console.error(`[MQTT Service] ❌ Failed to broadcast TELEMETRY:`, emitError);
-          console.error(`[MQTT Service] Broadcast error stack:`, emitError.stack);
-        }
-      }
-      return; // 문자열 형식 처리 완료
+        hr: parsedString.hr,
+        spo2: parsedString.spo2,
+        temp: tempToUse,
+        battery: batteryToUse,
+      });
+      return; // 문자열 형식 처리 완료 (TelemetryWorker가 Socket.IO로 전송)
     }
 
     // JSON 형식의 측정 데이터 처리 (기존 방식)
@@ -425,176 +318,14 @@ class MQTTService {
             }
           }
 
-          // 실시간 모니터링을 위한 Telemetry 데이터는 항상 전송 (디바이스가 DB에 없어도)
-          if (this.io) {
-            // 배터리 값 처리: 0이 아닐 때만 캐시 업데이트
-            const currentBattery = data.battery || 0;
-            let batteryToUse = currentBattery;
-            
-            if (currentBattery === 0) {
-              // 0이면 캐시된 값 사용
-              if (this.batteryCache.has(data.device_mac_address)) {
-                batteryToUse = this.batteryCache.get(data.device_mac_address);
-                console.log(`[MQTT Service] Using cached battery value for ${data.device_mac_address}: ${batteryToUse}%`);
-              }
-            } else {
-              // 0이 아니면 캐시 업데이트
-              this.batteryCache.set(data.device_mac_address, currentBattery);
-              console.log(`[MQTT Service] Updated battery cache for ${data.device_mac_address}: ${currentBattery}%`);
-            }
-
-            // 온도 값 처리: 0이 아닐 때만 캐시 업데이트
-            const currentTemp = data.temp || 0;
-            let tempToUse = currentTemp;
-            
-            if (currentTemp === 0) {
-              // 0이면 캐시된 값 사용
-              if (this.temperatureCache.has(data.device_mac_address)) {
-                tempToUse = this.temperatureCache.get(data.device_mac_address);
-                console.log(`[MQTT Service] Using cached temperature value for ${data.device_mac_address}: ${tempToUse}°C`);
-              }
-            } else {
-              // 0이 아니면 캐시 업데이트
-              this.temperatureCache.set(data.device_mac_address, currentTemp);
-              console.log(`[MQTT Service] Updated temperature cache for ${data.device_mac_address}: ${currentTemp}°C`);
-            }
-
-            // start_time을 밀리초로 변환 (HHmmssSSS 형식)
-            const parseStartTime = (startTimeStr) => {
-              if (!startTimeStr || startTimeStr.length < 9) return Date.now();
-              try {
-                const hours = parseInt(startTimeStr.substring(0, 2));
-                const minutes = parseInt(startTimeStr.substring(2, 4));
-                const seconds = parseInt(startTimeStr.substring(4, 6));
-                const milliseconds = parseInt(startTimeStr.substring(6, 9));
-                const today = new Date();
-                today.setHours(hours, minutes, seconds, milliseconds);
-                return today.getTime();
-              } catch (e) {
-                return Date.now();
-              }
-            };
-
-            const startTimeMs = parseStartTime(data.start_time);
-            const samplingRate = data.sampling_rate || 50;
-            const intervalMs = (1 / samplingRate) * 250; // 250 샘플당 간격 (ms)
-
-            // data 배열의 각 샘플에 대해 시간 계산
-            const dataArr = data.data.map((dataStr, index) => {
-              const sampleTime = startTimeMs + (index * intervalMs);
-              return {
-                hr: data.hr || 0,
-                spo2: data.spo2 || 0,
-                temp: tempToUse, // 캐시된 온도 값 사용
-                battery: batteryToUse, // 캐시된 배터리 값 사용
-                timestamp: sampleTime,
-                index: index
-              };
-            });
-
-            const telemetryPayload = {
-              type: 'sensor_data',
-              hubId: hubId,
+            // ✅ Socket.IO로 즉시 전송하지 않고 TelemetryWorker 큐로만 처리
+            // (중복 전송 방지 및 서버 부하 감소)
+            // TelemetryWorker가 큐에서 데이터를 가져와 배치 처리 및 Socket.IO로 전송
+            console.log(`[MQTT Service] ✅ JSON format telemetry queued for TelemetryWorker processing`, {
+              hubId,
               deviceId: data.device_mac_address,
-              data: {
-                hr: data.hr || 0,
-                spo2: data.spo2 || 0,
-                temp: tempToUse, // 캐시된 온도 값 사용
-                battery: batteryToUse, // 캐시된 배터리 값 사용
-                start_time: data.start_time,
-                sampling_rate: samplingRate,
-                dataArr: dataArr,
-                timestamp: Date.now()
-              },
-              timestamp: new Date().toISOString()
-            };
-
-            if (!this.io) {
-              console.warn(`[MQTT Service] ⚠️ Socket.IO instance not available, cannot emit TELEMETRY for device ${data.device_mac_address}`);
-            } else {
-              try {
-                // ✅ 허브 소유자에게만 TELEMETRY 이벤트 전송
-                const hub = await db.Hub.findByPk(hubId);
-                console.log(`[MQTT Service] 🔍 Emitting TELEMETRY (JSON format)`, {
-                  hubId,
-                  deviceId: data.device_mac_address,
-                  hubFound: !!hub,
-                  hubUserEmail: hub?.user_email || 'N/A',
-                  roomName: hub?.user_email ? `user:${hub.user_email}` : 'N/A',
-                  socketIORooms: this.io ? Object.keys(this.io.sockets.adapter.rooms || {}).length : 0,
-                });
-                
-                if (hub && hub.user_email) {
-                  const roomName = `user:${hub.user_email}`;
-                  const room = this.io.sockets.adapter.rooms.get(roomName);
-                  const socketCount = room ? room.size : 0;
-                  
-                  // ✅ Socket.IO 인스턴스 및 Room 유효성 확인
-                  if (!this.io || !this.io.sockets) {
-                    console.error(`[MQTT Service] ❌ Socket.IO instance not available`);
-                    return;
-                  }
-                  
-                  // ✅ Room에 socket이 없으면 경고 (연결 문제 가능성)
-                  if (socketCount === 0) {
-                    console.warn(`[MQTT Service] ⚠️ No sockets in room "${roomName}" - user may be disconnected`, {
-                      hubId,
-                      deviceId: data.device_mac_address,
-                      hubUserEmail: hub.user_email,
-                    });
-                    return;
-                  }
-                  
-                  console.log(`[MQTT Service] 📤 Emitting to room "${roomName}"`, {
-                    roomExists: !!room,
-                    socketCount,
-                    payload: JSON.stringify(telemetryPayload, null, 2),
-                  });
-                  
-                  this.io.to(roomName).emit('TELEMETRY', telemetryPayload);
-                  
-                  console.log(`[MQTT Service] ✅ Socket.IO TELEMETRY emitted (JSON format) to user ${hub.user_email}`, {
-                    event: 'TELEMETRY',
-                    hubId,
-                    deviceId: data.device_mac_address,
-                    roomName,
-                    socketCount,
-                    data: {
-                      hr: telemetryPayload.data.hr,
-                      spo2: telemetryPayload.data.spo2,
-                      temp: telemetryPayload.data.temp,
-                      battery: telemetryPayload.data.battery,
-                      start_time: telemetryPayload.data.start_time,
-                      sampling_rate: telemetryPayload.data.sampling_rate,
-                      dataArrLength: telemetryPayload.data.dataArr?.length || 0,
-                    },
-                    timestamp: telemetryPayload.timestamp,
-                  });
-                } else {
-                  // 허브 정보를 찾을 수 없으면 모든 클라이언트에 브로드캐스트 (fallback)
-                  const connectedSockets = this.io.sockets.sockets.size;
-                  console.log(`[MQTT Service] ⚠️ Hub not found, broadcasting to all ${connectedSockets} sockets`, {
-                    hubId,
-                    payload: JSON.stringify(telemetryPayload, null, 2),
-                  });
-                  this.io.emit('TELEMETRY', telemetryPayload);
-                  console.log(`[MQTT Service] ⚠️ Socket.IO TELEMETRY broadcasted (hub not found) for hub ${hubId}`);
-                }
-              } catch (error) {
-                console.error(`[MQTT Service] ❌ Failed to emit TELEMETRY for device ${data.device_mac_address}:`, error);
-                console.error(`[MQTT Service] Error stack:`, error.stack);
-                // 에러 발생 시 fallback으로 브로드캐스트
-                try {
-                  console.log(`[MQTT Service] 🔄 Attempting fallback broadcast`);
-                  this.io.emit('TELEMETRY', telemetryPayload);
-                  console.log(`[MQTT Service] ✅ Fallback broadcast successful`);
-                } catch (emitError) {
-                  console.error(`[MQTT Service] ❌ Failed to broadcast TELEMETRY:`, emitError);
-                  console.error(`[MQTT Service] Broadcast error stack:`, emitError.stack);
-                }
-              }
-            }
-          }
+              dataLength: data.data?.length || 0,
+            });
         } catch (error) {
           console.error(`[MQTT Service] Error processing measurement data:`, error);
         }
@@ -832,41 +563,16 @@ class MQTTService {
       });
     }
 
-    // 실시간 소켓 이벤트로 전송 (요청된 형식: { device_mac_address, samplingrate, hr, spo2, temp, battery })
-    if (!this.io) {
-      console.warn(`[MQTT Service] ⚠️ Socket.IO instance not available, cannot emit TELEMETRY(test) for device ${deviceMac}`);
-      return;
-    }
-    
-    const telemetryPayload = {
-      type: 'sensor_data',
+    // ✅ Socket.IO로 즉시 전송하지 않고 TelemetryWorker 큐로만 처리
+    // (중복 전송 방지 및 서버 부하 감소)
+    console.log(`[MQTT Service] ✅ Test format telemetry queued for TelemetryWorker processing`, {
       hubId,
       deviceId: deviceMac,
-      data: {
-        device_mac_address: deviceMac,
-        samplingrate: samplingRate,
-        hr: parsed.hr || 0,
-        spo2: parsed.spo2 || 0,
-        temp: tempToUse,
-        battery: batteryToUse,
-      },
-      timestamp: new Date().toISOString(),
-    };
-    
-    try {
-      // ✅ 모든 클라이언트에 브로드캐스트
-      this.io.emit('TELEMETRY', telemetryPayload);
-      console.log(`[MQTT Service] ✅ Socket.IO TELEMETRY emitted (test format)`, {
-        event: 'TELEMETRY',
-        hubId,
-        deviceId: deviceMac,
-        data: telemetryPayload.data,
-        timestamp: telemetryPayload.timestamp,
-        payloadString: JSON.stringify(telemetryPayload, null, 2),
-      });
-    } catch (error) {
-      console.error(`[MQTT Service] ❌ Failed to emit TELEMETRY(test) for device ${deviceMac}:`, error);
-    }
+      hr: parsed.hr,
+      spo2: parsed.spo2,
+      temp: tempToUse,
+      battery: batteryToUse,
+    });
   }
 
   /**

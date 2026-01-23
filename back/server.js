@@ -87,8 +87,12 @@ app.set("telemetryQueue", telemetryQueue);
 const telemetryWorker = new TelemetryWorker(io, telemetryQueue, {
   batchSize: 100,
   processInterval: 50, // 50ms마다 처리
-  broadcastInterval: 100 // 100ms마다 브로드캐스트 (10Hz)
+  broadcastInterval: 1000, // 1초마다 브로드캐스트 (1Hz) - 서버 부하 감소
+  minBroadcastInterval: 500 // 최소 500ms 간격으로 전송 (디바이스별 throttling)
 });
+
+// Socket.IO 인스턴스에 TelemetryWorker 참조 추가 (측정 시작/정지 제어용)
+io.telemetryWorker = telemetryWorker;
 
 // MQTT 서비스 초기화 (Telemetry 큐 전달, Socket.IO는 이벤트 전송용)
 const mqttService = new MQTTService(io, telemetryQueue);
