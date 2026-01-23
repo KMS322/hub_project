@@ -548,6 +548,26 @@ class TelemetryWorker {
             battery: telemetryData.battery,
           });
           
+          // ✅ Socket.IO 인스턴스 및 Room 유효성 확인
+          if (!this.io || !this.io.sockets) {
+            console.error(`[Telemetry Worker] ❌ Socket.IO instance not available`);
+            // 버퍼 유지 (다음 브로드캐스트 시 재시도)
+            return;
+          }
+          
+          // ✅ Room에 socket이 없으면 경고 (연결 문제 가능성)
+          if (socketCount === 0) {
+            console.warn(`[Telemetry Worker] ⚠️ No sockets in room "${roomName}" - user may be disconnected`, {
+              hubId,
+              deviceId,
+              hubUserEmail: hub.user_email,
+              allRoomsCount: allRooms.length,
+              userRooms: userRooms,
+            });
+            // 버퍼 유지 (연결 복구 시 전송)
+            return;
+          }
+          
           // ✅ emit 전송 및 확인
           try {
             this.io.to(roomName).emit('TELEMETRY', telemetryPayload);
@@ -568,8 +588,13 @@ class TelemetryWorker {
               battery: telemetryData.battery,
               timestamp: telemetryPayload.timestamp,
             });
+            
+            // ✅ 전송 성공 시에만 버퍼에서 제거
+            broadcastCount++;
+            this.broadcastBuffer.set(key, []);
           } catch (emitError) {
             console.error(`[Telemetry Worker] ❌ Error during emit:`, emitError);
+            // 에러 발생 시 버퍼 유지 (재시도 가능)
             throw emitError;
           }
         } else {
@@ -596,10 +621,7 @@ class TelemetryWorker {
         }
       }
 
-      broadcastCount++;
-
-      // 전송한 데이터는 버퍼에서 제거
-      this.broadcastBuffer.set(key, []);
+      // broadcastCount는 emit 성공 시에만 증가 (위에서 처리)
     }
 
     if (broadcastCount > 0) {

@@ -312,6 +312,24 @@ class MQTTService {
             data: telemetryPayload.data,
           });
           
+          // ✅ Socket.IO 인스턴스 및 Room 유효성 확인
+          if (!this.io || !this.io.sockets) {
+            console.error(`[MQTT Service] ❌ Socket.IO instance not available`);
+            return;
+          }
+          
+          // ✅ Room에 socket이 없으면 경고 (연결 문제 가능성)
+          if (socketCount === 0) {
+            console.warn(`[MQTT Service] ⚠️ No sockets in room "${roomName}" - user may be disconnected`, {
+              hubId,
+              deviceId: deviceMac,
+              hubUserEmail: hub.user_email,
+              allRoomsCount: allRooms.length,
+              userRooms: userRooms,
+            });
+            return;
+          }
+          
           // ✅ emit 전송 및 확인
           try {
             this.io.to(roomName).emit('TELEMETRY', telemetryPayload);
@@ -510,6 +528,22 @@ class MQTTService {
                   const roomName = `user:${hub.user_email}`;
                   const room = this.io.sockets.adapter.rooms.get(roomName);
                   const socketCount = room ? room.size : 0;
+                  
+                  // ✅ Socket.IO 인스턴스 및 Room 유효성 확인
+                  if (!this.io || !this.io.sockets) {
+                    console.error(`[MQTT Service] ❌ Socket.IO instance not available`);
+                    return;
+                  }
+                  
+                  // ✅ Room에 socket이 없으면 경고 (연결 문제 가능성)
+                  if (socketCount === 0) {
+                    console.warn(`[MQTT Service] ⚠️ No sockets in room "${roomName}" - user may be disconnected`, {
+                      hubId,
+                      deviceId: data.device_mac_address,
+                      hubUserEmail: hub.user_email,
+                    });
+                    return;
+                  }
                   
                   console.log(`[MQTT Service] 📤 Emitting to room "${roomName}"`, {
                     roomExists: !!room,
