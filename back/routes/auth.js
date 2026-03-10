@@ -109,6 +109,7 @@ router.post("/register", async (req, res) => {
           address: user.address,
           detail_address: user.detail_address,
           phone: user.phone,
+          role: user.role || 'user',
         },
         token,
       },
@@ -188,6 +189,7 @@ router.post("/login", async (req, res) => {
           address: user.address,
           detail_address: user.detail_address,
           phone: user.phone,
+          role: user.role || 'user',
         },
         token,
       },
@@ -222,6 +224,7 @@ router.get("/me", verifyToken, async (req, res) => {
           address: user.address,
           detail_address: user.detail_address,
           phone: user.phone,
+          role: user.role || 'user',
         },
       },
     });
@@ -297,6 +300,7 @@ router.put("/update", verifyToken, async (req, res) => {
           address: user.address,
           detail_address: user.detail_address,
           phone: user.phone,
+          role: user.role || 'user',
         },
       },
     });

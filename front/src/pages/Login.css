@@ -1,18 +1,68 @@
-.login-page {
+/* 루트: 중앙 정렬, 배경용 자리 확보 */
+.login-view {
+  position: relative;
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: #f5f5f5;
 }
 
+/* 배경 레이어 (DOM 상 login-container 다음에 옴) */
+.login-page {
+  position: absolute;
+  inset: 0;
+  background-color: #f5f5f5;
+  z-index: 0;
+}
+
+/* 로그인 카드 (DOM 상 먼저 배치) */
 .login-container {
+  position: relative;
+  z-index: 1;
   background-color: white;
-  padding: 3rem;
+  padding: 2rem 3rem 3rem;
   border-radius: 8px;
   box-shadow: 0 2px 10px rgba(0,0,0,0.1);
   width: 100%;
   max-width: 400px;
+}
+
+.login-mode-tabs {
+  display: flex;
+  gap: 0;
+  width: 100%;
+  margin-bottom: 1.5rem;
+  background: #e8e8e8;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.login-mode-tab {
+  flex: 1;
+  padding: 0.65rem 1rem;
+  border: none;
+  background: transparent;
+  font-size: 0.9rem;
+  color: #666;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+.login-mode-tab.active {
+  background: white;
+  color: #2c3e50;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+.login-mode-tab:hover:not(.active) {
+  background: #ddd;
+}
+
+.error-message {
+  color: #c00;
+  font-size: 0.9rem;
+  margin-top: -0.5rem;
 }
 
 .login-logo {

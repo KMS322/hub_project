@@ -31,6 +31,11 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING(20),
         allowNull: false,
       },
+      role: {
+        type: DataTypes.STRING(20),
+        allowNull: false,
+        defaultValue: 'user', // 'user' | 'admin'
+      },
     },
     {
       tableName: "Users", // 명시적으로 테이블 이름 지정

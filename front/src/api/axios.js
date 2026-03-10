@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { API_URL } from '../constants';
+import { getErrorMessage } from '../utils/errorMessages';
 
 // Axios 인스턴스 생성
 const axiosInstance = axios.create({
@@ -46,15 +47,18 @@ axiosInstance.interceptors.response.use(
       window.location.href = '/login';
     }
 
-    // 에러 메시지 표준화
-    const errorMessage =
-      error.response?.data?.message ||
-      error.response?.data?.error ||
-      error.message ||
-      '서버 오류가 발생했습니다.';
+    // 서버 표준 코드가 있으면 사용자 친화 메시지로 매핑
+    const code = error.response?.data?.code;
+    const errorMessage = code
+      ? getErrorMessage(code)
+      : error.response?.data?.message ||
+        error.response?.data?.error ||
+        error.message ||
+        '서버 오류가 발생했습니다.';
 
     return Promise.reject({
       status: error.response?.status,
+      code,
       message: errorMessage,
       data: error.response?.data,
     });

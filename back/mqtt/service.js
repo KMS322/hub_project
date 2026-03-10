@@ -1,6 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const mqttClient = require('./client');
+const { createError, ERROR_REASON } = require('../core/error/errorFactory');
+const { logError } = require('../core/error/errorLogger');
+
+const MQTT_PAYLOAD_MAX_BYTES = 1024 * 1024; // 1MB
 
 /**
  * MQTT 서비스 클래스
@@ -175,6 +179,15 @@ class MQTTService {
                   typeof message === 'string' ? message : JSON.stringify(message);
     } catch (e) {
       console.error(`[MQTT Service] Failed to parse hub send message from ${topic}:`, e);
+      return;
+    }
+
+    if (messageStr.length > MQTT_PAYLOAD_MAX_BYTES) {
+      const err = createError('mqtt', ERROR_REASON.PAYLOAD_TOO_LARGE, 'MQTT payload too large', `size=${messageStr.length}`, {
+        payloadSize: messageStr.length,
+        topic,
+      });
+      logError(err);
       return;
     }
 
@@ -363,7 +376,10 @@ class MQTTService {
         return; // 측정 데이터 처리 완료
       }
     } catch (e) {
-      // JSON 파싱 실패는 무시 (문자열 메시지일 수 있음)
+      if (e instanceof SyntaxError) {
+        const err = createError('mqtt', ERROR_REASON.JSON_PARSE_ERROR, 'JSON parsing failure', e.message, { topic });
+        logError(err);
+      }
     }
 
     // "message:80:b5:4e:db:44:9a mqtt ready" 형식 메시지 처리

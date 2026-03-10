@@ -1,5 +1,9 @@
 const jwt = require("jsonwebtoken");
 const db = require("../models");
+const { createError, ERROR_REASON } = require("../core/error/errorFactory");
+const { logError } = require("../core/error/errorLogger");
+
+const SOCKET_PAYLOAD_MAX_BYTES = 100 * 1024; // 100KB
 
 /**
  * Socket.IO 핸들러
@@ -73,22 +77,33 @@ module.exports = (io, app) => {
     
     console.log(`[Socket] ✅ "connected" event emitted to socket ${socket.id}`);
 
+    // Admin dashboard: join room for real-time error stream
+    socket.on("join-admin-errors", () => {
+      socket.join("admin/errors");
+    });
+
     /**
      * CONTROL_REQUEST: 프론트에서 기기 제어 명령 전송
      * 예: 측정 시작/정지, LED 깜빡임 등
      */
     socket.on("CONTROL_REQUEST", async (data) => {
       try {
+        const payloadSize = data ? JSON.stringify(data).length : 0;
+        if (payloadSize > SOCKET_PAYLOAD_MAX_BYTES) {
+          const err = createError("socket", ERROR_REASON.PAYLOAD_TOO_LARGE, "Socket payload exceeded", `size=${payloadSize}`, {
+            payloadSize,
+            deviceId: data?.deviceId,
+          });
+          logError(err);
+          socket.emit("server-error", err);
+          return;
+        }
         const { hubId, deviceId, command, requestId } = data;
 
-        console.log(`[Socket] 📥 Received CONTROL_REQUEST:`, {
-          hubId,
-          deviceId,
-          command: JSON.stringify(command),
-          requestId
-        });
-
         if (!hubId || !deviceId || !command) {
+          const err = createError("socket", ERROR_REASON.MISSING_FIELD, "hubId, deviceId, command는 필수입니다.", "", { deviceId: data?.deviceId });
+          logError(err);
+          socket.emit("server-error", err);
           socket.emit("CONTROL_RESULT", {
             requestId: requestId || `req_${Date.now()}`,
             success: false,
@@ -96,6 +111,13 @@ module.exports = (io, app) => {
           });
           return;
         }
+
+        console.log(`[Socket] 📥 Received CONTROL_REQUEST:`, {
+          hubId,
+          deviceId,
+          command: JSON.stringify(command),
+          requestId
+        });
 
         // CONTROL_ACK 전송 (명령 수신 확인)
         socket.emit("CONTROL_ACK", {
@@ -315,6 +337,9 @@ module.exports = (io, app) => {
         }
       } catch (error) {
         console.error("[Socket] CONTROL_REQUEST error:", error);
+        const err = createError("socket", ERROR_REASON.INTERNAL_ERROR, error.message || "명령 처리 중 오류가 발생했습니다.", error.stack, { deviceId: data?.deviceId });
+        logError(err);
+        socket.emit("server-error", err);
         socket.emit("CONTROL_RESULT", {
           requestId: data.requestId || `req_${Date.now()}`,
           success: false,

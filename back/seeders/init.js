@@ -5,8 +5,18 @@ const initializeDatabase = async () => {
   try {
     console.log("🔄 Initializing dummy data...");
 
-    // User 더미 데이터
+    // User 더미 데이터 (role 기본값은 모델에서 'user')
     const users = [
+      {
+        email: "creamoff2021@gmail.com",
+        password: await bcrypt.hash("Dlqdjqhro1!", 10),
+        name: "시스템 관리자",
+        postcode: "00000",
+        address: "관리자",
+        detail_address: "-",
+        phone: "000-0000-0000",
+        role: "admin",
+      },
       {
         email: "a@a.com",
         password: await bcrypt.hash("a", 10),
@@ -15,6 +25,7 @@ const initializeDatabase = async () => {
         address: "서울시 강남구",
         detail_address: "101호",
         phone: "010-1234-5678",
+        role: "user",
       },
       {
         email: "b@b.com",
@@ -24,6 +35,7 @@ const initializeDatabase = async () => {
         address: "서울시 서초구",
         detail_address: "201호",
         phone: "010-9876-5432",
+        role: "user",
       },
       {
         email: "c@c.com",
@@ -33,14 +45,18 @@ const initializeDatabase = async () => {
         address: "서울시 서초구",
         detail_address: "201호",
         phone: "010-9876-5432",
+        role: "user",
       },
     ];
 
     for (const userData of users) {
-      await db.User.findOrCreate({
+      const [user] = await db.User.findOrCreate({
         where: { email: userData.email },
         defaults: userData,
       });
+      if (user && userData.role === 'admin' && user.role !== 'admin') {
+        await user.update({ role: 'admin' });
+      }
     }
 
     // Hub 더미 데이터

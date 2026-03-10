@@ -24,6 +24,8 @@ import Guide from './pages/Guide'
 import SerialMonitor from './pages/SerialMonitor'
 import HardwareErrorTest from './pages/HardwareErrorTest'
 import HrvAnalysis from './pages/HrvAnalysis'
+import AdminSystemLogs from './pages/AdminSystemLogs'
+import AdminSystemHealth from './pages/AdminSystemHealth'
 import './App.css'
 
 function AppContent() {
@@ -31,6 +33,8 @@ function AppContent() {
   const location = useLocation()
 
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
+  const userRole = useAuthStore((state) => state.user?.role)
+  const isAdmin = userRole === 'admin'
 
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
@@ -155,47 +159,114 @@ function AppContent() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
 
+        {/* 사용자 전용: 관리자면 어드민으로 리다이렉트 */}
         <Route
           path="/dashboard"
-          element={isAuthenticated ? <Dashboard /> : <Navigate to="/login" />}
+          element={
+            !isAuthenticated ? <Navigate to="/login" /> :
+            isAdmin ? <Navigate to="/admin/system-logs" replace /> :
+            <Dashboard />
+          }
         />
         <Route
           path="/hardware"
-          element={isAuthenticated ? <Hardware /> : <Navigate to="/login" />}
+          element={
+            !isAuthenticated ? <Navigate to="/login" /> :
+            isAdmin ? <Navigate to="/admin/system-logs" replace /> :
+            <Hardware />
+          }
         />
         <Route
           path="/patients"
-          element={isAuthenticated ? <Patients /> : <Navigate to="/login" />}
+          element={
+            !isAuthenticated ? <Navigate to="/login" /> :
+            isAdmin ? <Navigate to="/admin/system-logs" replace /> :
+            <Patients />
+          }
         />
         <Route
           path="/records"
-          element={isAuthenticated ? <Records /> : <Navigate to="/login" />}
+          element={
+            !isAuthenticated ? <Navigate to="/login" /> :
+            isAdmin ? <Navigate to="/admin/system-logs" replace /> :
+            <Records />
+          }
         />
         <Route
           path="/hrv-analysis"
-          element={isAuthenticated ? <HrvAnalysis /> : <Navigate to="/login" />}
+          element={
+            !isAuthenticated ? <Navigate to="/login" /> :
+            isAdmin ? <Navigate to="/admin/system-logs" replace /> :
+            <HrvAnalysis />
+          }
         />
         <Route
           path="/profile"
-          element={isAuthenticated ? <Profile /> : <Navigate to="/login" />}
+          element={
+            !isAuthenticated ? <Navigate to="/login" /> :
+            isAdmin ? <Navigate to="/admin/system-logs" replace /> :
+            <Profile />
+          }
         />
         <Route
           path="/monitoring/:patientId"
-          element={isAuthenticated ? <Monitoring /> : <Navigate to="/login" />}
+          element={
+            !isAuthenticated ? <Navigate to="/login" /> :
+            isAdmin ? <Navigate to="/admin/system-logs" replace /> :
+            <Monitoring />
+          }
         />
 
-        <Route path="/guide" element={<Guide />} />
+        <Route
+          path="/guide"
+          element={
+            isAuthenticated && isAdmin ? <Navigate to="/admin/system-logs" replace /> :
+            <Guide />
+          }
+        />
 
         <Route
           path="/serial-monitor"
-          element={isAuthenticated ? <SerialMonitor /> : <Navigate to="/login" />}
+          element={
+            !isAuthenticated ? <Navigate to="/login" /> :
+            isAdmin ? <Navigate to="/admin/system-logs" replace /> :
+            <SerialMonitor />
+          }
         />
         <Route
           path="/hardware-error-test"
-          element={isAuthenticated ? <HardwareErrorTest /> : <Navigate to="/login" />}
+          element={
+            !isAuthenticated ? <Navigate to="/login" /> :
+            isAdmin ? <Navigate to="/admin/system-logs" replace /> :
+            <HardwareErrorTest />
+          }
+        />
+        <Route
+          path="/admin/system-logs"
+          element={
+            !isAuthenticated ? <Navigate to="/login" /> :
+            !isAdmin ? <Navigate to="/dashboard" /> :
+            <AdminSystemLogs />
+          }
+        />
+        <Route
+          path="/admin/system-health"
+          element={
+            !isAuthenticated ? <Navigate to="/login" /> :
+            !isAdmin ? <Navigate to="/dashboard" /> :
+            <AdminSystemHealth />
+          }
         />
 
-        <Route path="/" element={<Navigate to="/dashboard" />} />
+        {/* 루트: 관리자는 어드민, 일반 사용자는 대시보드 */}
+        <Route
+          path="/"
+          element={
+            !isAuthenticated ? <Navigate to="/login" /> :
+            isAdmin ? <Navigate to="/admin/system-logs" replace /> :
+            <Navigate to="/dashboard" replace />
+          }
+        />
       </Routes>
 
       <ConfirmModal

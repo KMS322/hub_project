@@ -28,6 +28,7 @@ db.Pet = require("./Pet")(sequelize, Sequelize);
 db.Hub = require("./Hub")(sequelize, Sequelize);
 db.Device = require("./Device")(sequelize, Sequelize);
 db.Telemetry = require("./Telemetry")(sequelize, Sequelize);
+db.ServerError = require("./ServerError")(sequelize, Sequelize);
 
 Object.keys(db).forEach((modelName) => {
   if (db[modelName].associate) {

@@ -41,6 +41,7 @@ const verifyToken = async (req, res, next) => {
     req.user = {
       email: user.email,
       name: user.name,
+      role: user.role || 'user',
     };
 
     next();
@@ -59,6 +60,18 @@ const verifyToken = async (req, res, next) => {
   }
 };
 
+/** 어드민 전용: verifyToken 후 role === 'admin' 인지 확인 */
+const verifyAdmin = (req, res, next) => {
+  if (req.user && req.user.role === 'admin') {
+    return next();
+  }
+  return res.status(403).json({
+    success: false,
+    message: '관리자 권한이 필요합니다.',
+  });
+};
+
 module.exports = {
   verifyToken,
+  verifyAdmin,
 };

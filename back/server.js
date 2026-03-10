@@ -35,7 +35,11 @@ const mqttTestRoutes = require("./routes/mqtt-test");
 const checkRoutes = require("./routes/check");
 const measurementRoutes = require("./routes/measurement");
 const hrvRoutes = require("./routes/hrv");
+const adminRoutes = require("./routes/admin");
 const initializeDatabase = require("./seeders/init");
+const { errorMiddleware } = require("./middlewares/errorHandler");
+const errorRepository = require("./database/errorRepository");
+const { setSocketInstance } = require("./core/error/errorStream");
 const MQTTService = require("./mqtt/service");
 const TelemetryWorker = require("./workers/telemetryWorker");
 
@@ -77,6 +81,7 @@ app.use("/api/csv", csvRoutes);
 app.use("/api/mqtt-test", mqttTestRoutes);
 app.use("/api/measurement", measurementRoutes);
 app.use("/api/hrv", hrvRoutes);
+app.use("/api/admin", adminRoutes);
 // check 라우트에 Socket.IO 인스턴스 전달
 checkRoutes.setIOInstance(io);
 app.use("/api/check", checkRoutes);
@@ -108,6 +113,10 @@ io.mqttService = mqttService;
 // Socket.IO 핸들러 설정
 const socketHandler = require("./socket");
 socketHandler(io);
+
+// Error Framework: single stream for PM2 | DB | Realtime (setSocketInstance for broadcastError)
+setSocketInstance(io);
+app.use(errorMiddleware());
 
 db.sequelize
   .sync({ alter: true, force: false })
@@ -141,7 +150,13 @@ db.sequelize
       await initializeDatabase();
     }
 
-    server.listen(PORT, () => {
+    // Error retention: delete older than 30 days
+    errorRepository.deleteOlderThanRetention().then((n) => {
+      if (n > 0) console.log(`[Admin] Deleted ${n} server_errors older than ${errorRepository.RETENTION_DAYS} days`);
+    }).catch((e) => console.error('[Admin] Retention delete error:', e.message));
+
+    process.env.SERVER_START_TIME = String(Date.now());
+  server.listen(PORT, () => {
       console.log(`\n${'='.repeat(60)}`);
       console.log(`🚀 Server is running on port ${PORT}`);
       console.log(`📡 Socket.IO is ready`);
@@ -196,20 +211,4 @@ process.on('uncaughtException', (error) => {
   }
 });
 
-// Express 전역 에러 핸들러
-app.use((err, req, res, next) => {
-  console.error('❌ Express Error:', err);
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:errorHandler',message:'Express error handler',data:{error:err.message,url:req.url,method:req.method},timestamp:Date.now(),sessionId:'debug-session',runId:'runtime',hypothesisId:'B'})}).catch(()=>{});
-  // #endregion
-  
-  if (res.headersSent) {
-    return next(err);
-  }
-  
-  res.status(err.status || 500).json({
-    success: false,
-    message: err.message || 'Internal server error',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
-  });
-});
+// Express 전역 에러 핸들러 (errorMiddleware already mounted above with io + persist)
