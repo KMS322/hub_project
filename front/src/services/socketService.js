@@ -73,15 +73,15 @@ class SocketService {
       this.isConnected = false;
     });
 
-    // 서버에서 보낸 연결 확인
+    // 서버에서 보낸 연결 확인 (서버가 room 가입 완료 후 전송)
     this.socket.on("connected", (data) => {
-      console.log("[Socket] Server confirmed connection:", data);
+      console.log("[Socket] ✅ 서버 연결 확인 — TELEMETRY 수신 가능 (room 가입됨)", data);
     });
 
-    // 재연결 성공 이벤트
+    // 재연결 성공 이벤트 (재연결 시 서버가 자동으로 room 재가입 처리)
     this.socket.on("reconnect", (attemptNumber) => {
-      console.log("[Socket] Reconnected after", attemptNumber, "attempts");
       this.isConnected = true;
+      console.log("[Socket] 🔄 재연결됨 (시도 횟수:", attemptNumber, ") — 서버에서 room 자동 재가입");
     });
   }
 

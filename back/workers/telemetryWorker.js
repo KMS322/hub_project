@@ -2,6 +2,13 @@ const db = require('../models');
 const csvWriter = require('../utils/csvWriter'); // 싱글톤 인스턴스
 const { processData: processHeartRate } = require('../utils/heartRateProcessor');
 
+// hubId, deviceId가 MAC 주소(: 포함)이므로 키 구분자는 : 가 아닌 || 사용
+const BROADCAST_KEY_SEP = '||';
+
+function normalizeDeviceId(id) {
+  return typeof id === 'string' ? id.trim().toLowerCase() : id;
+}
+
 /**
  * Telemetry 데이터 처리 Worker
  * 대량 데이터를 Queue에서 가져와 DB 저장, CSV 저장 및 WebSocket 브로드캐스트
@@ -109,6 +116,15 @@ class TelemetryWorker {
       return;
     }
 
+    // 진단: Worker 처리 시작 (어디서 멈추는지 확인용)
+    const firstItem = batch[0];
+    console.log('[Telemetry Worker] 🔄 TelemetryWorker start processing', {
+      batchLength: batch.length,
+      hubId: firstItem?.hubId,
+      deviceId: firstItem?.deviceId,
+      dataLength: firstItem?.data?.data?.length ?? firstItem?.data?.dataArr?.length ?? 'N/A',
+    });
+
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'workers/telemetryWorker.js:processBatch',message:'Processing batch',data:{batchSize:batch.length,queueRemaining:this.queue.length},timestamp:Date.now(),sessionId:'debug-session',runId:'runtime',hypothesisId:'D'})}).catch(()=>{});
     // #endregion
@@ -120,6 +136,7 @@ class TelemetryWorker {
         const dbStartTime = Date.now();
         await this.saveToDatabase(batch);
         const dbTime = Date.now() - dbStartTime;
+        console.log('[Telemetry Worker] ✅ Telemetry saved to DB', { batchLength: batch.length, dbTimeMs: dbTime });
 
         // CSV 저장
         const csvStartTime = Date.now();
@@ -218,10 +235,19 @@ class TelemetryWorker {
 
     // Bulk insert (Sequelize bulkCreate 사용)
     if (records.length > 0 && db.Telemetry) {
-      await db.Telemetry.bulkCreate(records, {
-        ignoreDuplicates: true,
-        validate: false // 성능을 위해 검증 생략
-      });
+      try {
+        await db.Telemetry.bulkCreate(records, {
+          ignoreDuplicates: true,
+          validate: false // 성능을 위해 검증 생략
+        });
+      } catch (dbError) {
+        console.error('[Telemetry Worker] ❌ Error saving telemetry (DB error)', {
+          message: dbError?.message,
+          recordCount: records.length,
+          firstRecord: records[0] ? { hub_address: records[0].hub_address, device_address: records[0].device_address } : null,
+        });
+        throw dbError;
+      }
     }
   }
 
@@ -346,8 +372,9 @@ class TelemetryWorker {
    */
   addToBroadcastBuffer(batch) {
     for (const item of batch) {
-      const { hubId, deviceId, data, publishStartTime } = item;
-      const key = `${hubId}:${deviceId}`;
+      const { hubId, deviceId: rawDeviceId, data, publishStartTime } = item;
+      const deviceId = normalizeDeviceId(rawDeviceId);
+      const key = `${hubId}${BROADCAST_KEY_SEP}${deviceId}`;
 
       // 신호처리 수행
       let processedData = { ...data };
@@ -468,8 +495,9 @@ class TelemetryWorker {
    */
   startMeasurement(deviceId) {
     if (deviceId) {
-      this.measuringDevices.add(deviceId);
-      console.log(`[Telemetry Worker] ✅ Measurement started for device: ${deviceId}`);
+      const id = normalizeDeviceId(deviceId);
+      this.measuringDevices.add(id);
+      console.log(`[Telemetry Worker] ✅ Measurement started for device: ${id}`);
     }
   }
 
@@ -478,11 +506,14 @@ class TelemetryWorker {
    */
   stopMeasurement(deviceId) {
     if (deviceId) {
+      const id = normalizeDeviceId(deviceId);
       this.measuringDevices.delete(deviceId);
+      this.measuringDevices.delete(id);
       // 버퍼도 정리
       for (const key of this.broadcastBuffer.keys()) {
-        const [, devId] = key.split(':');
-        if (devId === deviceId) {
+        const parts = key.split(BROADCAST_KEY_SEP);
+        const devId = parts.length >= 2 ? parts[1] : '';
+        if (devId === id) {
           this.broadcastBuffer.delete(key);
           this.lastBroadcastTime.delete(key);
         }
@@ -499,20 +530,22 @@ class TelemetryWorker {
       return;
     }
 
+    // 진단: 브로드캐스트 단계 진입 (버퍼에 데이터 있음)
+    const bufferKeys = Array.from(this.broadcastBuffer.keys());
+    console.log('[Telemetry Worker] 📡 broadcastBuffered running', { bufferSize: this.broadcastBuffer.size, keys: bufferKeys.slice(0, 5) });
+
     const broadcastStartTime = Date.now();
     let broadcastCount = 0;
 
     for (const [key, dataArray] of this.broadcastBuffer.entries()) {
       if (dataArray.length === 0) continue;
 
-      const [hubId, deviceId] = key.split(':');
+      const parts = key.split(BROADCAST_KEY_SEP);
+      const hubId = parts[0];
+      const deviceId = parts.length >= 2 ? parts[1] : '';
       
-      // ✅ 측정 중이 아닌 디바이스는 전송하지 않음
-      if (!this.measuringDevices.has(deviceId)) {
-        // 측정 중이 아니면 버퍼에서 제거
-        this.broadcastBuffer.delete(key);
-        continue;
-      }
+      // ✅ MQTT 수신 데이터는 항상 허브 소유자에게 전송 (측정 시작 여부와 무관)
+      // measuringDevices 체크 제거 → MQTT 들어오면 무조건 Socket.IO로 전달
       
       // ✅ Throttling: 최소 간격 이내면 스킵
       const lastBroadcast = this.lastBroadcastTime.get(key) || 0;
@@ -600,22 +633,22 @@ class TelemetryWorker {
             return;
           }
           
-          // ✅ Room에 socket이 없으면 경고 (연결 문제 가능성)
+          // ✅ Room에 socket이 없으면 경고 (연결 문제 가능성) — 이 디바이스만 스킵
           if (socketCount === 0) {
             console.warn(`[Telemetry Worker] ⚠️ No sockets in room "${roomName}" - user may be disconnected`, {
               hubId,
               deviceId,
               hubUserEmail: hub.user_email,
-              allRoomsCount: allRooms.length,
-              userRooms: userRooms,
             });
-            // 버퍼 유지 (연결 복구 시 전송)
-            return;
+            continue;
           }
           
           // ✅ emit 전송 및 확인
           try {
+            console.log('[Telemetry Worker] 📤 Socket emit telemetry', { hubId, deviceId, roomName, socketCount });
             this.io.to(roomName).emit('TELEMETRY', telemetryPayload);
+            // 소켓 전송 여부 확인용 로그 (MQTT → 큐 → Worker → Socket.IO 도달 확인)
+            console.log(`[Socket.IO] 📤 TELEMETRY 전송 완료 → room "${roomName}" (hub=${hubId} device=${deviceId} hr=${telemetryData?.hr ?? telemetryData?.processedHR ?? '-'})`);
             
             // ✅ emit 후 즉시 확인 (Socket.IO는 비동기이므로 완벽하지 않지만 참고용)
             const roomAfterEmit = this.io.sockets.adapter.rooms.get(roomName);
@@ -685,9 +718,11 @@ class TelemetryWorker {
     const result = {};
     
     for (const [key, dataArray] of this.broadcastBuffer.entries()) {
-      const [hubId, devId] = key.split(':');
+      const parts = key.split(BROADCAST_KEY_SEP);
+      const hubId = parts[0];
+      const devId = parts.length >= 2 ? parts[1] : '';
       
-      if (deviceId && devId !== deviceId) {
+      if (deviceId && devId !== normalizeDeviceId(deviceId)) {
         continue;
       }
       

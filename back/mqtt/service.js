@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const mqttClient = require('./client');
 
 /**
@@ -185,6 +187,21 @@ class MQTTService {
       timestamp: new Date().toISOString(),
     });
 
+    // ✅ 수신 데이터를 backend/data/json 에 그대로 저장
+    try {
+      const jsonDir = process.env.MQTT_JSON_OUTPUT_DIR
+        ? path.resolve(process.cwd(), process.env.MQTT_JSON_OUTPUT_DIR)
+        : path.join(process.cwd(), 'data', 'json');
+      const safeHubId = hubId.replace(/:/g, '_');
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `${safeHubId}_${timestamp}.json`;
+      const filePath = path.join(jsonDir, filename);
+      fs.mkdirSync(jsonDir, { recursive: true });
+      fs.writeFileSync(filePath, messageStr, 'utf8');
+    } catch (e) {
+      console.error(`[MQTT Service] JSON 저장 실패:`, e.message);
+    }
+
     // ✅ 문자열 형식 텔레메트리 처리 (device_mac_address-sampling_rate, hr, spo2, temp, battery)
     // 예: "d4:d5:3f:28:e1:f4-50.11,81,90,34.06,8" 또는 "d4:d5:3f:28:e1:f4-50.45,80,95,28.65,7"
     const parsedString = this.parseTestTelemetryLine(messageStr);
@@ -239,10 +256,11 @@ class MQTTService {
       };
 
       // 큐에 추가 (Worker가 CSV 저장 및 처리)
+      const deviceIdNorm = (deviceMac || '').trim().toLowerCase();
       if (this.telemetryQueue) {
         this.telemetryQueue.push({
           hubId,
-          deviceId: deviceMac,
+          deviceId: deviceIdNorm,
           data: telemetryData,
           timestamp: new Date(),
           topic,
@@ -279,8 +297,27 @@ class MQTTService {
       if (data.device_mac_address && Array.isArray(data.data)) {
         console.log(`[MQTT Service] 📊 Measurement data detected from hub ${hubId}, device ${data.device_mac_address}`);
         
-        // check.js와 동일한 로직으로 처리하기 위해 check.js의 로직을 호출
-        // 또는 직접 TELEMETRY 이벤트를 emit
+        // TelemetryWorker 큐에 추가 (Socket.IO 전송용) — 디바이스/CSV 결과와 무관하게 항상 푸시
+        const receiveStartTime = Date.now();
+        const deviceIdNorm = (data.device_mac_address || '').trim().toLowerCase();
+        if (this.telemetryQueue) {
+          this.telemetryQueue.push({
+            hubId,
+            deviceId: deviceIdNorm,
+            data,
+            timestamp: new Date(),
+            topic,
+            receiveStartTime,
+            publishStartTime: receiveStartTime,
+          });
+          console.log(`[MQTT Service] ✅ JSON telemetry → queue (Socket.IO 전달용)`, {
+            hubId,
+            deviceId: data.device_mac_address,
+            dataLength: data.data?.length || 0,
+            queueLength: this.telemetryQueue.length,
+          });
+        }
+        
         const db = require('../models');
         const csvWriter = require('../utils/csvWriter');
         
@@ -318,14 +355,7 @@ class MQTTService {
             }
           }
 
-            // ✅ Socket.IO로 즉시 전송하지 않고 TelemetryWorker 큐로만 처리
-            // (중복 전송 방지 및 서버 부하 감소)
-            // TelemetryWorker가 큐에서 데이터를 가져와 배치 처리 및 Socket.IO로 전송
-            console.log(`[MQTT Service] ✅ JSON format telemetry queued for TelemetryWorker processing`, {
-              hubId,
-              deviceId: data.device_mac_address,
-              dataLength: data.data?.length || 0,
-            });
+            // (큐 푸시는 위에서 이미 수행됨)
         } catch (error) {
           console.error(`[MQTT Service] Error processing measurement data:`, error);
         }
@@ -544,10 +574,11 @@ class MQTTService {
     };
 
     // 큐에 추가 (Worker가 CSV 저장 및 처리)
+    const deviceIdNormTest = (deviceMac || '').trim().toLowerCase();
     if (this.telemetryQueue) {
       this.telemetryQueue.push({
         hubId,
-        deviceId: deviceMac,
+        deviceId: deviceIdNormTest,
         data: telemetryData,
         timestamp: new Date(),
         topic,
@@ -685,10 +716,11 @@ class MQTTService {
     }
 
     // 큐에 추가 (Worker가 처리)
+    const deviceIdNormTelemetry = (deviceId || '').trim().toLowerCase();
     if (this.telemetryQueue) {
       this.telemetryQueue.push({
         hubId,
-        deviceId,
+        deviceId: deviceIdNormTelemetry,
         data: telemetryData,
         timestamp: new Date(),
         topic,

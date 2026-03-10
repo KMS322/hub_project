@@ -5,7 +5,7 @@ const http = require("http");
 const cors = require("cors");
 const { Server } = require("socket.io");
 const db = require("./models");
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 
 // #region agent log
 fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:8',message:'Server startup - checking JWT_SECRET',data:{hasJwtSecret:!!process.env.JWT_SECRET,jwtSecretLength:process.env.JWT_SECRET?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'startup',hypothesisId:'A'})}).catch(()=>{});
@@ -41,7 +41,7 @@ const TelemetryWorker = require("./workers/telemetryWorker");
 
 const server = http.createServer(app);
 
-// Socket.IO 초기화
+// Socket.IO 초기화 (장시간 연결 유지를 위해 ping 간격 확대)
 const io = new Server(server, {
   cors: {
     origin: true, // 모든 origin 허용 (요청 origin 그대로 반환)
@@ -56,6 +56,8 @@ const io = new Server(server, {
     preflightContinue: false,
     optionsSuccessStatus: 204,
   },
+  pingInterval: 25000,  // 25초마다 ping (기본 25s, 유지)
+  pingTimeout: 20000,   // 20초 내 pong 없으면 연결 종료 (기본 20s, 유지)
 });
 
 app.use(cors());

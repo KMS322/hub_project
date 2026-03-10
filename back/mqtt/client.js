@@ -12,7 +12,7 @@ class MQTTClient {
    * MQTT 브로커에 연결
    */
   connect() {
-    const brokerUrl = process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883';
+    const brokerUrl = process.env.MQTT_BROKER_URL || 'mqtt://192.168.0.23:1883';
     const options = {
       clientId: `backend_${Date.now()}`,
       clean: true,
@@ -86,24 +86,7 @@ class MQTTClient {
     // 메시지 수신 이벤트
     this.client.on('message', (topic, message) => {
       try {
-        // 모든 메시지에 대해 로그 출력 (디버깅용)
-        console.log(`\n[MQTT Client] 🔔 Raw message event received`);
-        console.log(`  Topic: ${topic}`);
-        console.log(`  Message type: ${typeof message}, isBuffer: ${Buffer.isBuffer(message)}`);
-        
-        // 명령 토픽과 receive 토픽은 무시 (자신이 발행한 메시지)
-        if (topic.includes('/command/')) {
-          console.log(`  ⏭️  Skipping command topic (self-published)`);
-          return; // 명령 토픽은 처리하지 않음
-        }
-        
-        // receive 토픽도 무시 (백엔드가 허브에 명령을 보내는 토픽)
-        if (topic.includes('/receive')) {
-          console.log(`  ⏭️  Skipping receive topic (self-published)`);
-          return; // receive 토픽은 처리하지 않음
-        }
-
-        // Buffer를 문자열로 변환
+        // Buffer를 문자열로 변환 (로그용)
         let payload;
         if (Buffer.isBuffer(message)) {
           payload = message.toString('utf8');
@@ -112,12 +95,17 @@ class MQTTClient {
         } else {
           payload = String(message);
         }
+        const preview = payload.length > 200 ? payload.substring(0, 200) + '...' : payload;
+        // 수신한 모든 MQTT 메시지를 백엔드 콘솔에 한 줄로 출력
+        console.log(`[MQTT] 📥 ${topic} | ${preview.replace(/\n/g, ' ')}`);
 
-        // 터미널에 메시지 수신 로그 출력
-        console.log(`\n[MQTT Client] 📥 Message received`);
-        console.log(`  Topic: ${topic}`);
-        console.log(`  Size: ${message.length} bytes`);
-        console.log(`  Payload preview: ${payload.substring(0, 300)}${payload.length > 300 ? '...' : ''}`);
+        // 명령 토픽과 receive 토픽은 무시 (자신이 발행한 메시지)
+        if (topic.includes('/command/')) {
+          return;
+        }
+        if (topic.includes('/receive')) {
+          return;
+        }
 
         let parsedMessage;
         try {

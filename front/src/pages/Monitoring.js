@@ -255,6 +255,17 @@ function Monitoring() {
     
     // TELEMETRY 데이터 수신 핸들러
     const handleTelemetry = (data) => {
+      // 소켓 수신 확인용 콘솔 로그 (MQTT → 서버 → Socket.IO → 프론트 도달 여부 확인)
+      console.log('[Socket] 📥 TELEMETRY 수신', {
+        deviceId: data.deviceId,
+        hubId: data.hubId,
+        type: data.type,
+        hr: data.data?.hr ?? data.data?.processedHR,
+        spo2: data.data?.spo2,
+        temp: data.data?.temp,
+        battery: data.data?.battery,
+        timestamp: data.timestamp,
+      })
       if (data.type !== 'sensor_data' || !data.deviceId) return
       
       const currentDeviceInfo = deviceInfoRef.current
@@ -740,7 +751,7 @@ function Monitoring() {
         const startTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}:${String(now.getMilliseconds()).padStart(3, '0')}`
         
         if (command.action === 'start_measurement') {
-          const result = await axiosInstance.post('/api/measurement/start', {
+          const result = await axiosInstance.post('/measurement/start', {
             deviceAddress: deviceMacAddress,
             userEmail: user?.email || '',
             petName: petInfo?.name || '테스트펫',
@@ -750,7 +761,7 @@ function Monitoring() {
             console.error('[Monitoring] Failed to start CSV session:', result.data.message)
           }
         } else {
-          const result = await axiosInstance.post('/api/measurement/stop', {
+          const result = await axiosInstance.post('/measurement/stop', {
             deviceAddress: deviceMacAddress
           })
           if (!result.data.success) {

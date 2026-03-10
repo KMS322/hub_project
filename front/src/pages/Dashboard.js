@@ -413,7 +413,7 @@ function Dashboard() {
       ).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}:${String(
         now.getMilliseconds()
       ).padStart(3, "0")}`;
-      const result = await axiosInstance.post("/api/measurement/start", {
+      const result = await axiosInstance.post("/measurement/start", {
         deviceAddress: device.address,
         userEmail: user?.email || "",
         petName: device.connectedPatient?.name || "테스트펫",
@@ -463,7 +463,7 @@ function Dashboard() {
     });
     // CSV 세션 종료
     try {
-      const result = await axiosInstance.post("/api/measurement/stop", {
+      const result = await axiosInstance.post("/measurement/stop", {
         deviceAddress: device.address,
       });
       if (!result.data.success) {
