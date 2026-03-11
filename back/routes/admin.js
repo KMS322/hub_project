@@ -12,9 +12,12 @@ const router = express.Router();
 const { verifyToken, verifyAdmin } = require('../middlewares/auth');
 const adminErrorController = require('../admin/adminErrorController');
 const adminCsvController = require('../admin/adminCsvController');
+const adminConnectionController = require('../admin/adminConnectionController');
 
 router.use(verifyToken);
 router.use(verifyAdmin);
+
+router.get('/connection-status', adminConnectionController.getConnectionStatus);
 
 router.get('/errors', adminErrorController.getErrors);
 router.get('/errors/stats', adminErrorController.getStats);

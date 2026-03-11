@@ -42,6 +42,14 @@ export async function getAdminHealth() {
 }
 
 /**
+ * GET /api/admin/connection-status - 사용자별 허브/디바이스 연결 상태 및 측정 여부
+ */
+export async function getAdminConnectionStatus() {
+  const { data } = await axiosInstance.get('/admin/connection-status');
+  return data;
+}
+
+/**
  * GET /api/admin/csv-files - 유저별 전체 CSV 목록 (admin only)
  */
 export async function getAdminCsvFiles() {

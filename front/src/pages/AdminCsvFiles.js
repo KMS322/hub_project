@@ -71,6 +71,7 @@ export default function AdminCsvFiles() {
         <nav className="admin-csv-files__nav">
           <Link to="/admin/system-logs">시스템 로그</Link>
           <Link to="/admin/system-health">시스템 상태</Link>
+          <Link to="/admin/connection-status">연결 상태</Link>
         </nav>
         <p className="admin-csv-files__hint">back/csv_files 폴더의 모든 CSV를 유저(폴더)별로 표시합니다.</p>
         {users.length === 0 ? (

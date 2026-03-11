@@ -3,6 +3,7 @@ const path = require('path');
 const mqttClient = require('./client');
 const { createError, ERROR_REASON } = require('../core/error/errorFactory');
 const { logError } = require('../core/error/errorLogger');
+const presenceStore = require('../core/presenceStore');
 
 const MQTT_PAYLOAD_MAX_BYTES = 1024 * 1024; // 1MB
 
@@ -145,6 +146,8 @@ class MQTTService {
 
     console.log(`[MQTT Service] 🔌 Hub ${hubId} status:`, JSON.stringify(statusData, null, 2));
 
+    presenceStore.updateHubSeen(hubId);
+
     // Socket.IO로 클라이언트에 전달
     if (this.io) {
       this.io.emit('TELEMETRY', {
@@ -171,6 +174,7 @@ class MQTTService {
     const parts = topic.split('/');
     const hubId = parts[1]; // hub/80:b5:4e:db:44:9a/send에서 허브 ID 추출
     this.setHubTopicMode(hubId, 'prod');
+    presenceStore.updateHubSeen(hubId);
     
     let messageStr;
     try {
@@ -223,6 +227,7 @@ class MQTTService {
       
       const deviceMac = parsedString.device_mac_address;
       const samplingRate = parsedString.sampling_rate || 50;
+      presenceStore.updateDeviceSeen(hubId, deviceMac);
 
       // 배터리/온도 캐시 정책 적용
       const currentBattery = parsedString.battery || 0;
@@ -308,6 +313,7 @@ class MQTTService {
       
       // 측정 데이터인지 확인 (device_mac_address와 data 배열이 있으면 측정 데이터)
       if (data.device_mac_address && Array.isArray(data.data)) {
+        presenceStore.updateDeviceSeen(hubId, data.device_mac_address);
         console.log(`[MQTT Service] 📊 Measurement data detected from hub ${hubId}, device ${data.device_mac_address}`);
         
         // TelemetryWorker 큐에 추가 (Socket.IO 전송용) — 디바이스/CSV 결과와 무관하게 항상 푸시
@@ -414,6 +420,8 @@ class MQTTService {
             macList,
           );
 
+          presenceStore.setHubConnectedDevices(hubId, macList);
+
           // ✅ 연결된 디바이스 목록을 DB에 등록/업데이트 (connect:devices, state:hub 응답 공통)
           // - DB에 없으면 생성
           // - 있으면 hub_address/updatedAt 갱신
@@ -512,6 +520,7 @@ class MQTTService {
     // test/hub/{hubId}/send
     const hubId = parts[2];
     this.setHubTopicMode(hubId, 'test');
+    presenceStore.updateHubSeen(hubId);
 
     let messageStr;
     try {
@@ -544,6 +553,7 @@ class MQTTService {
 
     const deviceMac = parsed.device_mac_address;
     const samplingRate = parsed.sampling_rate || 50;
+    presenceStore.updateDeviceSeen(hubId, deviceMac);
 
     // 배터리/온도 캐시 정책 동일 적용 (0이면 캐시 사용)
     const currentBattery = parsed.battery || 0;
@@ -683,16 +693,19 @@ class MQTTService {
     const { hubId, deviceId } = this.extractHubDeviceId(topic);
     this.setHubTopicMode(hubId, 'prod');
     
+    presenceStore.updateHubSeen(hubId);
+    presenceStore.updateDeviceSeen(hubId, deviceId);
+
     // 허브와 디바이스의 마지막 활동 시간 업데이트 (온라인 상태 표시용)
     try {
       const db = require('../models');
-      
+
       // 허브 마지막 활동 시간 업데이트
       const hub = await db.Hub.findByPk(hubId);
       if (hub) {
         await hub.update({ updatedAt: new Date() });
       }
-      
+
       // 디바이스 마지막 활동 시간 업데이트
       const device = await db.Device.findByPk(deviceId);
       if (device) {
@@ -772,6 +785,9 @@ class MQTTService {
     }
 
     console.log(`[MQTT Service] 📨 Hub ${hubId} Device ${deviceId} response:`, JSON.stringify(responseData, null, 2));
+
+    presenceStore.updateHubSeen(hubId);
+    presenceStore.updateDeviceSeen(hubId, deviceId);
 
     // requestId로 대기 중인 명령 찾기
     const requestId = responseData.requestId;

@@ -1,0 +1,159 @@
+.admin-connection-monitor {
+  min-height: 100vh;
+  background: var(--admin-bg, #1a1a2e);
+  color: var(--admin-text, #eee);
+}
+
+.admin-connection-monitor__main {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.admin-connection-monitor__main h1 {
+  font-size: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.admin-connection-monitor__nav {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.admin-connection-monitor__nav a {
+  color: #7dd3fc;
+  text-decoration: none;
+}
+
+.admin-connection-monitor__nav a:hover {
+  text-decoration: underline;
+}
+
+.admin-connection-monitor__hint {
+  font-size: 0.875rem;
+  color: #94a3b8;
+  margin-bottom: 1rem;
+}
+
+.admin-connection-monitor__error {
+  color: #f87171;
+  margin-bottom: 1rem;
+}
+
+.admin-connection-monitor__empty {
+  color: #94a3b8;
+}
+
+.admin-connection-monitor__users {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.admin-connection-monitor__user {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.admin-connection-monitor__user-title {
+  font-size: 1.1rem;
+  margin-bottom: 0.75rem;
+}
+
+.admin-connection-monitor__user-email {
+  font-size: 0.85rem;
+  color: #94a3b8;
+  font-weight: normal;
+}
+
+.admin-connection-monitor__hubs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.admin-connection-monitor__hub {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+}
+
+.admin-connection-monitor__hub-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.admin-connection-monitor__hub-name {
+  font-weight: 600;
+}
+
+.admin-connection-monitor__hub-status {
+  font-size: 0.8rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+}
+
+.admin-connection-monitor__hub-status.online {
+  background: #166534;
+  color: #dcfce7;
+}
+
+.admin-connection-monitor__hub-status.offline {
+  background: #991b1b;
+  color: #fecaca;
+}
+
+.admin-connection-monitor__hub-last {
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+.admin-connection-monitor__devices {
+  list-style: none;
+  margin: 0;
+  padding-left: 1rem;
+  border-left: 2px solid rgba(255, 255, 255, 0.15);
+}
+
+.admin-connection-monitor__device {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+  font-size: 0.9rem;
+}
+
+.admin-connection-monitor__device--empty {
+  color: #64748b;
+}
+
+.admin-connection-monitor__device-name {
+  min-width: 180px;
+}
+
+.admin-connection-monitor__device-badge {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+}
+
+.admin-connection-monitor__device-badge.connected {
+  background: #16534e;
+  color: #99f6e4;
+}
+
+.admin-connection-monitor__device-badge.disconnected {
+  background: #450a0a;
+  color: #fecaca;
+}
+
+.admin-connection-monitor__device-badge.measuring {
+  background: #1e3a5f;
+  color: #93c5fd;
+}

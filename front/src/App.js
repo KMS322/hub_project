@@ -27,6 +27,7 @@ import HrvAnalysis from './pages/HrvAnalysis'
 import AdminSystemLogs from './pages/AdminSystemLogs'
 import AdminSystemHealth from './pages/AdminSystemHealth'
 import AdminCsvFiles from './pages/AdminCsvFiles'
+import AdminConnectionMonitor from './pages/AdminConnectionMonitor'
 import GlobalErrorModal from './components/GlobalErrorModal'
 import './App.css'
 
@@ -87,6 +88,11 @@ function AppContent() {
     const checkHardware = async () => {
       if (!isAuthenticated) return
       if (checkCompleted) return
+      // 어드민은 본인 소유 허브/디바이스 체크 생략 (어드민 페이지에서 전체 데이터 조회)
+      if (isAdmin) {
+        setCheckCompleted(true)
+        return
+      }
       if (HARDWARE_CHECK_EXCLUDE_PATHS.has(location.pathname)) {
         // Guide 페이지에서는 체크를 완료 상태로 설정 (체크하지 않음)
         setCheckCompleted(true)
@@ -136,7 +142,7 @@ function AppContent() {
     }
 
     checkHardware()
-  }, [isAuthenticated, checkCompleted, location.pathname, isMonitoringPage])
+  }, [isAuthenticated, isAdmin, checkCompleted, location.pathname, isMonitoringPage])
 
   const handleModalClose = () => {
     setConfirmModal({
@@ -246,8 +252,8 @@ function AppContent() {
         <Route
           path="/admin/system-logs"
           element={
-            !isAuthenticated ? <Navigate to="/login" /> :
-            !isAdmin ? <Navigate to="/dashboard" /> :
+            // !isAuthenticated ? <Navigate to="/login" /> :
+            // !isAdmin ? <Navigate to="/dashboard" /> :
             <AdminSystemLogs />
           }
         />
@@ -265,6 +271,14 @@ function AppContent() {
             !isAuthenticated ? <Navigate to="/login" /> :
             !isAdmin ? <Navigate to="/dashboard" /> :
             <AdminCsvFiles />
+          }
+        />
+        <Route
+          path="/admin/connection-status"
+          element={
+            !isAuthenticated ? <Navigate to="/login" /> :
+            !isAdmin ? <Navigate to="/dashboard" /> :
+            <AdminConnectionMonitor />
           }
         />
 

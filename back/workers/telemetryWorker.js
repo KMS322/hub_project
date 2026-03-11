@@ -502,6 +502,14 @@ class TelemetryWorker {
   }
 
   /**
+   * 현재 측정 중인 디바이스 ID 목록 반환 (어드민 모니터링용)
+   * @returns {string[]}
+   */
+  getMeasuringDevices() {
+    return Array.from(this.measuringDevices);
+  }
+
+  /**
    * 측정 정지 (디바이스별)
    */
   stopMeasurement(deviceId) {

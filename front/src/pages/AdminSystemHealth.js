@@ -43,6 +43,7 @@ export default function AdminSystemHealth() {
         <h1>시스템 상태</h1>
         <nav className="admin-health__nav">
           <Link to="/admin/system-logs">시스템 로그 (에러)</Link>
+          <Link to="/admin/connection-status">연결 상태</Link>
           <Link to="/admin/csv-files">CSV 파일</Link>
         </nav>
         <section className="admin-health__cards">
