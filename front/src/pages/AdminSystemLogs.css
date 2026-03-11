@@ -11,15 +11,26 @@
 
 .admin-logs__nav {
   margin-bottom: 1rem;
+  display: flex;
+  gap: 1rem;
 }
 
 .admin-logs__nav a {
-  color: #0066cc;
+  color: #7fbdfc;
   text-decoration: none;
+  border: 2px solid rgba(180, 180, 180, 0.74);
+  border-radius: 5px;
+  padding: 0.4rem;
+  box-shadow: 1px 1px 10px 0 rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
 }
 
 .admin-logs__nav a:hover {
-  text-decoration: underline;
+  color: #0066cc;
+  background-color: rgba(210, 210, 210, 0.204);
+  border-color: #0066cc;
+  box-shadow: 1px 1px 10px 0 rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
 }
 
 .stat-card--wide {
@@ -71,9 +82,10 @@
 
 .admin-system-logs__live {
   margin-bottom: 1.5rem;
-  display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
-  gap: 1rem;
+  gap: 2rem;
+  display: flex;
+  flex-direction: column;
 }
 
 .live-errors,
@@ -81,7 +93,7 @@
   border: 1px solid #eee;
   border-radius: 8px;
   padding: 1rem;
-  max-height: 280px;
+  max-height: 320px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
