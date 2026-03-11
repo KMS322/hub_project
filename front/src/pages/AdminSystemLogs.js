@@ -171,8 +171,9 @@ export default function AdminSystemLogs() {
         {/* Live streams */}
         <section className="admin-system-logs__live">
           <div className="live-errors">
-            <h2>실시간 에러 스트림 {isConnected ? '(연결됨)' : '(연결 끊김)'}</h2>
+            <div className="live-errors-list-box">
             <div className="live-list">
+            <h2>실시간 에러 스트림 {isConnected ? '(연결됨)' : '(연결 끊김)'}</h2>
               {liveErrors.length === 0 ? (
                 <p className="live-empty">실시간 에러가 없습니다.</p>
               ) : (
@@ -186,6 +187,57 @@ export default function AdminSystemLogs() {
                   </div>
                 ))
               )}
+            </div>
+            <div className="live-logs-category-list">
+              <h3>카테고리별 로그</h3>
+              {loadingStats ? (
+                <LoadingSpinner />
+              ) : (
+                <>
+                  <div className="category-summary">
+                    <span className="category-summary__total">총 에러 <strong>{stats.total}</strong>건</span>
+                    <span className="category-summary__24h">(최근 24h: {stats.last24h}건)</span>
+                  </div>
+                  <div className="category-grid">
+                    <div className="category-block">
+                      <h4>채널별</h4>
+                      {Object.keys(stats.byChannel || {}).length === 0 ? (
+                        <p className="category-empty">데이터 없음</p>
+                      ) : (
+                        <ul className="category-list">
+                          {Object.entries(stats.byChannel || {})
+                            .sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))
+                            .map(([channel, count]) => (
+                              <li key={channel}>
+                                <span className="category-label">{channel}</span>
+                                <span className="category-count">{count}건</span>
+                              </li>
+                            ))}
+                        </ul>
+                      )}
+                    </div>
+                    <div className="category-block">
+                      <h4>에러코드별</h4>
+                      {Object.keys(stats.byCode || {}).length === 0 ? (
+                        <p className="category-empty">데이터 없음</p>
+                      ) : (
+                        <ul className="category-list category-list--codes">
+                          {Object.entries(stats.byCode || {})
+                            .sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))
+                            .slice(0, 15)
+                            .map(([code, count]) => (
+                              <li key={code}>
+                                <code className="category-code">{code}</code>
+                                <span className="category-count">{count}건</span>
+                              </li>
+                            ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
             </div>
           </div>
           <div className="live-logs">

@@ -9,7 +9,7 @@ const getApiUrl = () => {
   // 개발 환경: localhost:5000
   // 프로덕션: 현재 호스트의 5000 포트
   if (import.meta.env.DEV) {
-    return 'http://creamoff.o-r.kr/api';
+    return 'https://creamoff.o-r.kr/api';
   }
   
   // 프로덕션 환경에서는 현재 호스트 사용 (포트 5000)
