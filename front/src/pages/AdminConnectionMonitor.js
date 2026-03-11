@@ -1,34 +1,32 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import AdminNav from '../components/AdminNav';
-import { getAdminConnectionStatus } from '../api/adminService';
+import { useSocket } from '../hooks/useSocket';
 import LoadingSpinner from '../components/LoadingSpinner';
 import './AdminConnectionMonitor.css';
 
-const POLL_INTERVAL_MS = 5000;
-
 export default function AdminConnectionMonitor() {
+  const { isConnected, on, off, emit } = useSocket();
   const [data, setData] = useState({ users: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const load = () => {
-    getAdminConnectionStatus()
-      .then((res) => {
-        if (res.success && res.data && Array.isArray(res.data.users)) {
-          setData(res.data);
-          setError(null);
-        }
-      })
-      .catch((e) => setError(e?.message || '연결 상태 조회 실패'))
-      .finally(() => setLoading(false));
-  };
-
   useEffect(() => {
-    load();
-    const interval = setInterval(load, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, []);
+    if (!isConnected) {
+      setLoading(true);
+      return;
+    }
+    emit('join-admin-connection-status');
+    const handleStatus = (payload) => {
+      if (payload && typeof payload === 'object' && Array.isArray(payload.users)) {
+        setData({ users: payload.users });
+        setError(null);
+      }
+      setLoading(false);
+    };
+    on('admin-connection-status', handleStatus);
+    return () => off('admin-connection-status', handleStatus);
+  }, [isConnected, on, off, emit]);
 
   const formatLastSeen = (ts) => {
     if (ts == null) return '-';
@@ -59,7 +57,7 @@ export default function AdminConnectionMonitor() {
           <Link to="/admin/csv-files">CSV 파일</Link>
         </nav>
         <p className="admin-connection-monitor__hint">
-          사용자별 허브 연결 상태, 디바이스 연결 상태, 측정 여부를 표시합니다. 5초마다 자동 갱신됩니다.
+          사용자별 허브 연결 상태, 디바이스 연결 상태, 측정 여부를 Socket.IO로 실시간 갱신합니다. 진입 시 모든 허브에 state:hub 요청을 보내 현재 연결된 디바이스를 불러옵니다.
         </p>
         {error && <p className="admin-connection-monitor__error">{error}</p>}
         {data.users.length === 0 && !error ? (

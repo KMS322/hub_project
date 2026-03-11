@@ -17,9 +17,10 @@ const MQTT_PAYLOAD_MAX_BYTES = 1024 * 1024; // 1MB
  * - hub/{hubId}/status - 허브 상태
  */
 class MQTTService {
-  constructor(io = null, telemetryQueue = null) {
+  constructor(io = null, telemetryQueue = null, app = null) {
     this.io = io; // Socket.IO 인스턴스
     this.telemetryQueue = telemetryQueue; // Telemetry 데이터 큐
+    this.app = app; // Express app (admin 연결 상태 스냅샷 전송용)
     this.pendingCommands = new Map(); // requestId 기반 명령 대기 목록
     this.hubCallbacks = new Map(); // 허브별 콜백 저장
     this.batteryCache = new Map(); // 디바이스별 마지막 배터리 값 저장
@@ -494,6 +495,15 @@ class MQTTService {
                 connected_devices: macList,
                 timestamp: new Date().toISOString(),
               });
+            }
+            // ✅ 어드민 연결 상태 룸에 스냅샷 전송 (실시간 갱신)
+            if (this.app) {
+              const { getConnectionStatusData } = require('../admin/adminConnectionController');
+              getConnectionStatusData(this.app)
+                .then((data) => {
+                  if (this.io) this.io.to('admin/connection-status').emit('admin-connection-status', data);
+                })
+                .catch((err) => console.error('[MQTT Service] admin-connection-status snapshot error:', err));
             }
           }
         } else {

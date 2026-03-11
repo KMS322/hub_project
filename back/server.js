@@ -101,8 +101,8 @@ const telemetryWorker = new TelemetryWorker(io, telemetryQueue, {
 // Socket.IO 인스턴스에 TelemetryWorker 참조 추가 (측정 시작/정지 제어용)
 io.telemetryWorker = telemetryWorker;
 
-// MQTT 서비스 초기화 (Telemetry 큐 전달, Socket.IO는 이벤트 전송용)
-const mqttService = new MQTTService(io, telemetryQueue);
+// MQTT 서비스 초기화 (Telemetry 큐 전달, Socket.IO는 이벤트 전송용, app은 admin 연결 상태 스냅샷용)
+const mqttService = new MQTTService(io, telemetryQueue, app);
 mqttService.initialize();
 app.set("mqtt", mqttService);
 app.set("telemetryWorker", telemetryWorker);
@@ -112,7 +112,7 @@ io.mqttService = mqttService;
 
 // Socket.IO 핸들러 설정
 const socketHandler = require("./socket");
-socketHandler(io);
+socketHandler(io, app);
 
 // Error Framework: single stream for PM2 | DB | Realtime (setSocketInstance for broadcastError)
 setSocketInstance(io);
