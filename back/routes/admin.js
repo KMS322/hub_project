@@ -11,6 +11,7 @@ const express = require('express');
 const router = express.Router();
 const { verifyToken, verifyAdmin } = require('../middlewares/auth');
 const adminErrorController = require('../admin/adminErrorController');
+const adminCsvController = require('../admin/adminCsvController');
 
 router.use(verifyToken);
 router.use(verifyAdmin);
@@ -19,6 +20,9 @@ router.get('/errors', adminErrorController.getErrors);
 router.get('/errors/stats', adminErrorController.getStats);
 router.get('/errors/device-stats', adminErrorController.getDeviceStats);
 router.get('/errors/device/:deviceId', adminErrorController.getErrorsByDevice);
+
+router.get('/csv-files', adminCsvController.getCsvFiles);
+router.get('/csv-files/download', adminCsvController.downloadCsvFile);
 
 /**
  * GET /api/admin/health - system health for observability dashboard

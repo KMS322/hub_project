@@ -39,7 +39,7 @@ const adminRoutes = require("./routes/admin");
 const initializeDatabase = require("./seeders/init");
 const { errorMiddleware } = require("./middlewares/errorHandler");
 const errorRepository = require("./database/errorRepository");
-const { setSocketInstance } = require("./core/error/errorStream");
+const { setSocketInstance, startCaptureStdoutStderr } = require("./core/error/errorStream");
 const MQTTService = require("./mqtt/service");
 const TelemetryWorker = require("./workers/telemetryWorker");
 
@@ -116,6 +116,8 @@ socketHandler(io);
 
 // Error Framework: single stream for PM2 | DB | Realtime (setSocketInstance for broadcastError)
 setSocketInstance(io);
+// 터미널 stdout/stderr 전체를 실시간 서버 로그로 admin에 전송
+startCaptureStdoutStderr();
 app.use(errorMiddleware());
 
 db.sequelize

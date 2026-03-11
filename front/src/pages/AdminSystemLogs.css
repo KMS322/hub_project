@@ -135,7 +135,7 @@
 
 .live-logs__list li {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.5rem;
   padding: 0.15rem 0;
 }
@@ -173,9 +173,10 @@
 
 .log-message {
   flex: 1;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  min-width: 0;
 }
 
 .admin-system-logs__filters {

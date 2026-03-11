@@ -77,9 +77,10 @@ module.exports = (io, app) => {
     
     console.log(`[Socket] ✅ "connected" event emitted to socket ${socket.id}`);
 
-    // Admin dashboard: join room for real-time error stream
+    // Admin dashboard: join rooms for real-time error + stdout/stderr log stream
     socket.on("join-admin-errors", () => {
       socket.join("admin/errors");
+      socket.join("admin/logs"); // 실시간 서버 로그(터미널 전체 출력) 수신
     });
 
     /**

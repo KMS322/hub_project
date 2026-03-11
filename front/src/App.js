@@ -26,6 +26,8 @@ import HardwareErrorTest from './pages/HardwareErrorTest'
 import HrvAnalysis from './pages/HrvAnalysis'
 import AdminSystemLogs from './pages/AdminSystemLogs'
 import AdminSystemHealth from './pages/AdminSystemHealth'
+import AdminCsvFiles from './pages/AdminCsvFiles'
+import GlobalErrorModal from './components/GlobalErrorModal'
 import './App.css'
 
 function AppContent() {
@@ -257,6 +259,14 @@ function AppContent() {
             <AdminSystemHealth />
           }
         />
+        <Route
+          path="/admin/csv-files"
+          element={
+            !isAuthenticated ? <Navigate to="/login" /> :
+            !isAdmin ? <Navigate to="/dashboard" /> :
+            <AdminCsvFiles />
+          }
+        />
 
         {/* 루트: 관리자는 어드민, 일반 사용자는 대시보드 */}
         <Route
@@ -276,6 +286,8 @@ function AppContent() {
         onClose={handleModalClose}
         onConfirm={handleModalConfirm}
       />
+
+      <GlobalErrorModal />
       
       <ToastContainer />
     </div>

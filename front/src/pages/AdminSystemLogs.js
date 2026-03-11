@@ -120,6 +120,7 @@ export default function AdminSystemLogs() {
         <h1>시스템 로그 (에러 모니터링)</h1>
         <nav className="admin-logs__nav">
           <Link to="/admin/system-health">시스템 상태</Link>
+          <Link to="/admin/csv-files">CSV 파일</Link>
         </nav>
 
         {/* Stats */}
@@ -179,7 +180,7 @@ export default function AdminSystemLogs() {
             </div>
           </div>
           <div className="live-logs">
-            <h2>실시간 서버 로그 (PM2 / stdout)</h2>
+            <h2>실시간 서버 로그 (터미널 전체 stdout / stderr)</h2>
             <div className="live-logs__list">
               {liveLogs.length === 0 ? (
                 <p className="live-logs__empty">수신된 로그가 없습니다.</p>

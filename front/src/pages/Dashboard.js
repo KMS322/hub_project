@@ -14,6 +14,7 @@ import LoadingSpinner from "../components/LoadingSpinner";
 import { SkeletonCard } from "../components/Skeleton";
 import EmptyState from "../components/EmptyState";
 import axiosInstance from "../api/axios";
+import { useErrorModalStore } from "../stores/useErrorModalStore";
 import "./Dashboard.css";
 function Dashboard() {
   const navigate = useNavigate();
@@ -40,6 +41,8 @@ function Dashboard() {
   const lastValidHrRef = useRef({}); // 디바이스별 마지막 유효한 HR 값 { deviceAddress: number }
   const lastToastTimeRef = useRef({}); // 디바이스별 마지막 토스트 표시 시간 { deviceAddress: { type7: timestamp, type8: timestamp, type9: timestamp } }
   const hubTimeoutRefs = useRef({}); // 허브별 타임아웃 참조 (컴포넌트 상단으로 이동)
+  const controlRequestTimeoutsRef = useRef({}); // 측정 시작/정지 명령 응답 대기 타임아웃 (requestId별)
+  const showErrorModal = useErrorModalStore((s) => s.showErrorModal);
   // 데이터 로드
   useEffect(() => {
     loadData();
@@ -287,6 +290,18 @@ function Dashboard() {
     };
     // 측정 시작/정지 결과 수신
     const handleControlResult = (data) => {
+      const reqId = data.requestId;
+      if (reqId && controlRequestTimeoutsRef.current[reqId]) {
+        clearTimeout(controlRequestTimeoutsRef.current[reqId]);
+        delete controlRequestTimeoutsRef.current[reqId];
+      }
+      if (!data.success) {
+        showErrorModal("명령 실패", data.error || "서버 또는 MQTT에서 명령 처리에 실패했습니다.");
+        if (data.deviceId) {
+          setMeasurementStates((prev) => ({ ...prev, [data.deviceId]: false }));
+        }
+        return;
+      }
       if (data.success && data.deviceId) {
         const command = data.data?.command || data.command || {};
         if (command.action === "start_measurement") {
@@ -310,7 +325,7 @@ function Dashboard() {
       off("CONNECTED_DEVICES", handleConnectedDevices);
       off("CONTROL_RESULT", handleControlResult);
     };
-  }, [isConnected, on, off, connectedDevices]);
+  }, [isConnected, on, off, connectedDevices, showErrorModal]);
   // 페이지 접속 시 허브 상태 체크 (한 번만)
   const hasCheckedRef = useRef(false);
   useEffect(() => {
@@ -438,6 +453,12 @@ function Dashboard() {
       },
       requestId,
     });
+    // 응답 없을 때 모달 (12초)
+    controlRequestTimeoutsRef.current[requestId] = setTimeout(() => {
+      delete controlRequestTimeoutsRef.current[requestId];
+      showErrorModal("측정 명령 응답 없음", "서버 또는 MQTT에서 응답이 없습니다. 연결을 확인해 주세요.");
+      setMeasurementStates((prev) => ({ ...prev, [device.address]: false }));
+    }, 12000);
     // 측정 상태 즉시 업데이트 (응답 대기 전)
     setMeasurementStates((prev) => ({
       ...prev,
@@ -485,6 +506,10 @@ function Dashboard() {
       },
       requestId,
     });
+    controlRequestTimeoutsRef.current[requestId] = setTimeout(() => {
+      delete controlRequestTimeoutsRef.current[requestId];
+      showErrorModal("측정 정지 명령 응답 없음", "서버 또는 MQTT에서 응답이 없습니다. 연결을 확인해 주세요.");
+    }, 12000);
     // 측정 상태 즉시 업데이트 (응답 대기 전)
     setMeasurementStates((prev) => ({
       ...prev,
