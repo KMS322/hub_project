@@ -64,7 +64,7 @@ const io = new Server(server, {
   pingTimeout: 20000,   // 20초 내 pong 없으면 연결 종료 (기본 20s, 유지)
 });
 
-app.use(cors());
+app.use(cors('http://localhost:5173'));
 app.use(express.json({ limit: '30mb' })); // 요청 크기 제한 추가
 app.use(express.urlencoded({ extended: true, limit: '30mb' })); // 요청 크기 제한 추가
 
