@@ -2,6 +2,7 @@ const jwt = require("jsonwebtoken");
 const db = require("../models");
 const { createError, ERROR_REASON } = require("../core/error/errorFactory");
 const { logError } = require("../core/error/errorLogger");
+const { getRecentLogs, getRecentErrors } = require("../core/error/errorStream");
 
 const SOCKET_PAYLOAD_MAX_BYTES = 100 * 1024; // 100KB
 
@@ -81,6 +82,19 @@ module.exports = (io, app) => {
     socket.on("join-admin-errors", () => {
       socket.join("admin/errors");
       socket.join("admin/logs"); // 실시간 서버 로그(터미널 전체 출력) 수신
+      // 접속 시 과거 로그/에러도 전달 (버퍼에 저장된 최근 N개)
+      try {
+        const recentLogs = getRecentLogs();
+        if (recentLogs.length > 0) {
+          socket.emit("server-log-history", recentLogs);
+        }
+        const recentErrors = getRecentErrors();
+        if (recentErrors.length > 0) {
+          socket.emit("server-error-history", recentErrors);
+        }
+      } catch (e) {
+        console.error("[Socket] Failed to send log/error history:", e);
+      }
     });
 
     /**

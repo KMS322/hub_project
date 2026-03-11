@@ -2,9 +2,15 @@
  * Realtime streams for admin dashboard.
  * - broadcastError: ServerError objects
  * - broadcastLog: structured log lines (info/warn/error)
+ * - 최근 N개를 버퍼에 저장해, 어드민 접속 시 과거 로그/에러도 함께 전달
  */
 
 let io = null;
+
+const LOG_BUFFER_MAX = 300;
+const ERROR_BUFFER_MAX = 100;
+const _logBuffer = [];
+const _errorBuffer = [];
 
 /**
  * @param {Object} socketServer - Socket.IO server instance
@@ -15,23 +21,40 @@ function setSocketInstance(socketServer) {
 
 /**
  * Emit server-error to room "admin/errors". Admin clients join via join-admin-errors.
+ * 최근 에러는 버퍼에 저장해 새로 접속한 어드민에게 과거 에러도 전달.
  * @param {Object} serverError - ServerError from errorFactory
  */
 function broadcastError(serverError) {
-  if (!io || typeof io.to !== 'function') return;
   const payload = { ...serverError };
   if (process.env.DEBUG !== 'true' && payload.stack) delete payload.stack;
-  io.to('admin/errors').emit('server-error', payload);
+  _errorBuffer.push(payload);
+  if (_errorBuffer.length > ERROR_BUFFER_MAX) _errorBuffer.shift();
+  if (io && typeof io.to === 'function') {
+    io.to('admin/errors').emit('server-error', payload);
+  }
 }
 
 /**
  * Emit structured log line to room "admin/logs".
- * Used for PM2/stdout logs so admin can see server logs in real time.
+ * 최근 로그는 버퍼에 저장해 새로 접속한 어드민에게 과거 로그도 전달.
  * @param {Object} logLine - { level, message, timestamp, ...meta }
  */
 function broadcastLog(logLine) {
-  if (!io || typeof io.to !== 'function') return;
-  io.to('admin/logs').emit('server-log', logLine);
+  _logBuffer.push({ ...logLine });
+  if (_logBuffer.length > LOG_BUFFER_MAX) _logBuffer.shift();
+  if (io && typeof io.to === 'function') {
+    io.to('admin/logs').emit('server-log', logLine);
+  }
+}
+
+/** 어드민 접속 시 과거 로그 전달용 (최신순 유지) */
+function getRecentLogs() {
+  return _logBuffer.slice();
+}
+
+/** 어드민 접속 시 과거 에러 전달용 (최신순 유지) */
+function getRecentErrors() {
+  return _errorBuffer.slice();
 }
 
 let _stdoutStderrCaptureStarted = false;
@@ -78,4 +101,6 @@ module.exports = {
   broadcastError,
   broadcastLog,
   startCaptureStdoutStderr,
+  getRecentLogs,
+  getRecentErrors,
 };

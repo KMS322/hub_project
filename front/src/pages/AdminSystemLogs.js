@@ -30,38 +30,46 @@ export default function AdminSystemLogs() {
   const liveErrorsRef = useRef([]);
   const liveLogsRef = useRef([]);
 
-  // Join admin errors room for real-time stream
+  // Join admin errors room + 과거 에러/로그 히스토리 수신
   useEffect(() => {
     if (!isConnected || !socketService?.getSocket) return;
     const socket = socketService.getSocket();
     if (!socket) return;
     socket.emit('join-admin-errors');
-    const handler = (err) => {
+
+    const historyErrors = (arr) => {
+      if (!Array.isArray(arr) || arr.length === 0) return;
+      const list = arr.map((e) => ({ ...e, _live: true })).reverse();
+      liveErrorsRef.current = list.slice(0, liveMax);
+      setLiveErrors([...liveErrorsRef.current]);
+    };
+    const historyLogs = (arr) => {
+      if (!Array.isArray(arr) || arr.length === 0) return;
+      const list = arr.map((l) => ({ ...l })).reverse();
+      liveLogsRef.current = list.slice(0, liveMax);
+      setLiveLogs([...liveLogsRef.current]);
+    };
+
+    const errHandler = (err) => {
       if (!err || typeof err !== 'object') return;
       liveErrorsRef.current = [{ ...err, _live: true }, ...liveErrorsRef.current].slice(0, liveMax);
       setLiveErrors([...liveErrorsRef.current]);
     };
-    on('server-error', handler);
-    return () => {
-      off('server-error', handler);
-    };
-  }, [isConnected, socketService, on, off]);
-
-  // Join admin logs room for real-time PM2/stdout logs
-  useEffect(() => {
-    if (!isConnected || !socketService?.getSocket) return;
-    const socket = socketService.getSocket();
-    if (!socket) return;
-    // 같은 네임스페이스에서 server-log 이벤트만 추가로 수신
-    socket.emit('join-admin-errors');
-    const handler = (log) => {
+    const logHandler = (log) => {
       if (!log || typeof log !== 'object') return;
       liveLogsRef.current = [{ ...log }, ...liveLogsRef.current].slice(0, liveMax);
       setLiveLogs([...liveLogsRef.current]);
     };
-    on('server-log', handler);
+
+    on('server-error-history', historyErrors);
+    on('server-error', errHandler);
+    on('server-log-history', historyLogs);
+    on('server-log', logHandler);
     return () => {
-      off('server-log', handler);
+      off('server-error-history', historyErrors);
+      off('server-error', errHandler);
+      off('server-log-history', historyLogs);
+      off('server-log', logHandler);
     };
   }, [isConnected, socketService, on, off]);
 
