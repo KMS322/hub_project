@@ -563,8 +563,6 @@ class TelemetryWorker {
         const roomName = `user:${(hub.user_email || '').trim().toLowerCase()}`;
         const room = this.io.sockets.adapter.rooms.get(roomName);
         const socketCount = room ? room.size : 0;
-        const adminRoom = this.io.sockets.adapter.rooms.get('admin/telemetry');
-        const adminSocketCount = adminRoom ? adminRoom.size : 0;
 
         if (!this.io || !this.io.sockets) {
           continue;
@@ -581,7 +579,7 @@ class TelemetryWorker {
             throw emitError;
           }
         }
-        if (!emitted && adminSocketCount > 0) {
+        if (!emitted) {
           try {
             this.io.to('admin/telemetry').emit('TELEMETRY', telemetryPayload);
             broadcastCount++;
