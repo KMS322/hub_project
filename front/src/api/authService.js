@@ -46,6 +46,15 @@ const authService = {
   },
 
   /**
+   * 역할 조회 (토큰 검증 + 어드민 여부). 초기 라우팅용.
+   * @returns {Promise<{ success: boolean, isAdmin: boolean, role: string }>}
+   */
+  getRole: async () => {
+    const response = await axiosInstance.get('/auth/role');
+    return response.data;
+  },
+
+  /**
    * 사용자 정보 조회
    * @returns {Promise<{user: Object}>}
    */

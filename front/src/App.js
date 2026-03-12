@@ -8,6 +8,7 @@ import {
 } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { useAuthStore } from './stores/useAuthStore'
+import authService from './api/authService'
 import hubService from './api/hubService'
 import deviceService from './api/deviceService'
 import ConfirmModal from './components/ConfirmModal'
@@ -40,13 +41,19 @@ function AppContent() {
 
   const token = useAuthStore((state) => state.token)
   const user = useAuthStore((state) => state.user)
+  const updateUser = useAuthStore((state) => state.updateUser)
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
   const userRole = user?.role
   const isAdmin = userRole === 'admin'
   const canAccessWithoutLogin = GUEST_ACCESS && !isAuthenticated
 
-  // persist 복원 전: token은 있는데 user가 아직 null이면 아직 role을 모름 → 대시보드로 잘못 가지 않도록 복원 완료까지 대기
-  const authReady = token === null || token === undefined || user !== null
+  const [roleChecked, setRoleChecked] = useState(false)
+  const authReady = !token || roleChecked
+
+  // 토큰이 생기면(재접속 시 persist 복원) 서버에서 역할을 다시 조회해야 하므로 리셋
+  useEffect(() => {
+    if (token) setRoleChecked(false)
+  }, [token])
 
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
@@ -92,6 +99,27 @@ function AppContent() {
       }
     }
   }, [location.pathname, isMonitoringPage])
+
+  // 토큰이 있으면 서버에서 역할 조회 후 스토어 반영 (어드민/일반 라우팅 확정)
+  useEffect(() => {
+    if (!token) {
+      setRoleChecked(true)
+      return
+    }
+    let mounted = true
+    authService
+      .getRole()
+      .then((res) => {
+        if (mounted && res.success) {
+          updateUser({ role: res.role })
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (mounted) setRoleChecked(true)
+      })
+    return () => { mounted = false }
+  }, [token, updateUser])
 
   useEffect(() => {
     const checkHardware = async () => {

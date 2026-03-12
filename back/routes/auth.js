@@ -203,6 +203,15 @@ router.post("/login", async (req, res) => {
   }
 });
 
+/** 로그인 여부 + 역할만 반환 (프론트 초기 라우팅용). verifyToken에서 이미 DB 조회로 role 설정함 */
+router.get("/role", verifyToken, (req, res) => {
+  res.json({
+    success: true,
+    isAdmin: (req.user && req.user.role === "admin") || false,
+    role: req.user?.role || "user",
+  });
+});
+
 router.get("/me", verifyToken, async (req, res) => {
   try {
     const user = await db.User.findByPk(req.user.email);
