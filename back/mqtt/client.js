@@ -100,9 +100,12 @@ class MQTTClient {
         } else {
           payload = String(message);
         }
-        // hub/+/send 텔레메트리는 로그 생략 (초당 다수 수신)
+        // hub/+/send 텔레메트리는 긴 payload 대신 요약만 로그 (수신 여부는 보이게)
         const isTelemetry = topic.includes('/send') && payload.length > 500;
-        if (!isTelemetry) {
+        if (isTelemetry) {
+          const kb = (payload.length / 1024).toFixed(1);
+          console.log(`[MQTT] 📥 ${topic} | 수신 ${kb}KB`);
+        } else {
           const preview = payload.length > 200 ? payload.substring(0, 200) + '...' : payload;
           console.log(`[MQTT] 📥 ${topic} | ${preview.replace(/\n/g, ' ')}`);
         }
