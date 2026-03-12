@@ -84,6 +84,9 @@ module.exports = (io, app) => {
 
     // Admin dashboard: join rooms for real-time error + stdout/stderr log stream
     socket.on("join-admin-errors", () => {
+      if (socket.user.role === "admin") {
+        socket.join("admin/telemetry"); // TELEMETRY 수신 (소유자 룸에 소켓 없을 때 전달)
+      }
       socket.join("admin/errors");
       socket.join("admin/logs"); // 실시간 서버 로그(터미널 전체 출력) 수신
       // 접속 시 과거 로그/에러도 전달 (버퍼에 저장된 최근 N개)
@@ -109,6 +112,7 @@ module.exports = (io, app) => {
         console.warn("[Socket] join-admin-connection-status: non-admin user ignored");
         return;
       }
+      socket.join("admin/telemetry");
       socket.join("admin/connection-status");
       if (!socket._adminConnectionStatusLogged) {
         socket._adminConnectionStatusLogged = true;

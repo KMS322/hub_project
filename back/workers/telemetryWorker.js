@@ -1,6 +1,8 @@
 const db = require('../models');
-const csvWriter = require('../utils/csvWriter'); // 싱글톤 인스턴스
+const csvWriter = require('../utils/csvWriter');
 const { processData: processHeartRate } = require('../utils/heartRateProcessor');
+const { createError, ERROR_REASON } = require('../core/error/errorFactory');
+const { logError } = require('../core/error/errorLogger');
 
 // hubId, deviceId가 MAC 주소(: 포함)이므로 키 구분자는 : 가 아닌 || 사용
 const BROADCAST_KEY_SEP = '||';
@@ -559,26 +561,42 @@ class TelemetryWorker {
         const roomName = `user:${(hub.user_email || '').trim().toLowerCase()}`;
         const room = this.io.sockets.adapter.rooms.get(roomName);
         const socketCount = room ? room.size : 0;
+        const adminRoom = this.io.sockets.adapter.rooms.get('admin/telemetry');
+        const adminSocketCount = adminRoom ? adminRoom.size : 0;
 
         if (!this.io || !this.io.sockets) {
           continue;
         }
-        if (socketCount === 0) {
-          if (!this._lastSkipLog || Date.now() - this._lastSkipLog > 5000) {
-            this._lastSkipLog = Date.now();
-            console.warn(`[Telemetry Worker] ⏭️ TELEMETRY 미전송: room "${roomName}"에 소켓 없음 (hub=${hubId}). 로그인/연결 확인`);
-          }
-          continue;
-        }
 
-        try {
-          this.io.to(roomName).emit('TELEMETRY', telemetryPayload);
-          broadcastCount++;
+        let emitted = false;
+        if (socketCount > 0) {
+          try {
+            this.io.to(roomName).emit('TELEMETRY', telemetryPayload);
+            broadcastCount++;
+            emitted = true;
+          } catch (emitError) {
+            console.error(`[Telemetry Worker] ❌ Error during emit:`, emitError);
+            throw emitError;
+          }
+        }
+        if (!emitted && adminSocketCount > 0) {
+          try {
+            this.io.to('admin/telemetry').emit('TELEMETRY', telemetryPayload);
+            broadcastCount++;
+            emitted = true;
+          } catch (e) {
+            console.error(`[Telemetry Worker] ❌ Admin TELEMETRY emit error:`, e);
+          }
+        }
+        if (emitted) {
           this.lastBroadcastTime.set(key, Date.now());
           this.broadcastBuffer.set(key, []);
-        } catch (emitError) {
-          console.error(`[Telemetry Worker] ❌ Error during emit:`, emitError);
-          throw emitError;
+        } else {
+          if (!this._lastSkipLog || Date.now() - this._lastSkipLog > 5000) {
+            this._lastSkipLog = Date.now();
+            const msg = `room "${roomName}"에 소켓 없음 (hub=${hubId})`;
+            logError(createError('socket', ERROR_REASON.TELEMETRY_NO_RECEIVER, 'TELEMETRY 미전송', msg, { topic: key }));
+          }
         }
       } catch (error) {
         console.error(`[Telemetry Worker] ❌ Error emitting TELEMETRY for hub ${hubId}:`, error);
@@ -589,10 +607,11 @@ class TelemetryWorker {
     }
 
     if (broadcastCount > 0) {
-      console.log(`[Telemetry Worker] 📤 TELEMETRY 전송 ${broadcastCount}건 → room ${bufferKeys.length ? '확인됨' : ''}`);
+      console.log(`[Telemetry Worker] 📤 TELEMETRY 전송 ${broadcastCount}건`);
     } else if (bufferKeys.length > 0 && (!this._lastSkipLog || Date.now() - this._lastSkipLog > 10000)) {
       this._lastSkipLog = Date.now();
-      console.warn(`[Telemetry Worker] 버퍼에 ${bufferKeys.length}건 있으나 전송 0건 (room 소켓 없음 또는 Hub 미등록). keys:`, bufferKeys.slice(0, 3));
+      const detail = `버퍼 ${bufferKeys.length}건, keys: ${bufferKeys.slice(0, 3).join(', ')}`;
+      logError(createError('socket', ERROR_REASON.TELEMETRY_NO_RECEIVER, 'TELEMETRY 미전송(버퍼 있음)', detail, { deviceId: bufferKeys[0] || '' }));
     }
   }
 

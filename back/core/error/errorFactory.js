@@ -38,6 +38,7 @@ const DEFAULT_MESSAGES = {
   [ERROR_REASON.QUEUE_OVERFLOW]: 'Queue overflow',
   [ERROR_REASON.DEVICE_NOT_FOUND]: 'Device not found',
   [ERROR_REASON.RATE_LIMIT]: 'Rate limit exceeded',
+  [ERROR_REASON.TELEMETRY_NO_RECEIVER]: 'TELEMETRY no receiver',
 };
 
 /**

@@ -33,6 +33,7 @@ const ERROR_REASON = {
   QUEUE_OVERFLOW: '10',
   DEVICE_NOT_FOUND: '11',
   RATE_LIMIT: '12',
+  TELEMETRY_NO_RECEIVER: '13', // room 소켓 없음 등으로 TELEMETRY 미전송
 };
 
 // Legacy aliases for existing code
