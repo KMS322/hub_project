@@ -328,9 +328,6 @@ class TelemetryWorker {
     for (const item of batch) {
       const { hubId, deviceId: rawDeviceId, data, publishStartTime } = item;
       const deviceId = normalizeDeviceId(rawDeviceId);
-      // 측정 중인 디바이스만 브로드캐스트 버퍼에 추가 (측정 정지 후 난류 데이터 전송 방지)
-      if (!this.measuringDevices.has(deviceId)) continue;
-
       const key = `${hubId}${BROADCAST_KEY_SEP}${deviceId}`;
 
       // 신호처리 수행
@@ -502,11 +499,6 @@ class TelemetryWorker {
       const parts = key.split(BROADCAST_KEY_SEP);
       const hubId = parts[0];
       const deviceId = parts.length >= 2 ? parts[1] : '';
-      // 측정 중이 아닌 디바이스는 버퍼만 비우고 전송하지 않음
-      if (!this.measuringDevices.has(deviceId)) {
-        this.broadcastBuffer.set(key, []);
-        continue;
-      }
 
       // ✅ Throttling: 최소 간격 이내면 스킵
       const lastBroadcast = this.lastBroadcastTime.get(key) || 0;

@@ -100,37 +100,30 @@ class MQTTClient {
         } else {
           payload = String(message);
         }
-        const preview = payload.length > 200 ? payload.substring(0, 200) + '...' : payload;
-        console.log(`[MQTT] 📥 ${topic} | ${preview.replace(/\n/g, ' ')}`);
+        // hub/+/send 텔레메트리는 로그 생략 (초당 다수 수신)
+        const isTelemetry = topic.includes('/send') && payload.length > 500;
+        if (!isTelemetry) {
+          const preview = payload.length > 200 ? payload.substring(0, 200) + '...' : payload;
+          console.log(`[MQTT] 📥 ${topic} | ${preview.replace(/\n/g, ' ')}`);
+        }
 
         let parsedMessage;
         try {
           parsedMessage = JSON.parse(payload);
-          console.log(`  ✅ Parsed as JSON successfully`);
         } catch (e) {
           parsedMessage = payload;
-          console.log(`  ℹ️  Not JSON, using raw string`);
         }
-        
-        // test/ 토픽인 경우 특별히 강조
-        if (topic.startsWith('test/')) {
-          console.log(`  🧪 TEST TOPIC DETECTED (${topic}) - Processing test message...`);
-        }
-        
-        // 해당 토픽에 등록된 콜백 실행
+
         const callback = this.subscriptions.get(topic);
         if (callback) {
-          console.log(`  ✅ Found exact topic subscription callback`);
           callback(parsedMessage, topic);
         } else {
-          // 와일드카드 구독 처리
           let matched = false;
           for (const [subscribedTopic, cb] of this.subscriptions.entries()) {
             if (this.topicMatches(subscribedTopic, topic)) {
-              console.log(`  ✅ Found wildcard subscription match: ${subscribedTopic} matches ${topic}`);
               cb(parsedMessage, topic);
               matched = true;
-              break; // 첫 번째 매칭만 처리
+              break;
             }
           }
           if (!matched) {

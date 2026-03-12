@@ -58,27 +58,29 @@ class SocketService {
       reconnectionAttempts: Infinity,
     });
 
-    // 연결 성공 이벤트
     this.socket.on("connect", () => {
       this.isConnected = true;
-      console.log("[Socket] Connected to server");
+      console.log("[Socket] ✅ 서버와 소켓 연결됨 — TELEMETRY 수신 가능");
     });
 
-    // 연결 해제 이벤트
     this.socket.on("disconnect", (reason) => {
       this.isConnected = false;
-      console.log("[Socket] Disconnected:", reason);
+      console.log("[Socket] 연결 해제:", reason);
     });
 
-    // 연결 에러 이벤트
     this.socket.on("connect_error", (error) => {
-      console.error("[Socket] Connection error:", error);
       this.isConnected = false;
+      const msg = error?.message || String(error);
+      const isAuth = /auth|token|invalid|401|unauthorized/i.test(msg);
+      console.error(
+        "[Socket] 연결 실패:",
+        isAuth ? "인증 실패 가능성(토큰 만료/잘못됨). 다시 로그인해 보세요." : msg,
+        error
+      );
     });
 
-    // 서버에서 보낸 연결 확인 (서버가 room 가입 완료 후 전송)
     this.socket.on("connected", (data) => {
-      console.log("[Socket] ✅ 서버 연결 확인 — TELEMETRY 수신 가능 (room 가입됨)", data);
+      console.log("[Socket] ✅ 서버 연결 확인 — TELEMETRY 수신 가능 (room 가입됨)", data?.message || data);
     });
 
     // 재연결 성공 이벤트 (재연결 시 서버가 자동으로 room 재가입 처리)
