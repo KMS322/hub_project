@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import AdminNav from '../components/AdminNav';
 import { useSocket } from '../hooks/useSocket';
@@ -10,13 +10,18 @@ export default function AdminConnectionMonitor() {
   const [data, setData] = useState({ users: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const hasJoinedRef = useRef(false);
 
   useEffect(() => {
     if (!isConnected) {
       setLoading(true);
       return;
     }
-    emit('join-admin-connection-status');
+    // 페이지 진입 시 한 번만 join 요청 (재연결/effect 재실행 시 중복 요청 방지 → state:hub 스팸 및 사용자 MQTT 방해 감소)
+    if (!hasJoinedRef.current) {
+      hasJoinedRef.current = true;
+      emit('join-admin-connection-status');
+    }
     const handleStatus = (payload) => {
       if (payload && typeof payload === 'object' && Array.isArray(payload.users)) {
         setData({ users: payload.users });
@@ -25,7 +30,9 @@ export default function AdminConnectionMonitor() {
       setLoading(false);
     };
     on('admin-connection-status', handleStatus);
-    return () => off('admin-connection-status', handleStatus);
+    return () => {
+      off('admin-connection-status', handleStatus);
+    };
   }, [isConnected, on, off, emit]);
 
   const formatLastSeen = (ts) => {

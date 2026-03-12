@@ -99,7 +99,9 @@ module.exports = (io, app) => {
       }
     });
 
-    // Admin 연결 상태 모니터링: 룸 가입 + 전체 허브에 state:hub 요청(간격 두어 사용자 명령이 끼어들 수 있게) + 초기 스냅샷 전송
+    // Admin 연결 상태 모니터링: 룸 가입 + (스로틀 적용) 전체 허브에 state:hub 요청 + 초기 스냅샷 전송
+    // 스로틀: 동일 소켓에서 state:hub 전체 요청은 최소 60초 간격으로만 수행 (MQTT/사용자 명령 막힘 방지)
+    const STATE_HUB_ALL_HUBS_MIN_INTERVAL_MS = 60 * 1000; // 60초
     socket.on("join-admin-connection-status", async () => {
       if (socket.user.role !== "admin") {
         console.warn("[Socket] join-admin-connection-status: non-admin user ignored");
@@ -108,8 +110,6 @@ module.exports = (io, app) => {
       socket.join("admin/connection-status");
       console.log("[Socket] Admin joined admin/connection-status");
 
-      const mqttService = app && app.get("mqtt");
-      const STATE_HUB_DELAY_MS = 120; // 허브 간 간격: 사용자 측정 시작/정지 등 CONTROL_REQUEST가 끼어들 수 있도록
       try {
         const data = await getConnectionStatusData(app);
         socket.emit("admin-connection-status", data);
@@ -118,7 +118,14 @@ module.exports = (io, app) => {
         socket.emit("admin-connection-status", { users: [] });
       }
 
-      if (mqttService) {
+      const mqttService = app && app.get("mqtt");
+      const now = Date.now();
+      const lastRequest = socket._lastAllHubsStateRequest || 0;
+      if (now - lastRequest < STATE_HUB_ALL_HUBS_MIN_INTERVAL_MS && lastRequest > 0) {
+        console.log("[Socket] join-admin-connection-status: state:hub to all hubs skipped (throttle)");
+      } else if (mqttService) {
+        socket._lastAllHubsStateRequest = now;
+        const STATE_HUB_DELAY_MS = 120;
         try {
           const hubs = await db.Hub.findAll({ attributes: ["address"] });
           if (hubs.length > 0) {

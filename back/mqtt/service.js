@@ -227,6 +227,107 @@ class MQTTService {
       console.error(`[MQTT Service] JSON 저장 실패:`, e.message);
     }
 
+    // ✅ state:hub 응답 형식: device:[] 또는 device:["mac",...] — JSON이 아니므로 반드시 JSON 파싱 전에 처리
+    if (messageStr.includes('device:[')) {
+      try {
+        const deviceMatch = messageStr.match(/device:\s*\[(.*?)\]/);
+        if (deviceMatch) {
+          const listStr = deviceMatch[1];
+          const macList =
+            listStr.match(/"([^"]+)"/g)?.map((m) => m.replace(/"/g, '')) || [];
+
+          if (macList.length === 0) {
+            console.log(`[MQTT Service] ✅ Hub ${hubId} alive (device:[] — no devices connected)`);
+          } else {
+            console.log(
+              `[MQTT Service] 🔗 Parsed connected device list from hub ${hubId}:`,
+              macList,
+            );
+          }
+
+          presenceStore.setHubConnectedDevices(hubId, macList);
+
+          try {
+            const db = require('../models');
+            const hub = await db.Hub.findByPk(hubId, { attributes: ['address', 'user_email'] });
+            if (hub && Array.isArray(macList) && macList.length > 0) {
+              for (const deviceMac of macList) {
+                try {
+                  const existing = await db.Device.findByPk(deviceMac);
+                  if (existing) {
+                    const next = { hub_address: hub.address, user_email: hub.user_email };
+                    if (existing.hub_address !== next.hub_address || existing.user_email !== next.user_email) {
+                      await existing.update(next);
+                    }
+                    await existing.update({ updatedAt: new Date() });
+                  } else {
+                    await db.Device.create({
+                      address: deviceMac,
+                      name: `디바이스 ${deviceMac}`,
+                      hub_address: hub.address,
+                      user_email: hub.user_email,
+                    });
+                  }
+                } catch (e) {
+                  console.error(`[MQTT Service] Error upserting device ${deviceMac}:`, e.message);
+                }
+              }
+            }
+          } catch (e) {
+            console.error(`[MQTT Service] Error syncing connected devices to DB for hub ${hubId}:`, e.message);
+          }
+
+          if (this.io && macList.length > 0) {
+            try {
+              const db = require('../models');
+              const hub = await db.Hub.findByPk(hubId);
+              if (hub && hub.user_email) {
+                this.io.to(`user:${hub.user_email}`).emit('CONNECTED_DEVICES', {
+                  hubAddress: hubId,
+                  connected_devices: macList,
+                  timestamp: new Date().toISOString(),
+                });
+                console.log(
+                  `[MQTT Service] ✅ CONNECTED_DEVICES emitted for hub ${hubId} to user ${hub.user_email}`,
+                );
+              } else {
+                this.io.emit('CONNECTED_DEVICES', {
+                  hubAddress: hubId,
+                  connected_devices: macList,
+                  timestamp: new Date().toISOString(),
+                });
+                console.log(`[MQTT Service] ⚠️ CONNECTED_DEVICES broadcasted (hub not found) for hub ${hubId}`);
+              }
+            } catch (error) {
+              console.error(`[MQTT Service] ❌ Error emitting CONNECTED_DEVICES for hub ${hubId}:`, error);
+              this.io.emit('CONNECTED_DEVICES', {
+                hubAddress: hubId,
+                connected_devices: macList,
+                timestamp: new Date().toISOString(),
+              });
+            }
+            if (this.app && this.io) {
+              const now = Date.now();
+              if (now - this._lastAdminSnapshotAt >= ADMIN_SNAPSHOT_THROTTLE_MS) {
+                this._lastAdminSnapshotAt = now;
+                const { getConnectionStatusData } = require('../admin/adminConnectionController');
+                getConnectionStatusData(this.app)
+                  .then((data) => {
+                    if (this.io) this.io.to('admin/connection-status').emit('admin-connection-status', data);
+                  })
+                  .catch((err) => console.error('[MQTT Service] admin-connection-status snapshot error:', err));
+              }
+            }
+          }
+        } else {
+          console.warn(`[MQTT Service] ⚠️ device:[...] pattern found but no list parsed: ${messageStr}`);
+        }
+      } catch (e) {
+        console.error(`[MQTT Service] ❌ Failed to parse device list from hub ${hubId}:`, e.message);
+      }
+      return;
+    }
+
     // ✅ 문자열 형식 텔레메트리 처리 (device_mac_address-sampling_rate, hr, spo2, temp, battery)
     // 예: "d4:d5:3f:28:e1:f4-50.11,81,90,34.06,8" 또는 "d4:d5:3f:28:e1:f4-50.45,80,95,28.65,7"
     const parsedString = this.parseTestTelemetryLine(messageStr);
@@ -414,126 +515,6 @@ class MQTTService {
       return;
     }
 
-    // state:hub 응답 형식: hub/{hubId}/send 로 수신
-    // - device:[] (빈 배열) → 허브가 살아 있음(응답함), 현재 연결된 디바이스 없음
-    // - device:["mac1", "mac2", ...] → 배열 안 값은 연결된 디바이스의 MAC 주소
-    if (messageStr.includes('device:[')) {
-      try {
-        const deviceMatch = messageStr.match(/device:\s*\[(.*?)\]/);
-        if (deviceMatch) {
-          const listStr = deviceMatch[1];
-          const macList =
-            listStr.match(/"([^"]+)"/g)?.map((m) => m.replace(/"/g, '')) || [];
-
-          if (macList.length === 0) {
-            console.log(`[MQTT Service] ✅ Hub ${hubId} alive (hub/.../send | device:[] — no devices connected)`);
-          }
-          console.log(
-            `[MQTT Service] 🔗 Parsed connected device list from hub ${hubId}:`,
-            macList,
-          );
-
-          presenceStore.setHubConnectedDevices(hubId, macList);
-
-          // ✅ 연결된 디바이스 목록을 DB에 등록/업데이트 (connect:devices, state:hub 응답 공통)
-          // - DB에 없으면 생성
-          // - 있으면 hub_address/updatedAt 갱신
-          try {
-            const db = require('../models');
-            const hub = await db.Hub.findByPk(hubId, { attributes: ['address', 'user_email'] });
-            if (hub && Array.isArray(macList) && macList.length > 0) {
-              for (const deviceMac of macList) {
-                try {
-                  const existing = await db.Device.findByPk(deviceMac);
-                  if (existing) {
-                    const next = {
-                      hub_address: hub.address,
-                      user_email: hub.user_email,
-                    };
-                    // user_email/hub_address가 다르면 업데이트
-                    if (existing.hub_address !== next.hub_address || existing.user_email !== next.user_email) {
-                      await existing.update(next);
-                    }
-                    // 활동 시간 업데이트
-                    await existing.update({ updatedAt: new Date() });
-                  } else {
-                    await db.Device.create({
-                      address: deviceMac,
-                      name: `디바이스 ${deviceMac}`,
-                      hub_address: hub.address,
-                      user_email: hub.user_email,
-                    });
-                  }
-                } catch (e) {
-                  console.error(`[MQTT Service] Error upserting device ${deviceMac}:`, e.message);
-                }
-              }
-            }
-          } catch (e) {
-            console.error(`[MQTT Service] Error syncing connected devices to DB for hub ${hubId}:`, e.message);
-          }
-
-          if (this.io && macList.length > 0) {
-            // ✅ 허브 소유자에게만 CONNECTED_DEVICES 이벤트 전송
-            try {
-              const db = require('../models');
-              const hub = await db.Hub.findByPk(hubId);
-              if (hub && hub.user_email) {
-                // 특정 사용자에게만 전송
-                this.io.to(`user:${hub.user_email}`).emit('CONNECTED_DEVICES', {
-                  hubAddress: hubId,
-                  connected_devices: macList,
-                  timestamp: new Date().toISOString(),
-                });
-                console.log(
-                  `[MQTT Service] ✅ CONNECTED_DEVICES emitted for hub ${hubId} to user ${hub.user_email}`,
-                );
-              } else {
-                // 허브 정보를 찾을 수 없으면 모든 클라이언트에 브로드캐스트 (fallback)
-                this.io.emit('CONNECTED_DEVICES', {
-                  hubAddress: hubId,
-                  connected_devices: macList,
-                  timestamp: new Date().toISOString(),
-                });
-                console.log(
-                  `[MQTT Service] ⚠️ CONNECTED_DEVICES broadcasted (hub not found) for hub ${hubId}`,
-                );
-              }
-            } catch (error) {
-              console.error(`[MQTT Service] ❌ Error emitting CONNECTED_DEVICES for hub ${hubId}:`, error);
-              // 에러 발생 시 fallback으로 브로드캐스트
-              this.io.emit('CONNECTED_DEVICES', {
-                hubAddress: hubId,
-                connected_devices: macList,
-                timestamp: new Date().toISOString(),
-              });
-            }
-            // ✅ 어드민 연결 상태 룸에 스냅샷 전송 (스로틀: 사용자 측정 명령이 밀리지 않도록)
-            if (this.app && this.io) {
-              const now = Date.now();
-              if (now - this._lastAdminSnapshotAt >= ADMIN_SNAPSHOT_THROTTLE_MS) {
-                this._lastAdminSnapshotAt = now;
-                const { getConnectionStatusData } = require('../admin/adminConnectionController');
-                getConnectionStatusData(this.app)
-                  .then((data) => {
-                    if (this.io) this.io.to('admin/connection-status').emit('admin-connection-status', data);
-                  })
-                  .catch((err) => console.error('[MQTT Service] admin-connection-status snapshot error:', err));
-              }
-            }
-          }
-        } else {
-          console.warn(
-            `[MQTT Service] ⚠️ device:[...] pattern found but no list parsed: ${messageStr}`,
-          );
-        }
-      } catch (e) {
-        console.error(
-          `[MQTT Service] ❌ Failed to parse device list from hub ${hubId}:`,
-          e.message,
-        );
-      }
-    }
   }
 
   /**
