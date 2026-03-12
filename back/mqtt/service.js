@@ -168,6 +168,10 @@ class MQTTService {
 
   /**
    * Hub Send 메시지 처리 (mqtt ready, 측정 데이터 등)
+   * 토픽: hub/{hubId}/send
+   * - state:hub 응답 시 payload에 device:[] 또는 device:["mac",...]
+   *   - device:[] → 허브 살아 있음(응답함), 연결된 디바이스 없음
+   *   - device:["aa:bb:cc:...", ...] → 배열 값은 연결된 디바이스의 MAC 주소
    * @param {Object|string} message - 수신된 메시지
    * @param {string} topic - 메시지가 수신된 토픽 (예: hub/80:b5:4e:db:44:9a/send)
    */
@@ -407,7 +411,9 @@ class MQTTService {
       return;
     }
 
-    // state:hub 응답 형식: device:["ec:81:f7:f3:54:6f", ...]
+    // state:hub 응답 형식: hub/{hubId}/send 로 수신
+    // - device:[] (빈 배열) → 허브가 살아 있음(응답함), 현재 연결된 디바이스 없음
+    // - device:["mac1", "mac2", ...] → 배열 안 값은 연결된 디바이스의 MAC 주소
     if (messageStr.includes('device:[')) {
       try {
         const deviceMatch = messageStr.match(/device:\s*\[(.*?)\]/);
@@ -416,6 +422,9 @@ class MQTTService {
           const macList =
             listStr.match(/"([^"]+)"/g)?.map((m) => m.replace(/"/g, '')) || [];
 
+          if (macList.length === 0) {
+            console.log(`[MQTT Service] ✅ Hub ${hubId} alive (hub/.../send | device:[] — no devices connected)`);
+          }
           console.log(
             `[MQTT Service] 🔗 Parsed connected device list from hub ${hubId}:`,
             macList,

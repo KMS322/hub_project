@@ -31,6 +31,9 @@ import AdminConnectionMonitor from './pages/AdminConnectionMonitor'
 import GlobalErrorModal from './components/GlobalErrorModal'
 import './App.css'
 
+// 처음 접속 시 로그인(사용자/어드민 선택) 없이 대시보드 등으로 진입 허용. .env에 REACT_APP_GUEST_ACCESS=true 설정 시 사용.
+const GUEST_ACCESS = process.env.REACT_APP_GUEST_ACCESS === 'true'
+
 function AppContent() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -38,6 +41,7 @@ function AppContent() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
   const userRole = useAuthStore((state) => state.user?.role)
   const isAdmin = userRole === 'admin'
+  const canAccessWithoutLogin = GUEST_ACCESS && !isAuthenticated
 
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
@@ -171,89 +175,70 @@ function AppContent() {
         <Route
           path="/dashboard"
           element={
-            !isAuthenticated ? <Navigate to="/login" /> :
-            isAdmin ? <Navigate to="/admin/system-logs" replace /> :
-            <Dashboard />
+            (canAccessWithoutLogin || isAuthenticated) ? (isAdmin ? <Navigate to="/admin/system-logs" replace /> : <Dashboard />) : <Navigate to="/login" />
           }
         />
         <Route
           path="/hardware"
           element={
-            !isAuthenticated ? <Navigate to="/login" /> :
-            isAdmin ? <Navigate to="/admin/system-logs" replace /> :
-            <Hardware />
+            (canAccessWithoutLogin || isAuthenticated) ? (isAdmin ? <Navigate to="/admin/system-logs" replace /> : <Hardware />) : <Navigate to="/login" />
           }
         />
         <Route
           path="/patients"
           element={
-            !isAuthenticated ? <Navigate to="/login" /> :
-            isAdmin ? <Navigate to="/admin/system-logs" replace /> :
-            <Patients />
+            (canAccessWithoutLogin || isAuthenticated) ? (isAdmin ? <Navigate to="/admin/system-logs" replace /> : <Patients />) : <Navigate to="/login" />
           }
         />
         <Route
           path="/records"
           element={
-            !isAuthenticated ? <Navigate to="/login" /> :
-            isAdmin ? <Navigate to="/admin/system-logs" replace /> :
-            <Records />
+            (canAccessWithoutLogin || isAuthenticated) ? (isAdmin ? <Navigate to="/admin/system-logs" replace /> : <Records />) : <Navigate to="/login" />
           }
         />
         <Route
           path="/hrv-analysis"
           element={
-            !isAuthenticated ? <Navigate to="/login" /> :
-            isAdmin ? <Navigate to="/admin/system-logs" replace /> :
-            <HrvAnalysis />
+            (canAccessWithoutLogin || isAuthenticated) ? (isAdmin ? <Navigate to="/admin/system-logs" replace /> : <HrvAnalysis />) : <Navigate to="/login" />
           }
         />
         <Route
           path="/profile"
           element={
-            !isAuthenticated ? <Navigate to="/login" /> :
-            isAdmin ? <Navigate to="/admin/system-logs" replace /> :
-            <Profile />
+            (canAccessWithoutLogin || isAuthenticated) ? (isAdmin ? <Navigate to="/admin/system-logs" replace /> : <Profile />) : <Navigate to="/login" />
           }
         />
         <Route
           path="/monitoring/:patientId"
           element={
-            !isAuthenticated ? <Navigate to="/login" /> :
-            isAdmin ? <Navigate to="/admin/system-logs" replace /> :
-            <Monitoring />
+            (canAccessWithoutLogin || isAuthenticated) ? (isAdmin ? <Navigate to="/admin/system-logs" replace /> : <Monitoring />) : <Navigate to="/login" />
           }
         />
 
         <Route
           path="/guide"
           element={
-            isAuthenticated && isAdmin ? <Navigate to="/admin/system-logs" replace /> :
-            <Guide />
+            isAuthenticated && isAdmin ? <Navigate to="/admin/system-logs" replace /> : <Guide />
           }
         />
 
         <Route
           path="/serial-monitor"
           element={
-            !isAuthenticated ? <Navigate to="/login" /> :
-            isAdmin ? <Navigate to="/admin/system-logs" replace /> :
-            <SerialMonitor />
+            (canAccessWithoutLogin || isAuthenticated) ? (isAdmin ? <Navigate to="/admin/system-logs" replace /> : <SerialMonitor />) : <Navigate to="/login" />
           }
         />
         <Route
           path="/hardware-error-test"
           element={
-            !isAuthenticated ? <Navigate to="/login" /> :
-            isAdmin ? <Navigate to="/admin/system-logs" replace /> :
-            <HardwareErrorTest />
+            (canAccessWithoutLogin || isAuthenticated) ? (isAdmin ? <Navigate to="/admin/system-logs" replace /> : <HardwareErrorTest />) : <Navigate to="/login" />
           }
         />
         <Route
           path="/admin/system-logs"
           element={
-            // !isAuthenticated ? <Navigate to="/login" /> :
-            // !isAdmin ? <Navigate to="/dashboard" /> :
+            !isAuthenticated ? <Navigate to="/login" /> :
+            !isAdmin ? <Navigate to="/dashboard" /> :
             <AdminSystemLogs />
           }
         />
@@ -282,10 +267,11 @@ function AppContent() {
           }
         />
 
-        {/* 루트: 관리자는 어드민, 일반 사용자는 대시보드 */}
+        {/* 루트: 게스트 접속 허용 시 로그인 없이 대시보드, 아니면 로그인 후 역할별 이동 */}
         <Route
           path="/"
           element={
+            canAccessWithoutLogin ? <Navigate to="/dashboard" replace /> :
             !isAuthenticated ? <Navigate to="/login" /> :
             isAdmin ? <Navigate to="/admin/system-logs" replace /> :
             <Navigate to="/dashboard" replace />
