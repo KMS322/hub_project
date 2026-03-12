@@ -67,6 +67,11 @@ module.exports = (io, app) => {
     const roomName = `user:${userEmail}`;
     socket.join(roomName);
 
+    // 관리자는 접속 즉시 admin/telemetry 조인 → 허브 소유자 미접속 시에도 TELEMETRY 수신 가능
+    if (socket.user.role === 'admin') {
+      socket.join('admin/telemetry');
+    }
+
     const room = io.sockets.adapter.rooms.get(roomName);
     const socketCount = room ? room.size : 0;
     console.log(`[Socket] 🏠 User joined room: "${roomName}"`, {

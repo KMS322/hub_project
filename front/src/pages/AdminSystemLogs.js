@@ -29,6 +29,8 @@ export default function AdminSystemLogs() {
   const liveMax = 50;
   const liveErrorsRef = useRef([]);
   const liveLogsRef = useRef([]);
+  const lastStatsRefreshAt = useRef(0);
+  const STATS_REFRESH_THROTTLE_MS = 5000;
 
   // Join admin errors room + 과거 에러/로그 히스토리 수신
   useEffect(() => {
@@ -54,6 +56,12 @@ export default function AdminSystemLogs() {
       if (!err || typeof err !== 'object') return;
       liveErrorsRef.current = [{ ...err, _live: true }, ...liveErrorsRef.current].slice(0, liveMax);
       setLiveErrors([...liveErrorsRef.current]);
+      if (Date.now() - lastStatsRefreshAt.current > STATS_REFRESH_THROTTLE_MS) {
+        lastStatsRefreshAt.current = Date.now();
+        getAdminErrorStats()
+          .then((res) => { if (res.success && res.data) setStats(res.data); })
+          .catch(() => {});
+      }
     };
     const logHandler = (log) => {
       if (!log || typeof log !== 'object') return;

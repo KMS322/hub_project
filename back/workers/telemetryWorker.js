@@ -31,6 +31,8 @@ class TelemetryWorker {
     this.lastBroadcastTime = new Map(); // 디바이스별 마지막 브로드캐스트 시간 (throttling)
     this.minBroadcastInterval = options.minBroadcastInterval || 500; // 최소 브로드캐스트 간격 (ms) - 500ms
     this.measuringDevices = new Set(); // 측정 중인 디바이스 목록 (deviceId만 저장)
+    this._lastNoReceiverErrorByRoom = new Map(); // room별 error-2-13 로그 throttle (60초)
+    this._lastAggregateNoReceiverLog = 0; // 집계 "버퍼 있으나 전송 0건" error-2-13 throttle (60초)
   }
 
   /**
@@ -592,8 +594,10 @@ class TelemetryWorker {
           this.lastBroadcastTime.set(key, Date.now());
           this.broadcastBuffer.set(key, []);
         } else {
-          if (!this._lastSkipLog || Date.now() - this._lastSkipLog > 5000) {
-            this._lastSkipLog = Date.now();
+          const now = Date.now();
+          const lastRoomLog = this._lastNoReceiverErrorByRoom.get(roomName) || 0;
+          if (now - lastRoomLog > 60000) {
+            this._lastNoReceiverErrorByRoom.set(roomName, now);
             const msg = `room "${roomName}"에 소켓 없음 (hub=${hubId})`;
             logError(createError('socket', ERROR_REASON.TELEMETRY_NO_RECEIVER, 'TELEMETRY 미전송', msg, { topic: key }));
           }
@@ -608,10 +612,13 @@ class TelemetryWorker {
 
     if (broadcastCount > 0) {
       console.log(`[Telemetry Worker] 📤 TELEMETRY 전송 ${broadcastCount}건`);
-    } else if (bufferKeys.length > 0 && (!this._lastSkipLog || Date.now() - this._lastSkipLog > 10000)) {
-      this._lastSkipLog = Date.now();
-      const detail = `버퍼 ${bufferKeys.length}건, keys: ${bufferKeys.slice(0, 3).join(', ')}`;
-      logError(createError('socket', ERROR_REASON.TELEMETRY_NO_RECEIVER, 'TELEMETRY 미전송(버퍼 있음)', detail, { deviceId: bufferKeys[0] || '' }));
+    } else if (bufferKeys.length > 0) {
+      const now = Date.now();
+      if (now - this._lastAggregateNoReceiverLog > 60000) {
+        this._lastAggregateNoReceiverLog = now;
+        const detail = `버퍼 ${bufferKeys.length}건, keys: ${bufferKeys.slice(0, 3).join(', ')}`;
+        logError(createError('socket', ERROR_REASON.TELEMETRY_NO_RECEIVER, 'TELEMETRY 미전송(버퍼 있음)', detail, { deviceId: bufferKeys[0] || '' }));
+      }
     }
   }
 
