@@ -274,7 +274,6 @@ module.exports = (io, app) => {
         if (command.action === 'start_measurement') {
           const topic = receiveTopic;
           const payload = command.raw_command || `start:${deviceId}`;
-          console.log(`[Socket] 📤 Sending MQTT start measurement to ${topic}: ${payload}`);
           const success = mqttService.publish(topic, payload, { qos: 1, retain: false });
 
           if (!success) {
@@ -309,7 +308,6 @@ module.exports = (io, app) => {
         if (command.action === 'stop_measurement') {
           const topic = receiveTopic;
           const payload = command.raw_command || `stop:${deviceId}`;
-          console.log(`[Socket] 📤 Sending MQTT stop measurement to ${topic}: ${payload}`);
           const success = mqttService.publish(topic, payload, { qos: 1, retain: false });
 
           if (!success) {

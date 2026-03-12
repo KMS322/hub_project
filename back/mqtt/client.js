@@ -86,6 +86,11 @@ class MQTTClient {
     // 메시지 수신 이벤트
     this.client.on('message', (topic, message) => {
       try {
+        // 명령/receive 토픽은 자신이 발행한 메시지 에코이므로 로그 없이 무시
+        if (topic.includes('/command/') || topic.includes('/receive')) {
+          return;
+        }
+
         // Buffer를 문자열로 변환 (로그용)
         let payload;
         if (Buffer.isBuffer(message)) {
@@ -96,16 +101,7 @@ class MQTTClient {
           payload = String(message);
         }
         const preview = payload.length > 200 ? payload.substring(0, 200) + '...' : payload;
-        // 수신한 모든 MQTT 메시지를 백엔드 콘솔에 한 줄로 출력
         console.log(`[MQTT] 📥 ${topic} | ${preview.replace(/\n/g, ' ')}`);
-
-        // 명령 토픽과 receive 토픽은 무시 (자신이 발행한 메시지)
-        if (topic.includes('/command/')) {
-          return;
-        }
-        if (topic.includes('/receive')) {
-          return;
-        }
 
         let parsedMessage;
         try {
@@ -241,17 +237,9 @@ class MQTTClient {
       ...options
     };
 
-    // 터미널에 발행 로그 출력
-    console.log(`\n[MQTT Client] 📤 Publishing message`);
-    console.log(`  Topic: ${topic}`);
-    console.log(`  QoS: ${publishOptions.qos}, Retain: ${publishOptions.retain}`);
-    console.log(`  Payload: ${payload.substring(0, 300)}${payload.length > 300 ? '...' : ''}`);
-
     this.client.publish(topic, payload, publishOptions, (err) => {
       if (err) {
         console.error(`[MQTT] ❌ Failed to publish to ${topic}:`, err);
-      } else {
-        console.log(`[MQTT] ✅ Published successfully to ${topic}`);
       }
     });
 

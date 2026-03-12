@@ -454,7 +454,6 @@ class TelemetryWorker {
     if (deviceId) {
       const id = normalizeDeviceId(deviceId);
       this.measuringDevices.add(id);
-      console.log(`[Telemetry Worker] ✅ Measurement started for device: ${id}`);
     }
   }
 
@@ -483,7 +482,6 @@ class TelemetryWorker {
           this.lastBroadcastTime.delete(key);
         }
       }
-      console.log(`[Telemetry Worker] 🛑 Measurement stopped for device: ${deviceId}`);
     }
   }
 
