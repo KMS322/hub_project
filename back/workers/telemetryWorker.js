@@ -7,6 +7,9 @@ const { logError } = require('../core/error/errorLogger');
 // hubId, deviceId가 MAC 주소(: 포함)이므로 키 구분자는 : 가 아닌 || 사용
 const BROADCAST_KEY_SEP = '||';
 
+/** Hub 캐시 갱신 주기 (broadcast 루프 내 DB 조회 제거용) */
+const HUB_CACHE_REFRESH_MS = 60 * 1000; // 60초
+
 function normalizeDeviceId(id) {
   return typeof id === 'string' ? id.trim().toLowerCase() : id;
 }
@@ -20,19 +23,22 @@ class TelemetryWorker {
     this.io = io; // Socket.IO 인스턴스
     this.queue = queue; // Telemetry 데이터 큐
     this.isRunning = false;
-    this.batchSize = options.batchSize || 100; // 배치 크기
-    this.processInterval = options.processInterval || 50; // 처리 주기 (ms)
-    this.broadcastInterval = options.broadcastInterval || 1000; // 브로드캐스트 주기 (ms) - 1초로 증가
+    this.batchSize = options.batchSize || 200; // 배치 크기 (실무 권장)
+    this.processInterval = options.processInterval || 20; // 처리 주기 (ms)
+    this.broadcastInterval = options.broadcastInterval || 100; // 브로드캐스트 주기 (ms) - 약 10Hz
     this.broadcastBuffer = new Map(); // 브로드캐스트 버퍼 (디바이스별)
     this.broadcastTimer = null;
     this.processTimer = null;
+    this.hubCacheRefreshTimer = null;
     this.csvWriter = csvWriter; // 싱글톤 CSV Writer 인스턴스 사용
     this.batteryCache = new Map(); // 디바이스별 마지막 배터리 값 저장
     this.lastBroadcastTime = new Map(); // 디바이스별 마지막 브로드캐스트 시간 (throttling)
-    this.minBroadcastInterval = options.minBroadcastInterval || 500; // 최소 브로드캐스트 간격 (ms) - 500ms
+    this.minBroadcastInterval = options.minBroadcastInterval || 100; // 최소 브로드캐스트 간격 (ms)
     this.measuringDevices = new Set(); // 측정 중인 디바이스 목록 (deviceId만 저장)
     this._lastNoReceiverErrorByRoom = new Map(); // room별 error-2-13 로그 throttle (60초)
     this._lastAggregateNoReceiverLog = 0; // 집계 "버퍼 있으나 전송 0건" error-2-13 throttle (60초)
+    /** hubId(lower) -> user_email 캐시 (broadcast 루프 내 DB 조회 제거) */
+    this.hubOwnerCache = new Map();
   }
 
   /**
@@ -49,6 +55,12 @@ class TelemetryWorker {
     console.log(`   Batch size: ${this.batchSize}`);
     console.log(`   Process interval: ${this.processInterval}ms`);
     console.log(`   Broadcast interval: ${this.broadcastInterval}ms`);
+
+    this.refreshHubCache().catch((e) => console.error('[Telemetry Worker] Hub cache initial load error:', e?.message));
+
+    this.hubCacheRefreshTimer = setInterval(() => {
+      this.refreshHubCache().catch((e) => console.error('[Telemetry Worker] Hub cache refresh error:', e?.message));
+    }, HUB_CACHE_REFRESH_MS);
 
     // 주기적으로 큐에서 데이터 처리
     this.processTimer = setInterval(() => {
@@ -77,11 +89,31 @@ class TelemetryWorker {
       this.broadcastTimer = null;
     }
 
+    if (this.hubCacheRefreshTimer) {
+      clearInterval(this.hubCacheRefreshTimer);
+      this.hubCacheRefreshTimer = null;
+    }
+
     // 남은 데이터 처리
     this.processBatch();
     this.broadcastBuffered();
 
     console.log('[Telemetry Worker] Stopped');
+  }
+
+  /**
+   * Hub 주소 -> user_email 캐시 갱신 (broadcast 루프 내 DB 조회 제거로 CPU/DB 부하 감소)
+   */
+  async refreshHubCache() {
+    if (!db.Hub) return;
+    const hubs = await db.Hub.findAll({ attributes: ['address', 'user_email'] });
+    const next = new Map();
+    for (const h of hubs) {
+      const addr = (h.address || '').trim().toLowerCase();
+      const email = (h.user_email || '').trim().toLowerCase();
+      if (addr && email) next.set(addr, email);
+    }
+    this.hubOwnerCache = next;
   }
 
   /**
@@ -496,7 +528,7 @@ class TelemetryWorker {
 
     const broadcastStartTime = Date.now();
     let broadcastCount = 0;
-    const bufferKeys = Array.from(this.broadcastBuffer.keys());
+    let stuckKeyCount = 0; // 전송 시도했으나 실패한 키 수 (스로틀 스킵 제외)
 
     for (const [key, dataArray] of this.broadcastBuffer.entries()) {
       if (dataArray.length === 0) continue;
@@ -505,7 +537,7 @@ class TelemetryWorker {
       const hubId = parts[0];
       const deviceId = parts.length >= 2 ? parts[1] : '';
 
-      // ✅ Throttling: 최소 간격 이내면 스킵
+      // ✅ Throttling: 최소 간격 이내면 스킵 (모아보내기 방지용, 빈 키는 delete로 제거됨)
       const lastBroadcast = this.lastBroadcastTime.get(key) || 0;
       const timeSinceLastBroadcast = Date.now() - lastBroadcast;
       if (timeSinceLastBroadcast < this.minBroadcastInterval) {
@@ -551,21 +583,25 @@ class TelemetryWorker {
       
       try {
         const hubIdLower = (hubId || '').trim().toLowerCase();
-        const hubs = await db.Hub.findAll({ attributes: ['address', 'user_email'] });
-        const hub = hubs.find((h) => (h.address || '').trim().toLowerCase() === hubIdLower);
+        const userEmail = this.hubOwnerCache.get(hubIdLower);
 
-        if (!hub || !hub.user_email) {
-          this.broadcastBuffer.set(key, []);
+        if (!userEmail) {
+          this.broadcastBuffer.delete(key);
           this.lastBroadcastTime.set(key, Date.now());
           continue;
         }
 
-        const roomName = `user:${(hub.user_email || '').trim().toLowerCase()}`;
+        const roomName = `user:${userEmail}`;
         const room = this.io.sockets.adapter.rooms.get(roomName);
         const socketCount = room ? room.size : 0;
 
         if (!this.io || !this.io.sockets) {
           continue;
+        }
+
+        if (process.env.DEBUG_TELEMETRY === 'true') {
+          console.log('[Telemetry Worker] ROOMS sample:', Array.from(this.io.sockets.adapter.rooms.entries()).slice(0, 5).map(([r, s]) => [r, s.size]));
+          console.log('[Telemetry Worker] SOCKET_COUNT', { roomName, socketCount });
         }
 
         let emitted = false;
@@ -590,8 +626,9 @@ class TelemetryWorker {
         }
         if (emitted) {
           this.lastBroadcastTime.set(key, Date.now());
-          this.broadcastBuffer.set(key, []);
+          this.broadcastBuffer.delete(key);
         } else {
+          stuckKeyCount++;
           const now = Date.now();
           const lastRoomLog = this._lastNoReceiverErrorByRoom.get(roomName) || 0;
           if (now - lastRoomLog > 60000) {
@@ -599,10 +636,11 @@ class TelemetryWorker {
             const msg = `room "${roomName}"에 소켓 없음 (hub=${hubId})`;
             logError(createError('socket', ERROR_REASON.TELEMETRY_NO_RECEIVER, 'TELEMETRY 미전송', msg, { topic: key }));
           }
+          this.broadcastBuffer.delete(key);
         }
       } catch (error) {
         console.error(`[Telemetry Worker] ❌ Error emitting TELEMETRY for hub ${hubId}:`, error);
-        this.broadcastBuffer.set(key, []);
+        this.broadcastBuffer.delete(key);
       }
 
       // broadcastCount는 emit 성공 시에만 증가 (위에서 처리)
@@ -610,12 +648,13 @@ class TelemetryWorker {
 
     if (broadcastCount > 0) {
       console.log(`[Telemetry Worker] 📤 TELEMETRY 전송 ${broadcastCount}건`);
-    } else if (bufferKeys.length > 0) {
+    } else if (stuckKeyCount > 0) {
       const now = Date.now();
       if (now - this._lastAggregateNoReceiverLog > 60000) {
         this._lastAggregateNoReceiverLog = now;
-        const detail = `버퍼 ${bufferKeys.length}건, keys: ${bufferKeys.slice(0, 3).join(', ')}`;
-        logError(createError('socket', ERROR_REASON.TELEMETRY_NO_RECEIVER, 'TELEMETRY 미전송(버퍼 있음)', detail, { deviceId: bufferKeys[0] || '' }));
+        const keysSnapshot = Array.from(this.broadcastBuffer.keys()).slice(0, 3);
+        const detail = `전송 실패 ${stuckKeyCount}건, keys: ${keysSnapshot.join(', ')}`;
+        logError(createError('socket', ERROR_REASON.TELEMETRY_NO_RECEIVER, 'TELEMETRY 미전송(버퍼 있음)', detail, { deviceId: keysSnapshot[0] || '' }));
       }
     }
   }
