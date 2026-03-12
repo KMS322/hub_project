@@ -11,16 +11,18 @@ export default function AdminConnectionMonitor() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const hasJoinedRef = useRef(false);
+  const socketRef = useRef({ on, off, emit });
+  socketRef.current = { on, off, emit };
 
   useEffect(() => {
     if (!isConnected) {
       setLoading(true);
       return;
     }
-    // 페이지 진입 시 한 번만 join 요청 (재연결/effect 재실행 시 중복 요청 방지 → state:hub 스팸 및 사용자 MQTT 방해 감소)
+    const { emit: emitFn, on: onFn, off: offFn } = socketRef.current;
     if (!hasJoinedRef.current) {
       hasJoinedRef.current = true;
-      emit('join-admin-connection-status');
+      emitFn('join-admin-connection-status');
     }
     const handleStatus = (payload) => {
       if (payload && typeof payload === 'object' && Array.isArray(payload.users)) {
@@ -29,11 +31,9 @@ export default function AdminConnectionMonitor() {
       }
       setLoading(false);
     };
-    on('admin-connection-status', handleStatus);
-    return () => {
-      off('admin-connection-status', handleStatus);
-    };
-  }, [isConnected, on, off, emit]);
+    onFn('admin-connection-status', handleStatus);
+    return () => offFn('admin-connection-status', handleStatus);
+  }, [isConnected]); // on/off/emit 제외 → 렌더마다 effect 재실행 방지, 연결됐을 때 한 번만 join
 
   const formatLastSeen = (ts) => {
     if (ts == null) return '-';

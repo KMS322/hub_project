@@ -108,7 +108,10 @@ module.exports = (io, app) => {
         return;
       }
       socket.join("admin/connection-status");
-      console.log("[Socket] Admin joined admin/connection-status");
+      if (!socket._adminConnectionStatusLogged) {
+        socket._adminConnectionStatusLogged = true;
+        console.log("[Socket] Admin joined admin/connection-status");
+      }
 
       try {
         const data = await getConnectionStatusData(app);
@@ -121,22 +124,23 @@ module.exports = (io, app) => {
       const mqttService = app && app.get("mqtt");
       const now = Date.now();
       const lastRequest = socket._lastAllHubsStateRequest || 0;
-      if (now - lastRequest < STATE_HUB_ALL_HUBS_MIN_INTERVAL_MS && lastRequest > 0) {
-        console.log("[Socket] join-admin-connection-status: state:hub to all hubs skipped (throttle)");
-      } else if (mqttService) {
-        socket._lastAllHubsStateRequest = now;
-        const STATE_HUB_DELAY_MS = 120;
-        try {
-          const hubs = await db.Hub.findAll({ attributes: ["address"] });
-          if (hubs.length > 0) {
-            for (const hub of hubs) {
-              const topic = mqttService.getHubReceiveTopic(hub.address);
-              mqttService.publish(topic, "state:hub", { qos: 1, retain: false });
-              await new Promise((r) => setTimeout(r, STATE_HUB_DELAY_MS));
+      if (now - lastRequest >= STATE_HUB_ALL_HUBS_MIN_INTERVAL_MS || lastRequest === 0) {
+        if (mqttService) {
+          socket._lastAllHubsStateRequest = now;
+          const STATE_HUB_DELAY_MS = 120;
+          try {
+            const hubs = await db.Hub.findAll({ attributes: ["address"] });
+            if (hubs.length > 0) {
+              console.log("[Socket] Sending state:hub to", hubs.length, "hubs");
+              for (const hub of hubs) {
+                const topic = mqttService.getHubReceiveTopic(hub.address);
+                mqttService.publish(topic, "state:hub", { qos: 1, retain: false });
+                await new Promise((r) => setTimeout(r, STATE_HUB_DELAY_MS));
+              }
             }
+          } catch (e) {
+            console.error("[Socket] join-admin-connection-status state:hub error:", e);
           }
-        } catch (e) {
-          console.error("[Socket] join-admin-connection-status state:hub error:", e);
         }
       }
     });
