@@ -583,9 +583,27 @@ class TelemetryWorker {
       
       try {
         const hubIdLower = (hubId || '').trim().toLowerCase();
-        const userEmail = this.hubOwnerCache.get(hubIdLower);
+        let userEmail = this.hubOwnerCache.get(hubIdLower);
+
+        if (!userEmail && db.Hub) {
+          try {
+            const hubs = await db.Hub.findAll({ attributes: ['address', 'user_email'] });
+            const hub = hubs.find((h) => (h.address || '').trim().toLowerCase() === hubIdLower);
+            if (hub && hub.user_email) {
+              const email = (hub.user_email || '').trim().toLowerCase();
+              this.hubOwnerCache.set(hubIdLower, email);
+              userEmail = email;
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
 
         if (!userEmail) {
+          if (!this._lastHubCacheMissLog || Date.now() - this._lastHubCacheMissLog > 30000) {
+            this._lastHubCacheMissLog = Date.now();
+            console.warn(`[Telemetry Worker] ⚠️ Hub 미등록/캐시 없음 → TELEMETRY 미전송. hubId=${hubId}, 캐시 키 수=${this.hubOwnerCache.size}. 해당 허브를 DB Hub 테이블에 등록했는지 확인하세요.`);
+          }
           this.broadcastBuffer.delete(key);
           this.lastBroadcastTime.set(key, Date.now());
           continue;
@@ -605,11 +623,13 @@ class TelemetryWorker {
         }
 
         let emitted = false;
+        let targetRoom = '';
         if (socketCount > 0) {
           try {
             this.io.to(roomName).emit('TELEMETRY', telemetryPayload);
             broadcastCount++;
             emitted = true;
+            targetRoom = roomName;
           } catch (emitError) {
             console.error(`[Telemetry Worker] ❌ Error during emit:`, emitError);
             throw emitError;
@@ -620,9 +640,13 @@ class TelemetryWorker {
             this.io.to('admin/telemetry').emit('TELEMETRY', telemetryPayload);
             broadcastCount++;
             emitted = true;
+            targetRoom = 'admin/telemetry';
           } catch (e) {
             console.error(`[Telemetry Worker] ❌ Admin TELEMETRY emit error:`, e);
           }
+        }
+        if (emitted && process.env.DEBUG_TELEMETRY === 'true') {
+          console.log(`[Telemetry Worker] 📤 TELEMETRY emitted → ${targetRoom} (hub=${hubId}, device=${deviceId})`);
         }
         if (emitted) {
           this.lastBroadcastTime.set(key, Date.now());
