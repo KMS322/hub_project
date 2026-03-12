@@ -16,6 +16,8 @@ const MQTT_PAYLOAD_MAX_BYTES = 1024 * 1024; // 1MB
  * - hub/{hubId}/telemetry/{deviceId} - 측정값
  * - hub/{hubId}/status - 허브 상태
  */
+const ADMIN_SNAPSHOT_THROTTLE_MS = 1500; // 어드민 연결 상태 스냅샷 최소 간격 (사용자 명령 처리 부담 완화)
+
 class MQTTService {
   constructor(io = null, telemetryQueue = null, app = null) {
     this.io = io; // Socket.IO 인스턴스
@@ -26,6 +28,7 @@ class MQTTService {
     this.batteryCache = new Map(); // 디바이스별 마지막 배터리 값 저장
     this.temperatureCache = new Map(); // 디바이스별 마지막 온도 값 저장
     this.hubTopicMode = new Map(); // hubId -> 'prod' | 'test' (test/hub 토픽을 쓰는지 추적)
+    this._lastAdminSnapshotAt = 0; // 어드민 스냅샷 스로틀용
   }
 
   /**
@@ -505,14 +508,18 @@ class MQTTService {
                 timestamp: new Date().toISOString(),
               });
             }
-            // ✅ 어드민 연결 상태 룸에 스냅샷 전송 (실시간 갱신)
-            if (this.app) {
-              const { getConnectionStatusData } = require('../admin/adminConnectionController');
-              getConnectionStatusData(this.app)
-                .then((data) => {
-                  if (this.io) this.io.to('admin/connection-status').emit('admin-connection-status', data);
-                })
-                .catch((err) => console.error('[MQTT Service] admin-connection-status snapshot error:', err));
+            // ✅ 어드민 연결 상태 룸에 스냅샷 전송 (스로틀: 사용자 측정 명령이 밀리지 않도록)
+            if (this.app && this.io) {
+              const now = Date.now();
+              if (now - this._lastAdminSnapshotAt >= ADMIN_SNAPSHOT_THROTTLE_MS) {
+                this._lastAdminSnapshotAt = now;
+                const { getConnectionStatusData } = require('../admin/adminConnectionController');
+                getConnectionStatusData(this.app)
+                  .then((data) => {
+                    if (this.io) this.io.to('admin/connection-status').emit('admin-connection-status', data);
+                  })
+                  .catch((err) => console.error('[MQTT Service] admin-connection-status snapshot error:', err));
+              }
             }
           }
         } else {

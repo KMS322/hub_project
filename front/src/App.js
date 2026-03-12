@@ -31,8 +31,8 @@ import AdminConnectionMonitor from './pages/AdminConnectionMonitor'
 import GlobalErrorModal from './components/GlobalErrorModal'
 import './App.css'
 
-// 처음 접속 시 로그인(사용자/어드민 선택) 없이 대시보드 등으로 진입 허용. .env에 REACT_APP_GUEST_ACCESS=true 설정 시 사용.
-const GUEST_ACCESS = process.env.REACT_APP_GUEST_ACCESS === 'true'
+// 처음 접속 시 로그인(사용자/어드민 선택) 없이 대시보드 등으로 진입 허용. .env에 VITE_GUEST_ACCESS=true 설정 시 사용.
+const GUEST_ACCESS = import.meta.env.VITE_GUEST_ACCESS === 'true'
 
 function AppContent() {
   const navigate = useNavigate()
@@ -168,7 +168,12 @@ function AppContent() {
   return (
     <div className="App">
       <Routes>
-        <Route path="/login" element={<Login />} />
+        <Route
+          path="/login"
+          element={
+            isAuthenticated && isAdmin ? <Navigate to="/admin/system-logs" replace /> : <Login />
+          }
+        />
         <Route path="/register" element={<Register />} />
 
         {/* 사용자 전용: 관리자면 어드민으로 리다이렉트 */}

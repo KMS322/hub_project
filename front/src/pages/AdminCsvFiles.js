@@ -9,18 +9,30 @@ export default function AdminCsvFiles() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [expandedKeys, setExpandedKeys] = useState(() => new Set());
 
   useEffect(() => {
     let mounted = true;
     getAdminCsvFiles()
       .then((res) => {
         if (mounted && res.success && res.data && res.data.users) {
-          setUsers(res.data.users);
+          const list = res.data.users;
+          setUsers(list);
+          setExpandedKeys(new Set(list.map((u) => u.userKey)));
         }
       })
       .catch((e) => mounted && setError(e?.message || 'CSV 목록 로드 실패'))
       .finally(() => mounted && setLoading(false));
   }, []);
+
+  const toggleUser = (userKey) => {
+    setExpandedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(userKey)) next.delete(userKey);
+      else next.add(userKey);
+      return next;
+    });
+  };
 
   const handleDownload = (userKey, relativePath, filename) => {
     downloadAdminCsvFile(userKey, relativePath, filename).catch((e) => {
@@ -78,29 +90,50 @@ export default function AdminCsvFiles() {
           <p className="admin-csv-files__empty">CSV 파일이 없습니다.</p>
         ) : (
           <section className="admin-csv-files__list">
-            {users.map(({ userKey, files }) => (
-              <div key={userKey} className="admin-csv-files__user">
-                <h2 className="admin-csv-files__user-title">유저: {userKey}</h2>
-                <p className="admin-csv-files__user-count">{files.length}개 파일</p>
-                <ul className="admin-csv-files__files">
-                  {files.map((f) => (
-                    <li key={f.relativePath} className="admin-csv-files__file">
-                      <span className="admin-csv-files__file-name">{f.filename}</span>
-                      <span className="admin-csv-files__file-meta">
-                        {formatSize(f.size)} · {formatMtime(f.mtime)}
-                      </span>
-                      <button
-                        type="button"
-                        className="admin-csv-files__download"
-                        onClick={() => handleDownload(userKey, f.relativePath, f.filename)}
-                      >
-                        다운로드
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
+            {users.map(({ userKey, files }) => {
+              const isExpanded = expandedKeys.has(userKey);
+              return (
+                <div
+                  key={userKey}
+                  className={`admin-csv-files__user ${!isExpanded ? '' : 'admin-csv-files__user--collapsed'}`}
+                >
+                  <button
+                    type="button"
+                    className="admin-csv-files__user-header"
+                    onClick={() => toggleUser(userKey)}
+                    aria-expanded={isExpanded}
+                  >
+                    <span className="admin-csv-files__user-chevron" aria-hidden>
+                      {!isExpanded ? '▼' : '▶'}
+                    </span>
+                    <span className="admin-csv-files__user-title">유저: {userKey}</span>
+                    <span className="admin-csv-files__user-count">{files.length}개 파일</span>
+                  </button>
+                  <div className="admin-csv-files__user-body">
+                    <ul className="admin-csv-files__files">
+                      {files.map((f) => (
+                        <li key={f.relativePath} className="admin-csv-files__file">
+                          <span className="admin-csv-files__file-name">{f.filename}</span>
+                          <span className="admin-csv-files__file-meta">
+                            {formatSize(f.size)} · {formatMtime(f.mtime)}
+                          </span>
+                          <button
+                            type="button"
+                            className="admin-csv-files__download"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDownload(userKey, f.relativePath, f.filename);
+                            }}
+                          >
+                            다운로드
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              );
+            })}
           </section>
         )}
       </main>

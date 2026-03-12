@@ -99,7 +99,7 @@ module.exports = (io, app) => {
       }
     });
 
-    // Admin 연결 상태 모니터링: 룸 가입 + 전체 허브에 state:hub 요청 + 초기 스냅샷 전송
+    // Admin 연결 상태 모니터링: 룸 가입 + 전체 허브에 state:hub 요청(간격 두어 사용자 명령이 끼어들 수 있게) + 초기 스냅샷 전송
     socket.on("join-admin-connection-status", async () => {
       if (socket.user.role !== "admin") {
         console.warn("[Socket] join-admin-connection-status: non-admin user ignored");
@@ -109,33 +109,35 @@ module.exports = (io, app) => {
       console.log("[Socket] Admin joined admin/connection-status");
 
       const mqttService = app && app.get("mqtt");
+      const STATE_HUB_DELAY_MS = 120; // 허브 간 간격: 사용자 측정 시작/정지 등 CONTROL_REQUEST가 끼어들 수 있도록
       try {
-        const hubs = await db.Hub.findAll({ attributes: ["address"] });
-        if (mqttService && hubs.length > 0) {
-          for (const hub of hubs) {
-            const topic = mqttService.getHubReceiveTopic(hub.address);
-            const success = mqttService.publish(topic, "state:hub", { qos: 1, retain: false });
-            if (success) {
-              console.log("[Socket] state:hub requested for hub:", hub.address);
-            }
-          }
-        }
         const data = await getConnectionStatusData(app);
         socket.emit("admin-connection-status", data);
       } catch (e) {
-        console.error("[Socket] join-admin-connection-status error:", e);
+        console.error("[Socket] join-admin-connection-status initial snapshot error:", e);
+        socket.emit("admin-connection-status", { users: [] });
+      }
+
+      if (mqttService) {
         try {
-          const data = await getConnectionStatusData(app);
-          socket.emit("admin-connection-status", data);
-        } catch (e2) {
-          socket.emit("admin-connection-status", { users: [] });
+          const hubs = await db.Hub.findAll({ attributes: ["address"] });
+          if (hubs.length > 0) {
+            for (const hub of hubs) {
+              const topic = mqttService.getHubReceiveTopic(hub.address);
+              mqttService.publish(topic, "state:hub", { qos: 1, retain: false });
+              await new Promise((r) => setTimeout(r, STATE_HUB_DELAY_MS));
+            }
+          }
+        } catch (e) {
+          console.error("[Socket] join-admin-connection-status state:hub error:", e);
         }
       }
     });
 
     /**
-     * CONTROL_REQUEST: 프론트에서 기기 제어 명령 전송
-     * 예: 측정 시작/정지, LED 깜빡임 등
+     * CONTROL_REQUEST: 프론트에서 기기 제어 명령 전송 (측정 시작/정지 등)
+     * 어드민이 연결 상태 페이지에 있어도 사용자 명령은 항상 이 소켓으로 수신되어 처리되며,
+     * 결과는 요청한 소켓(socket.emit)에만 전달됩니다.
      */
     socket.on("CONTROL_REQUEST", async (data) => {
       try {

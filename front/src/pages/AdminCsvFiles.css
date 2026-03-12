@@ -44,20 +44,51 @@
 .admin-csv-files__user {
   background: #fff;
   border-radius: 8px;
-  padding: 1rem 1.25rem;
   margin-bottom: 1rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+.admin-csv-files__user-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 1rem 1.25rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.admin-csv-files__user-header:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.admin-csv-files__user-chevron {
+  font-size: 0.75rem;
+  color: #666;
+  flex-shrink: 0;
 }
 
 .admin-csv-files__user-title {
-  margin: 0 0 0.25rem;
+  flex: 1;
   font-size: 1.1rem;
+  font-weight: 600;
 }
 
 .admin-csv-files__user-count {
-  margin: 0 0 0.75rem;
   font-size: 0.85rem;
   color: #666;
+}
+
+.admin-csv-files__user-body {
+  padding: 0 1.25rem 1rem 1.25rem;
+}
+
+.admin-csv-files__user--collapsed .admin-csv-files__user-body {
+  display: none;
 }
 
 .admin-csv-files__files {
