@@ -116,60 +116,14 @@ class TelemetryWorker {
       return;
     }
 
-    // 진단: Worker 처리 시작 (어디서 멈추는지 확인용)
-    const firstItem = batch[0];
-    console.log('[Telemetry Worker] 🔄 TelemetryWorker start processing', {
-      batchLength: batch.length,
-      hubId: firstItem?.hubId,
-      deviceId: firstItem?.deviceId,
-      dataLength: firstItem?.data?.data?.length ?? firstItem?.data?.dataArr?.length ?? 'N/A',
-    });
-
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/dbf439ea-9874-404e-bfdd-9c97e098e02b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'workers/telemetryWorker.js:processBatch',message:'Processing batch',data:{batchSize:batch.length,queueRemaining:this.queue.length},timestamp:Date.now(),sessionId:'debug-session',runId:'runtime',hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
-
-      try {
+    try {
         const processStartTime = Date.now();
-        
-        // DB 저장 (bulk insert)
-        const dbStartTime = Date.now();
         await this.saveToDatabase(batch);
-        const dbTime = Date.now() - dbStartTime;
-        console.log('[Telemetry Worker] ✅ Telemetry saved to DB', { batchLength: batch.length, dbTimeMs: dbTime });
-
-        // CSV 저장
-        const csvStartTime = Date.now();
         this.saveToCSV(batch);
-        const csvTime = Date.now() - csvStartTime;
-
-        // 브로드캐스트 버퍼에 추가
-        const broadcastStartTime = Date.now();
         this.addToBroadcastBuffer(batch);
-        const broadcastTime = Date.now() - broadcastStartTime;
-
         const totalProcessTime = Date.now() - processStartTime;
-        
-        // 가장 오래된 수신 시간 찾기
-        const oldestReceiveTime = batch.reduce((oldest, item) => {
-          const receiveTime = item.receiveStartTime || item.timestamp?.getTime() || Date.now();
-          return oldest ? Math.min(oldest, receiveTime) : receiveTime;
-        }, null);
-        
-        const endToEndTime = oldestReceiveTime ? Date.now() - oldestReceiveTime : totalProcessTime;
-
-        console.log(`[Telemetry Worker] ✅ Processed ${batch.length} telemetry items`);
-        console.log(`   Queue remaining: ${this.queue.length} items`);
-        console.log(`   ⏱️  Performance:`);
-        console.log(`      - DB save: ${dbTime}ms`);
-        console.log(`      - CSV save: ${csvTime}ms`);
-        console.log(`      - Broadcast buffer: ${broadcastTime}ms`);
-        console.log(`      - Total process: ${totalProcessTime}ms`);
-        console.log(`      - End-to-end: ${endToEndTime}ms ${endToEndTime < 1000 ? '✅' : '⚠️'}`);
-        
-        // 1초 초과 시 경고
-        if (endToEndTime >= 1000) {
-          console.warn(`   ⚠️  WARNING: End-to-end time exceeds 1 second!`);
+        if (totalProcessTime >= 1000) {
+          console.warn(`[Telemetry Worker] ⚠️ Batch slow: ${batch.length} items, ${totalProcessTime}ms`);
         }
       } catch (error) {
         console.error('[Telemetry Worker] Error processing batch:', error);
@@ -374,6 +328,9 @@ class TelemetryWorker {
     for (const item of batch) {
       const { hubId, deviceId: rawDeviceId, data, publishStartTime } = item;
       const deviceId = normalizeDeviceId(rawDeviceId);
+      // 측정 중인 디바이스만 브로드캐스트 버퍼에 추가 (측정 정지 후 난류 데이터 전송 방지)
+      if (!this.measuringDevices.has(deviceId)) continue;
+
       const key = `${hubId}${BROADCAST_KEY_SEP}${deviceId}`;
 
       // 신호처리 수행
@@ -538,10 +495,6 @@ class TelemetryWorker {
       return;
     }
 
-    // 진단: 브로드캐스트 단계 진입 (버퍼에 데이터 있음)
-    const bufferKeys = Array.from(this.broadcastBuffer.keys());
-    console.log('[Telemetry Worker] 📡 broadcastBuffered running', { bufferSize: this.broadcastBuffer.size, keys: bufferKeys.slice(0, 5) });
-
     const broadcastStartTime = Date.now();
     let broadcastCount = 0;
 
@@ -551,10 +504,12 @@ class TelemetryWorker {
       const parts = key.split(BROADCAST_KEY_SEP);
       const hubId = parts[0];
       const deviceId = parts.length >= 2 ? parts[1] : '';
-      
-      // ✅ MQTT 수신 데이터는 항상 허브 소유자에게 전송 (측정 시작 여부와 무관)
-      // measuringDevices 체크 제거 → MQTT 들어오면 무조건 Socket.IO로 전달
-      
+      // 측정 중이 아닌 디바이스는 버퍼만 비우고 전송하지 않음
+      if (!this.measuringDevices.has(deviceId)) {
+        this.broadcastBuffer.set(key, []);
+        continue;
+      }
+
       // ✅ Throttling: 최소 간격 이내면 스킵
       const lastBroadcast = this.lastBroadcastTime.get(key) || 0;
       const timeSinceLastBroadcast = Date.now() - lastBroadcast;
@@ -601,119 +556,43 @@ class TelemetryWorker {
       
       try {
         const hub = await db.Hub.findByPk(hubId);
-        console.log(`[Telemetry Worker] 🔍 Emitting TELEMETRY`, {
-          hubId,
-          deviceId,
-          hubFound: !!hub,
-          hubUserEmail: hub?.user_email || 'N/A',
-          roomName: hub?.user_email ? `user:${hub.user_email}` : 'N/A',
-          socketIORooms: this.io ? Object.keys(this.io.sockets.adapter.rooms || {}).length : 0,
-          payload: JSON.stringify(telemetryPayload, null, 2),
-        });
-        
-        if (hub && hub.user_email) {
-          const roomName = `user:${hub.user_email}`;
-          const room = this.io.sockets.adapter.rooms.get(roomName);
-          const socketCount = room ? room.size : 0;
-          
-          // ✅ 모든 rooms 확인 (디버깅용)
-          const allRooms = Array.from(this.io.sockets.adapter.rooms.keys());
-          const userRooms = allRooms.filter(r => r.startsWith('user:'));
-          
-          console.log(`[Telemetry Worker] 📤 Emitting to room "${roomName}"`, {
-            roomExists: !!room,
-            socketCount,
-            allRoomsCount: allRooms.length,
-            userRoomsCount: userRooms.length,
-            userRooms: userRooms.slice(0, 10), // 처음 10개만
-            targetRoom: roomName,
-            payloadSize: JSON.stringify(telemetryPayload).length,
-            hr: telemetryData.hr,
-            spo2: telemetryData.spo2,
-            temp: telemetryData.temp,
-            battery: telemetryData.battery,
-          });
-          
-          // ✅ Socket.IO 인스턴스 및 Room 유효성 확인
-          if (!this.io || !this.io.sockets) {
-            console.error(`[Telemetry Worker] ❌ Socket.IO instance not available`);
-            // 버퍼 유지 (다음 브로드캐스트 시 재시도)
-            return;
-          }
-          
-          // ✅ Room에 socket이 없으면 경고 (연결 문제 가능성) — 이 디바이스만 스킵
-          if (socketCount === 0) {
-            console.warn(`[Telemetry Worker] ⚠️ No sockets in room "${roomName}" - user may be disconnected`, {
-              hubId,
-              deviceId,
-              hubUserEmail: hub.user_email,
-            });
-            continue;
-          }
-          
-          // ✅ emit 전송 및 확인
-          try {
-            console.log('[Telemetry Worker] 📤 Socket emit telemetry', { hubId, deviceId, roomName, socketCount });
-            this.io.to(roomName).emit('TELEMETRY', telemetryPayload);
-            // 소켓 전송 여부 확인용 로그 (MQTT → 큐 → Worker → Socket.IO 도달 확인)
-            console.log(`[Socket.IO] 📤 TELEMETRY 전송 완료 → room "${roomName}" (hub=${hubId} device=${deviceId} hr=${telemetryData?.hr ?? telemetryData?.processedHR ?? '-'})`);
-            
-            // ✅ emit 후 즉시 확인 (Socket.IO는 비동기이므로 완벽하지 않지만 참고용)
-            const roomAfterEmit = this.io.sockets.adapter.rooms.get(roomName);
-            const socketCountAfter = roomAfterEmit ? roomAfterEmit.size : 0;
-            
-            console.log(`[Telemetry Worker] ✅ TELEMETRY emitted to user ${hub.user_email}`, {
-              hubId,
-              deviceId,
-              roomName,
-              socketCount,
-              socketCountAfter,
-              hr: telemetryData.hr,
-              spo2: telemetryData.spo2,
-              temp: telemetryData.temp,
-              battery: telemetryData.battery,
-              timestamp: telemetryPayload.timestamp,
-            });
-            
-            // ✅ 전송 성공 시에만 버퍼에서 제거 및 마지막 전송 시간 업데이트
-            broadcastCount++;
-            this.lastBroadcastTime.set(key, Date.now());
-            this.broadcastBuffer.set(key, []);
-          } catch (emitError) {
-            console.error(`[Telemetry Worker] ❌ Error during emit:`, emitError);
-            // 에러 발생 시 버퍼 유지 (재시도 가능)
-            throw emitError;
-          }
-        } else {
-          // 허브 정보를 찾을 수 없으면 모든 클라이언트에 브로드캐스트 (fallback)
-          const connectedSockets = this.io.sockets.sockets.size;
-          console.log(`[Telemetry Worker] ⚠️ Hub not found, broadcasting to all ${connectedSockets} sockets`, {
-            hubId,
-            payload: JSON.stringify(telemetryPayload, null, 2),
-          });
-          this.io.emit('TELEMETRY', telemetryPayload);
-          console.log(`[Telemetry Worker] ⚠️ TELEMETRY broadcasted (hub not found) for hub ${hubId}`);
+        if (!hub || !hub.user_email) {
+          // 허브 미등록 시 전체 브로드캐스트 금지 — 버퍼만 비우고 스킵 (다른 사용자에게 노출 방지)
+          this.broadcastBuffer.set(key, []);
+          this.lastBroadcastTime.set(key, Date.now());
+          continue;
+        }
+
+        const roomName = `user:${hub.user_email}`;
+        const room = this.io.sockets.adapter.rooms.get(roomName);
+        const socketCount = room ? room.size : 0;
+
+        if (!this.io || !this.io.sockets) {
+          continue;
+        }
+        if (socketCount === 0) {
+          continue;
+        }
+
+        try {
+          this.io.to(roomName).emit('TELEMETRY', telemetryPayload);
+          broadcastCount++;
+          this.lastBroadcastTime.set(key, Date.now());
+          this.broadcastBuffer.set(key, []);
+        } catch (emitError) {
+          console.error(`[Telemetry Worker] ❌ Error during emit:`, emitError);
+          throw emitError;
         }
       } catch (error) {
         console.error(`[Telemetry Worker] ❌ Error emitting TELEMETRY for hub ${hubId}:`, error);
-        console.error(`[Telemetry Worker] Error stack:`, error.stack);
-        // 에러 발생 시 fallback으로 브로드캐스트
-        try {
-          console.log(`[Telemetry Worker] 🔄 Attempting fallback broadcast`);
-          this.io.emit('TELEMETRY', telemetryPayload);
-          console.log(`[Telemetry Worker] ✅ Fallback broadcast successful`);
-        } catch (emitError) {
-          console.error(`[Telemetry Worker] ❌ Failed to broadcast TELEMETRY:`, emitError);
-          console.error(`[Telemetry Worker] Broadcast error stack:`, emitError.stack);
-        }
+        this.broadcastBuffer.set(key, []);
       }
 
       // broadcastCount는 emit 성공 시에만 증가 (위에서 처리)
     }
 
     if (broadcastCount > 0) {
-      const broadcastTime = Date.now() - broadcastStartTime;
-      console.log(`[Telemetry Worker] 📡 Broadcasted ${broadcastCount} devices to frontend (${broadcastTime}ms)`);
+      console.log(`[Telemetry Worker] 📡 Sent ${broadcastCount} device(s)`);
     }
   }
 
