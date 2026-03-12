@@ -273,7 +273,7 @@ class MQTTService {
               const db = require('../models');
               const hub = await db.Hub.findByPk(hubId);
               if (hub && hub.user_email) {
-                this.io.to(`user:${hub.user_email}`).emit('CONNECTED_DEVICES', {
+                this.io.to(`user:${(hub.user_email || '').trim().toLowerCase()}`).emit('CONNECTED_DEVICES', {
                   hubAddress: hubId,
                   connected_devices: macList,
                   timestamp: new Date().toISOString(),

@@ -567,7 +567,7 @@ class TelemetryWorker {
           continue;
         }
 
-        const roomName = `user:${hub.user_email}`;
+        const roomName = `user:${(hub.user_email || '').trim().toLowerCase()}`;
         const room = this.io.sockets.adapter.rooms.get(roomName);
         const socketCount = room ? room.size : 0;
 

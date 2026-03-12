@@ -9,7 +9,8 @@ class SocketService {
   constructor() {
     this.socket = null;
     this.isConnected = false;
-    this.listeners = new Map(); // 이벤트 리스너 관리
+    this.listeners = new Map();
+    this._lastToken = null;
   }
 
   /**
@@ -18,15 +19,17 @@ class SocketService {
    * @param {string} serverUrl - 서버 URL (기본: API_URL 상수 사용)
    */
   connect(token, serverUrl = API_URL) {
-    if (this.socket && this.isConnected) {
-      console.log("[Socket] Already connected");
+    if (!token) {
+      this.disconnect();
       return;
     }
-
-    // 기존 연결이 있으면 먼저 해제
+    if (this.socket && this.socket.connected && this._lastToken === token) {
+      return;
+    }
     if (this.socket) {
       this.disconnect();
     }
+    this._lastToken = token;
 
     // Socket.IO는 네임스페이스를 사용하므로, URL에서 path를 제거하고 origin만 사용
     let socketUrl = serverUrl;
@@ -90,16 +93,14 @@ class SocketService {
    */
   disconnect() {
     if (this.socket) {
-      // 모든 리스너 제거
       this.listeners.forEach((handler, event) => {
         this.socket.off(event, handler);
       });
       this.listeners.clear();
-
       this.socket.disconnect();
       this.socket = null;
       this.isConnected = false;
-      console.log("[Socket] Disconnected");
+      this._lastToken = null;
     }
   }
 
@@ -146,8 +147,12 @@ class SocketService {
    * @param {any} data - 전송할 데이터
    */
   emit(event, data) {
-    if (!this.socket || !this.isConnected) {
-      console.warn("[Socket] Socket not connected. Cannot emit:", event);
+    if (!this.socket) {
+      console.warn("[Socket] Socket not initialized. Cannot emit:", event);
+      return false;
+    }
+    if (!this.socket.connected) {
+      console.warn("[Socket] Socket not connected yet. Cannot emit:", event);
       return false;
     }
 

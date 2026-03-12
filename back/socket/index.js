@@ -62,9 +62,11 @@ module.exports = (io, app) => {
     console.log(`[Socket] ✅ User connected: ${socket.user.name} (${socket.id})`);
     console.log(`[Socket] 📧 User email: ${socket.user.email}`);
 
-    const roomName = `user:${socket.user.email}`;
+    // 룸 이름은 이메일 소문자 통일 (Hub user_email·JWT 대소문자 차이로 수신 실패 방지)
+    const userEmail = (socket.user.email || '').trim().toLowerCase();
+    const roomName = `user:${userEmail}`;
     socket.join(roomName);
-    
+
     const room = io.sockets.adapter.rooms.get(roomName);
     const socketCount = room ? room.size : 0;
     console.log(`[Socket] 🏠 User joined room: "${roomName}"`, {

@@ -11,40 +11,35 @@ export const useSocket = () => {
   const [isConnected, setIsConnected] = useState(false);
   const listenersRef = useRef(new Map());
 
-  // 연결
+  // 연결 (토큰 있을 때만 연결, 없으면 연결 해제)
   useEffect(() => {
     if (!token) {
-      console.warn('[useSocket] No token available');
+      socketService.disconnect();
+      setIsConnected(false);
       return;
     }
 
-    // Socket 연결
     socketService.connect(token);
 
-    // 연결 상태 업데이트
     const updateConnectionStatus = () => {
       setIsConnected(socketService.getConnectionStatus());
     };
 
-    // 초기 상태 확인
     updateConnectionStatus();
 
-    // 연결 상태 변경 리스너
     socketService.on('connect', updateConnectionStatus);
     socketService.on('disconnect', updateConnectionStatus);
     socketService.on('connected', updateConnectionStatus);
 
-    // 정리 함수
     return () => {
       socketService.off('connect', updateConnectionStatus);
       socketService.off('disconnect', updateConnectionStatus);
       socketService.off('connected', updateConnectionStatus);
-      
-      // 등록된 모든 리스너 제거
       listenersRef.current.forEach((callback, event) => {
         socketService.off(event, callback);
       });
       listenersRef.current.clear();
+      socketService.disconnect();
     };
   }, [token]);
 
