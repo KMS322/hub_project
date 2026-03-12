@@ -18,6 +18,12 @@ const MQTT_PAYLOAD_MAX_BYTES = 1024 * 1024; // 1MB
  */
 const ADMIN_SNAPSHOT_THROTTLE_MS = 1500; // 어드민 연결 상태 스냅샷 최소 간격 (사용자 명령 처리 부담 완화)
 
+/** 허브 주소 정규화 (DB·토픽 형식 통일) */
+function normalizeHubAddress(addr) {
+  if (!addr || typeof addr !== 'string') return '';
+  return addr.trim().toLowerCase().replace(/-/g, ':');
+}
+
 class MQTTService {
   constructor(io = null, telemetryQueue = null, app = null) {
     this.io = io; // Socket.IO 인스턴스
@@ -29,6 +35,29 @@ class MQTTService {
     this.temperatureCache = new Map(); // 디바이스별 마지막 온도 값 저장
     this.hubTopicMode = new Map(); // hubId -> 'prod' | 'test' (test/hub 토픽을 쓰는지 추적)
     this._lastAdminSnapshotAt = 0; // 어드민 스냅샷 스로틀용
+    /** DB에 등록된 허브 주소 집합 (정규화). 미등록 허브 텔레메트리는 큐에 넣지 않음 */
+    this.registeredHubIds = new Set();
+    this._registeredHubsRefreshTimer = null;
+    this._lastUnregisteredHubLog = 0;
+  }
+
+  /**
+   * DB에 등록된 허브 주소 목록 갱신 (미등록/더미 허브 텔레메트리 큐 적재 방지)
+   */
+  async refreshRegisteredHubs() {
+    try {
+      const db = require('../models');
+      if (!db.Hub) return;
+      const hubs = await db.Hub.findAll({ attributes: ['address'] });
+      const next = new Set();
+      for (const h of hubs) {
+        const norm = normalizeHubAddress(h.address);
+        if (norm) next.add(norm);
+      }
+      this.registeredHubIds = next;
+    } catch (e) {
+      // ignore
+    }
   }
 
   /**
@@ -38,6 +67,8 @@ class MQTTService {
     // MQTT 클라이언트 연결
     mqttClient.connect();
     this.setupSubscriptions();
+    this.refreshRegisteredHubs().catch(() => {});
+    this._registeredHubsRefreshTimer = setInterval(() => this.refreshRegisteredHubs().catch(() => {}), 60 * 1000);
   }
 
   /**
@@ -176,11 +207,11 @@ class MQTTService {
    *   - device:[] → 허브 살아 있음(응답함), 연결된 디바이스 없음
    *   - device:["aa:bb:cc:...", ...] → 배열 값은 연결된 디바이스의 MAC 주소
    * @param {Object|string} message - 수신된 메시지
-   * @param {string} topic - 메시지가 수신된 토픽 (예: hub/80:b5:4e:db:44:9a/send)
+   * @param {string} topic - 메시지가 수신된 토픽 (예: hub/AA:BB:CC:DD:EE:FF/send)
    */
   async handleHubSendMessage(message, topic) {
     const parts = topic.split('/');
-    const hubId = parts[1]; // hub/80:b5:4e:db:44:9a/send에서 허브 ID 추출
+    const hubId = parts[1]; // 토픽에서 허브 ID 추출 (실제 수신 토픽 기준)
     this.setHubTopicMode(hubId, 'prod');
     presenceStore.updateHubSeen(hubId);
     
@@ -329,6 +360,14 @@ class MQTTService {
       const samplingRate = parsedString.sampling_rate || 50;
       presenceStore.updateDeviceSeen(hubId, deviceMac);
 
+      if (this.registeredHubIds.size > 0 && !this.registeredHubIds.has(normalizeHubAddress(hubId))) {
+        if (Date.now() - this._lastUnregisteredHubLog > 60000) {
+          this._lastUnregisteredHubLog = Date.now();
+          console.warn(`[MQTT Service] 텔레메트리 스킵(미등록 허브). hubId=${hubId} — DB Hub 테이블에 없음. 등록된 허브만 큐에 적재합니다.`);
+        }
+        return;
+      }
+
       // 배터리/온도 캐시 정책 적용
       const currentBattery = parsedString.battery || 0;
       let batteryToUse = currentBattery;
@@ -414,6 +453,15 @@ class MQTTService {
       // 측정 데이터인지 확인 (device_mac_address와 data 배열이 있으면 측정 데이터)
       if (data.device_mac_address && Array.isArray(data.data)) {
         presenceStore.updateDeviceSeen(hubId, data.device_mac_address);
+
+        if (this.registeredHubIds.size > 0 && !this.registeredHubIds.has(normalizeHubAddress(hubId))) {
+          if (Date.now() - this._lastUnregisteredHubLog > 60000) {
+            this._lastUnregisteredHubLog = Date.now();
+            console.warn(`[MQTT Service] 텔레메트리 스킵(미등록 허브). hubId=${hubId} — DB Hub 테이블에 없음.`);
+          }
+          return;
+        }
+
         // TelemetryWorker 큐에 추가 (Socket.IO 전달용)
         const receiveStartTime = Date.now();
         const deviceIdNorm = (data.device_mac_address || '').trim().toLowerCase();
@@ -480,7 +528,7 @@ class MQTTService {
       }
     }
 
-    // "message:80:b5:4e:db:44:9a mqtt ready" 형식 메시지 처리
+    // "message:{hubId} mqtt ready" 형식 메시지 처리
     if (messageStr.includes('mqtt ready')) {
       console.log(`[MQTT Service] 🔍 MQTT Ready detected from hub ${hubId}`);
       
@@ -544,6 +592,14 @@ class MQTTService {
     const deviceMac = parsed.device_mac_address;
     const samplingRate = parsed.sampling_rate || 50;
     presenceStore.updateDeviceSeen(hubId, deviceMac);
+
+    if (this.registeredHubIds.size > 0 && !this.registeredHubIds.has(normalizeHubAddress(hubId))) {
+      if (Date.now() - this._lastUnregisteredHubLog > 60000) {
+        this._lastUnregisteredHubLog = Date.now();
+        console.warn(`[MQTT Service] 테스트 텔레메트리 스킵(미등록 허브). hubId=${hubId}`);
+      }
+      return;
+    }
 
     // 배터리/온도 캐시 정책 동일 적용 (0이면 캐시 사용)
     const currentBattery = parsed.battery || 0;
