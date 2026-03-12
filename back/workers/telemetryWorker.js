@@ -609,6 +609,13 @@ class TelemetryWorker {
               this.hubOwnerCache.set(hubIdNorm, email);
               userEmail = email;
             }
+            if (!userEmail && (!this._lastHubCacheMissLog || Date.now() - this._lastHubCacheMissLog > 60000)) {
+              this._lastHubCacheMissLog = Date.now();
+              const dbAddresses = (hubs || []).map((h) => `"${(h.address || '').toString()}"`);
+              console.warn(
+                `[Telemetry Worker] TELEMETRY 스킵 — Hub 테이블에 해당 주소 없음. 찾는 hubId(정규화)=${JSON.stringify(hubIdNorm)}, DB에 있는 address 목록=[${dbAddresses.join(', ')}]. 위 목록에 이 허브가 있으면 주소 형식(공백/대시/콜론)을 확인하세요.`
+              );
+            }
           } catch (e) {
             console.error('[Telemetry Worker] Hub 조회 오류:', e?.message);
           }
@@ -617,7 +624,12 @@ class TelemetryWorker {
         if (!userEmail) {
           if (!this._lastHubCacheMissLog || Date.now() - this._lastHubCacheMissLog > 60000) {
             this._lastHubCacheMissLog = Date.now();
-            console.warn(`[Telemetry Worker] ⚠️ Hub 미등록 → TELEMETRY 스킵. hubId=${hubId}, 캐시 키 수=${this.hubOwnerCache.size}`);
+            if (this.hubOwnerCache.size > 0) {
+              const cacheKeys = Array.from(this.hubOwnerCache.keys());
+              console.warn(`[Telemetry Worker] TELEMETRY 스킵. 찾는 hubId=${hubId}, 캐시 키=${cacheKeys.join(', ')}`);
+            } else {
+              console.warn(`[Telemetry Worker] TELEMETRY 스킵. 찾는 hubId=${hubId}, Hub 캐시 비어 있음(DB 조회 실패 또는 Hub 테이블 비어 있음).`);
+            }
           }
           this.broadcastBuffer.delete(key);
           this.lastBroadcastTime.set(key, Date.now());
