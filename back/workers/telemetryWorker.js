@@ -14,6 +14,12 @@ function normalizeDeviceId(id) {
   return typeof id === 'string' ? id.trim().toLowerCase() : id;
 }
 
+/** 허브 주소 정규화: 콜론/대시 혼용 시 동일하게 비교 (DB 저장 형식과 MQTT 토픽 형식 통일) */
+function normalizeHubAddress(addr) {
+  if (!addr || typeof addr !== 'string') return '';
+  return addr.trim().toLowerCase().replace(/-/g, ':');
+}
+
 /**
  * Telemetry 데이터 처리 Worker
  * 대량 데이터를 Queue에서 가져와 DB 저장, CSV 저장 및 WebSocket 브로드캐스트
@@ -56,7 +62,12 @@ class TelemetryWorker {
     console.log(`   Process interval: ${this.processInterval}ms`);
     console.log(`   Broadcast interval: ${this.broadcastInterval}ms`);
 
-    this.refreshHubCache().catch((e) => console.error('[Telemetry Worker] Hub cache initial load error:', e?.message));
+    // 캐시를 먼저 채운 뒤 브로드캐스트 시작 (DB에 있는데 캐시 미반영으로 스킵되는 것 방지)
+    this.refreshHubCache()
+      .then(() => {
+        console.log('[Telemetry Worker] Hub 캐시 로드 완료:', this.hubOwnerCache.size, '개');
+      })
+      .catch((e) => console.error('[Telemetry Worker] Hub cache initial load error:', e?.message));
 
     this.hubCacheRefreshTimer = setInterval(() => {
       this.refreshHubCache().catch((e) => console.error('[Telemetry Worker] Hub cache refresh error:', e?.message));
@@ -103,15 +114,19 @@ class TelemetryWorker {
 
   /**
    * Hub 주소 -> user_email 캐시 갱신 (broadcast 루프 내 DB 조회 제거로 CPU/DB 부하 감소)
+   * 주소는 정규화(소문자, 대시→콜론)하여 저장·조회 시 형식 불일치 방지
    */
   async refreshHubCache() {
     if (!db.Hub) return;
     const hubs = await db.Hub.findAll({ attributes: ['address', 'user_email'] });
     const next = new Map();
     for (const h of hubs) {
-      const addr = (h.address || '').trim().toLowerCase();
+      const raw = (h.address || '').trim();
       const email = (h.user_email || '').trim().toLowerCase();
-      if (addr && email) next.set(addr, email);
+      if (!raw || !email) continue;
+      const norm = normalizeHubAddress(raw);
+      next.set(norm, email);
+      if (raw !== norm) next.set(raw.toLowerCase(), email);
     }
     this.hubOwnerCache = next;
   }
@@ -582,27 +597,27 @@ class TelemetryWorker {
       };
       
       try {
-        const hubIdLower = (hubId || '').trim().toLowerCase();
-        let userEmail = this.hubOwnerCache.get(hubIdLower);
+        const hubIdNorm = normalizeHubAddress(hubId);
+        let userEmail = this.hubOwnerCache.get(hubIdNorm) || this.hubOwnerCache.get((hubId || '').trim().toLowerCase());
 
         if (!userEmail && db.Hub) {
           try {
             const hubs = await db.Hub.findAll({ attributes: ['address', 'user_email'] });
-            const hub = hubs.find((h) => (h.address || '').trim().toLowerCase() === hubIdLower);
+            const hub = hubs.find((h) => normalizeHubAddress(h.address) === hubIdNorm || (h.address || '').trim().toLowerCase() === (hubId || '').trim().toLowerCase());
             if (hub && hub.user_email) {
               const email = (hub.user_email || '').trim().toLowerCase();
-              this.hubOwnerCache.set(hubIdLower, email);
+              this.hubOwnerCache.set(hubIdNorm, email);
               userEmail = email;
             }
           } catch (e) {
-            // ignore
+            console.error('[Telemetry Worker] Hub 조회 오류:', e?.message);
           }
         }
 
         if (!userEmail) {
-          if (!this._lastHubCacheMissLog || Date.now() - this._lastHubCacheMissLog > 30000) {
+          if (!this._lastHubCacheMissLog || Date.now() - this._lastHubCacheMissLog > 60000) {
             this._lastHubCacheMissLog = Date.now();
-            console.warn(`[Telemetry Worker] ⚠️ Hub 미등록/캐시 없음 → TELEMETRY 미전송. hubId=${hubId}, 캐시 키 수=${this.hubOwnerCache.size}. 해당 허브를 DB Hub 테이블에 등록했는지 확인하세요.`);
+            console.warn(`[Telemetry Worker] ⚠️ Hub 미등록 → TELEMETRY 스킵. hubId=${hubId}, 캐시 키 수=${this.hubOwnerCache.size}`);
           }
           this.broadcastBuffer.delete(key);
           this.lastBroadcastTime.set(key, Date.now());
