@@ -492,6 +492,7 @@ class TelemetryWorker {
 
     const broadcastStartTime = Date.now();
     let broadcastCount = 0;
+    const bufferKeys = Array.from(this.broadcastBuffer.keys());
 
     for (const [key, dataArray] of this.broadcastBuffer.entries()) {
       if (dataArray.length === 0) continue;
@@ -545,15 +546,11 @@ class TelemetryWorker {
       };
       
       try {
-        // Hub 주소는 대소문자 혼용 가능하므로 소문자로 비교
-        const hub = await db.Hub.findOne({
-          where: db.sequelize.where(
-            db.sequelize.fn('LOWER', db.sequelize.col('address')),
-            hubId.toLowerCase()
-          ),
-        });
+        const hubIdLower = (hubId || '').trim().toLowerCase();
+        const hubs = await db.Hub.findAll({ attributes: ['address', 'user_email'] });
+        const hub = hubs.find((h) => (h.address || '').trim().toLowerCase() === hubIdLower);
+
         if (!hub || !hub.user_email) {
-          // 허브 미등록 시 전체 브로드캐스트 금지 — 버퍼만 비우고 스킵 (다른 사용자에게 노출 방지)
           this.broadcastBuffer.set(key, []);
           this.lastBroadcastTime.set(key, Date.now());
           continue;
@@ -567,6 +564,10 @@ class TelemetryWorker {
           continue;
         }
         if (socketCount === 0) {
+          if (!this._lastSkipLog || Date.now() - this._lastSkipLog > 5000) {
+            this._lastSkipLog = Date.now();
+            console.warn(`[Telemetry Worker] ⏭️ TELEMETRY 미전송: room "${roomName}"에 소켓 없음 (hub=${hubId}). 로그인/연결 확인`);
+          }
           continue;
         }
 
@@ -588,7 +589,10 @@ class TelemetryWorker {
     }
 
     if (broadcastCount > 0) {
-      console.log(`[Telemetry Worker] 📡 Sent ${broadcastCount} device(s)`);
+      console.log(`[Telemetry Worker] 📤 TELEMETRY 전송 ${broadcastCount}건 → room ${bufferKeys.length ? '확인됨' : ''}`);
+    } else if (bufferKeys.length > 0 && (!this._lastSkipLog || Date.now() - this._lastSkipLog > 10000)) {
+      this._lastSkipLog = Date.now();
+      console.warn(`[Telemetry Worker] 버퍼에 ${bufferKeys.length}건 있으나 전송 0건 (room 소켓 없음 또는 Hub 미등록). keys:`, bufferKeys.slice(0, 3));
     }
   }
 
