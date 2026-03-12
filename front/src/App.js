@@ -165,6 +165,13 @@ function AppContent() {
     }
   }
 
+  // 어드민은 오직 /admin/* 경로만 사용. 그 외 경로 접근 시 무조건 어드민 메인으로 리다이렉트
+  useEffect(() => {
+    if (isAuthenticated && isAdmin && !location.pathname.startsWith('/admin')) {
+      navigate('/admin/system-logs', { replace: true })
+    }
+  }, [isAuthenticated, isAdmin, location.pathname, navigate])
+
   return (
     <div className="App">
       <Routes>
@@ -174,7 +181,12 @@ function AppContent() {
             isAuthenticated && isAdmin ? <Navigate to="/admin/system-logs" replace /> : <Login />
           }
         />
-        <Route path="/register" element={<Register />} />
+        <Route
+          path="/register"
+          element={
+            isAuthenticated && isAdmin ? <Navigate to="/admin/system-logs" replace /> : <Register />
+          }
+        />
 
         {/* 사용자 전용: 관리자면 어드민으로 리다이렉트 */}
         <Route
