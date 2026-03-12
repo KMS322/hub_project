@@ -38,10 +38,15 @@ function AppContent() {
   const navigate = useNavigate()
   const location = useLocation()
 
+  const token = useAuthStore((state) => state.token)
+  const user = useAuthStore((state) => state.user)
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
-  const userRole = useAuthStore((state) => state.user?.role)
+  const userRole = user?.role
   const isAdmin = userRole === 'admin'
   const canAccessWithoutLogin = GUEST_ACCESS && !isAuthenticated
+
+  // persist 복원 전: token은 있는데 user가 아직 null이면 아직 role을 모름 → 대시보드로 잘못 가지 않도록 복원 완료까지 대기
+  const authReady = token === null || token === undefined || user !== null
 
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
@@ -165,12 +170,22 @@ function AppContent() {
     }
   }
 
-  // 어드민은 오직 /admin/* 경로만 사용. 그 외 경로 접근 시 무조건 어드민 메인으로 리다이렉트
+  // 어드민은 오직 /admin/* 경로만 사용. 그 외 경로 접근 시 무조건 어드민 메인으로 리다이렉트 (auth 복원 완료 후에만)
   useEffect(() => {
-    if (isAuthenticated && isAdmin && !location.pathname.startsWith('/admin')) {
+    if (authReady && isAuthenticated && isAdmin && !location.pathname.startsWith('/admin')) {
       navigate('/admin/system-logs', { replace: true })
     }
-  }, [isAuthenticated, isAdmin, location.pathname, navigate])
+  }, [authReady, isAuthenticated, isAdmin, location.pathname, navigate])
+
+  // persist 복원 중(token 있음, user 아직 null): 역할을 알 수 없으므로 로딩만 표시하고 라우팅 보류
+  if (!authReady) {
+    return (
+      <div className="App app-loading">
+        <div className="app-loading__spinner" aria-hidden />
+        <p className="app-loading__text">로딩 중...</p>
+      </div>
+    )
+  }
 
   return (
     <div className="App">
@@ -284,7 +299,7 @@ function AppContent() {
           }
         />
 
-        {/* 루트: 게스트 접속 허용 시 로그인 없이 대시보드, 아니면 로그인 후 역할별 이동 */}
+        {/* 루트: authReady 이후에만 판단. 어드민이면 무조건 어드민 메인, 그 외 역할별 이동 */}
         <Route
           path="/"
           element={
