@@ -267,9 +267,9 @@ function Monitoring() {
         timestamp: data.timestamp,
       })
       if (data.type !== 'sensor_data' || !data.deviceId) return
-      
+      const norm = (s) => (s || '').trim().toLowerCase()
       const currentDeviceInfo = deviceInfoRef.current
-      if (currentDeviceInfo && currentDeviceInfo.address !== data.deviceId) {
+      if (currentDeviceInfo && norm(currentDeviceInfo.address) !== norm(data.deviceId)) {
         return
       }
       

@@ -555,7 +555,13 @@ class TelemetryWorker {
       };
       
       try {
-        const hub = await db.Hub.findByPk(hubId);
+        // Hub 주소는 대소문자 혼용 가능하므로 소문자로 비교
+        const hub = await db.Hub.findOne({
+          where: db.sequelize.where(
+            db.sequelize.fn('LOWER', db.sequelize.col('address')),
+            hubId.toLowerCase()
+          ),
+        });
         if (!hub || !hub.user_email) {
           // 허브 미등록 시 전체 브로드캐스트 금지 — 버퍼만 비우고 스킵 (다른 사용자에게 노출 방지)
           this.broadcastBuffer.set(key, []);

@@ -59,8 +59,9 @@ function Dashboard() {
           [data.deviceId]: true,
         }));
         
-        // 데이터가 들어왔으므로 해당 디바이스의 허브를 온라인으로 설정
-        const device = connectedDevices.find((d) => d.address === data.deviceId);
+        // 데이터가 들어왔으므로 해당 디바이스의 허브를 온라인으로 설정 (MAC 대소문자 무시)
+        const normMac = (mac) => (mac || '').trim().toLowerCase();
+        const device = connectedDevices.find((d) => normMac(d.address) === normMac(data.deviceId));
         if (device && device.hub_address) {
           const hubAddress = device.hub_address;
           setHubStatuses((prev) => ({
@@ -86,7 +87,7 @@ function Dashboard() {
         // 렌더링 시에만 spo2를 심박수, hr을 산포도로 사용한다.
         setConnectedDevices((prev) =>
           prev.map((device) => {
-            if (device.address === data.deviceId) {
+            if (normMac(device.address) === normMac(data.deviceId)) {
               const latest =
                 data.data?.dataArr?.[data.data.dataArr.length - 1] || data.data;
               let rawHr = Number(latest.hr || data.data?.hr || 0);

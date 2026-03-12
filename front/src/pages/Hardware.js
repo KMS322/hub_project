@@ -320,11 +320,12 @@ function Hardware() {
           },
         }));
 
-        // 시뮬레이션된 오류가 있으면 그것을 우선 사용, 없으면 실제 데이터에서 감지
+        // 시뮬레이션된 오류가 있으면 그것을 우선 사용, 없으면 실제 데이터에서 감지 (MAC 대소문자 무시)
+        const normMac = (mac) => (mac || '').trim().toLowerCase();
         const simulatedError = simulatedErrors[data.deviceId];
         const error = simulatedError || detectHardwareError(heartRate);
         if (error) {
-          const device = devices.find((d) => d.address === data.deviceId);
+          const device = devices.find((d) => normMac(d.address) === normMac(data.deviceId));
           setHardwareAlerts((prev) => {
             const existingIndex = prev.findIndex(
               (alert) =>

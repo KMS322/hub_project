@@ -203,15 +203,6 @@ class MQTTService {
       return;
     }
 
-    console.log(`[MQTT Service] 📨 Hub send message from ${topic}: ${messageStr}`);
-    console.log(`[MQTT Service] 📨 Raw message details:`, {
-      topic,
-      hubId,
-      messageLength: messageStr.length,
-      messagePreview: messageStr.slice(0, 200),
-      timestamp: new Date().toISOString(),
-    });
-
     // ✅ 수신 데이터를 backend/data/json 에 그대로 저장
     try {
       const jsonDir = process.env.MQTT_JSON_OUTPUT_DIR
@@ -423,9 +414,7 @@ class MQTTService {
       // 측정 데이터인지 확인 (device_mac_address와 data 배열이 있으면 측정 데이터)
       if (data.device_mac_address && Array.isArray(data.data)) {
         presenceStore.updateDeviceSeen(hubId, data.device_mac_address);
-        console.log(`[MQTT Service] 📊 Measurement data detected from hub ${hubId}, device ${data.device_mac_address}`);
-        
-        // TelemetryWorker 큐에 추가 (Socket.IO 전송용) — 디바이스/CSV 결과와 무관하게 항상 푸시
+        // TelemetryWorker 큐에 추가 (Socket.IO 전달용)
         const receiveStartTime = Date.now();
         const deviceIdNorm = (data.device_mac_address || '').trim().toLowerCase();
         if (this.telemetryQueue) {
@@ -437,12 +426,6 @@ class MQTTService {
             topic,
             receiveStartTime,
             publishStartTime: receiveStartTime,
-          });
-          console.log(`[MQTT Service] ✅ JSON telemetry → queue (Socket.IO 전달용)`, {
-            hubId,
-            deviceId: data.device_mac_address,
-            dataLength: data.data?.length || 0,
-            queueLength: this.telemetryQueue.length,
           });
         }
         
